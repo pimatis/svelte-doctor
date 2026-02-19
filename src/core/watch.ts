@@ -19,7 +19,18 @@ interface WatchOptions {
 }
 
 const DEBOUNCE_MS = 150;
-const WATCHABLE_PATTERN = /\.(svelte|ts|js)$/;
+const WATCHABLE_PATTERN = /\.(svelte|ts|js|json)$/;
+const RUNES_PATTERN = /\$state\s*[<(]|\$derived\s*[<(]|\$effect\s*[.(]|\$props\s*[<(]/;
+
+const isProjectInfoFile = (relativePath: string): boolean => {
+  const name = path.basename(relativePath);
+  const dir = path.dirname(relativePath);
+
+  if (name === "package.json" && (dir === "." || dir === "")) return true;
+  if (/^svelte\.config\.(js|ts|cjs|mjs)$/.test(name) && (dir === "." || dir === "")) return true;
+
+  return false;
+};
 
 const formatTime = (): string => {
   const now = new Date();
@@ -123,11 +134,16 @@ export const watch = async (
 ): Promise<void> => {
   validateDirectory(directory);
 
-  const projectInfo = discoverProject(directory);
-  const userConfig = loadConfig(directory);
+  let projectInfo = discoverProject(directory);
+  let userConfig = loadConfig(directory);
 
   if (!projectInfo.svelteVersion) {
-    throw new Error("No Svelte dependency found in package.json");
+    logger.break();
+    logger.warn("  ⚠ No Svelte dependency found in package.json.");
+    logger.dim("    This project does not appear to be a Svelte project.");
+    logger.dim("    svelte-doctor is designed for Svelte/SvelteKit codebases.");
+    logger.break();
+    return;
   }
 
   logger.break();
@@ -135,6 +151,18 @@ export const watch = async (
   logger.break();
 
   const diagnosticsMap = new Map<string, Diagnostic[]>();
+  const runeFiles = new Set<string>();
+
+  // track which .svelte files contain runes for incremental usesRunes detection
+  const svelteFilesForRunes = collectFiles(directory, SVELTE_FILE_PATTERN);
+  for (const file of svelteFilesForRunes) {
+    try {
+      const content = fs.readFileSync(file, "utf-8");
+      if (RUNES_PATTERN.test(content)) {
+        runeFiles.add(toPosix(path.relative(directory, file)));
+      }
+    } catch {}
+  }
 
   runInitialScan(directory, projectInfo, diagnosticsMap);
 
@@ -163,6 +191,24 @@ export const watch = async (
   let previousScore = initialScore.score;
   const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+  const rescanAllFiles = (): void => {
+    diagnosticsMap.clear();
+    runInitialScan(directory, projectInfo, diagnosticsMap);
+
+    const allDiags = getAllDiagnostics(diagnosticsMap, userConfig);
+    const newScore = calculateScore(allDiags);
+    const diff = newScore.score - previousScore;
+
+    let scoreChange = highlighter.dim(`${previousScore} → ${newScore.score}`);
+    if (diff > 0) scoreChange = highlighter.success(`${previousScore} → ${newScore.score}`);
+    if (diff < 0) scoreChange = highlighter.error(`${previousScore} → ${newScore.score}`);
+
+    const timeLabel = highlighter.dim(`[${formatTime()}]`);
+    logger.log(`  ${timeLabel} Project config changed. Re-scanned. Score: ${scoreChange}`);
+
+    previousScore = newScore.score;
+  };
+
   const handleFileChange = (relativePath: string) => {
     const fullPath = path.join(directory, relativePath);
     const posixPath = toPosix(relativePath);
@@ -180,6 +226,49 @@ export const watch = async (
 
       try {
         const exists = fs.existsSync(fullPath);
+
+        // project-level config changed: refresh projectInfo and rescan everything
+        if (isProjectInfoFile(relativePath)) {
+          projectInfo = discoverProject(directory);
+          userConfig = loadConfig(directory);
+
+          if (!projectInfo.svelteVersion) {
+            const timeLabel = highlighter.dim(`[${formatTime()}]`);
+            logger.warn(`  ${timeLabel} Svelte dependency removed from package.json. Diagnostics paused.`);
+            diagnosticsMap.clear();
+            previousScore = 100;
+            return;
+          }
+
+          rescanAllFiles();
+          return;
+        }
+
+        // track rune usage in .svelte files for incremental usesRunes detection
+        if (posixPath.endsWith(".svelte")) {
+          if (!exists) {
+            runeFiles.delete(posixPath);
+          }
+
+          if (exists) {
+            try {
+              const content = fs.readFileSync(fullPath, "utf-8");
+              if (RUNES_PATTERN.test(content)) {
+                runeFiles.add(posixPath);
+              }
+              if (!RUNES_PATTERN.test(content)) {
+                runeFiles.delete(posixPath);
+              }
+            } catch {}
+          }
+
+          const nextUsesRunes = runeFiles.size > 0;
+          if (nextUsesRunes !== projectInfo.usesRunes) {
+            projectInfo = { ...projectInfo, usesRunes: nextUsesRunes };
+            rescanAllFiles();
+            return;
+          }
+        }
 
         if (!exists) {
           diagnosticsMap.delete(posixPath);

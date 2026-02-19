@@ -40,11 +40,43 @@ export const scan = async (
     json: inputOptions.json ?? false,
   };
 
-  if (!projectInfo.svelteVersion) {
-    throw new Error("No Svelte dependency found in package.json");
-  }
-
   const silent = options.scoreOnly || options.json;
+
+  if (!projectInfo.svelteVersion) {
+    const emptyDiagnostics: Diagnostic[] = [];
+    const emptyScore = calculateScore(emptyDiagnostics);
+
+    if (options.json) {
+      const output = {
+        version: VERSION,
+        score: emptyScore.score,
+        label: emptyScore.label,
+        totalFiles: 0,
+        affectedFiles: 0,
+        errors: 0,
+        warnings: 0,
+        elapsedMs: Math.round(performance.now() - startTime),
+        diagnostics: [],
+        warning: "No Svelte dependency found in package.json. This project does not appear to be a Svelte project.",
+      };
+      console.log(JSON.stringify(output, null, 2));
+      return { diagnostics: emptyDiagnostics, scoreResult: emptyScore };
+    }
+
+    if (options.scoreOnly) {
+      logger.log(`${emptyScore.score}`);
+      return { diagnostics: emptyDiagnostics, scoreResult: emptyScore };
+    }
+
+    logger.warn("  ⚠ No Svelte dependency found in package.json.");
+    logger.dim("    This project does not appear to be a Svelte project.");
+    logger.dim("    svelte-doctor is designed for Svelte/SvelteKit codebases.");
+    logger.break();
+    logger.dim(`  Add ${highlighter.info("svelte")} to your dependencies and try again.`);
+    logger.break();
+
+    return { diagnostics: emptyDiagnostics, scoreResult: emptyScore };
+  }
 
   if (!silent) {
     const frameworkLabel = formatFrameworkName(projectInfo.framework);

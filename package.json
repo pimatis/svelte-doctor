@@ -1,6 +1,6 @@
 {
   "name": "svelte-doctor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Diagnose and fix performance, correctness, and architecture issues in your Svelte codebase",
   "keywords": [
     "svelte",
@@ -59,14 +59,14 @@
   },
   "dependencies": {
     "commander": "^14.0.3",
-    "knip": "^5.83.1",
+    "knip": "^5.84.1",
     "ora": "^9.3.0",
     "picocolors": "^1.1.1",
-    "svelte": "^5.34.7",
-    "typescript": ">=5.0.4 <7"
+    "svelte": "^5.53.0",
+    "typescript": "^5.9.3"
   },
   "devDependencies": {
     "tsdown": "^0.20.3",
-    "@types/node": "^22.15.0"
+    "@types/node": "^22.19.11"
   }
 }

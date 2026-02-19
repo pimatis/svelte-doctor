@@ -44,7 +44,10 @@ export const diagnose = async (
   const effectiveDeadCode = options.deadCode ?? userConfig?.deadCode ?? true;
 
   if (!projectInfo.svelteVersion) {
-    throw new Error("No Svelte dependency found in package.json");
+    const elapsedMilliseconds = performance.now() - startTime;
+    const score = calculateScore([]);
+
+    return { diagnostics: [], score, project: projectInfo, elapsedMilliseconds };
   }
 
   let lintDiagnostics: Diagnostic[] = [];
