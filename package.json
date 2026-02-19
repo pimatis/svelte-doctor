@@ -1,0 +1,72 @@
+{
+  "name": "svelte-doctor",
+  "version": "0.1.0",
+  "description": "Diagnose and fix performance, correctness, and architecture issues in your Svelte codebase",
+  "keywords": [
+    "svelte",
+    "svelte5",
+    "sveltekit",
+    "diagnostics",
+    "linter",
+    "performance",
+    "runes",
+    "migration",
+    "codemod",
+    "cli",
+    "static-analysis",
+    "code-quality",
+    "typescript",
+    "security",
+    "refactoring",
+    "ai",
+    "analyzer",
+    "vite",
+    "javascript"
+  ],
+  "license": "Apache-2.0",
+  "author": "Pimatis",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Pimatis/svelte-doctor.git"
+  },
+  "homepage": "https://github.com/Pimatis/svelte-doctor",
+  "bugs": {
+    "url": "https://github.com/Pimatis/svelte-doctor/issues"
+  },
+  "type": "module",
+  "bin": {
+    "svelte-doctor": "./dist/cli.mjs"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "dev": "tsdown --watch",
+    "build": "rm -rf dist && NODE_ENV=production tsdown && rm -f dist/*.map && sed -i '' '/sourceMappingURL/d' dist/*.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test --timeout 30000"
+  },
+  "dependencies": {
+    "commander": "^14.0.3",
+    "knip": "^5.83.1",
+    "ora": "^9.3.0",
+    "picocolors": "^1.1.1",
+    "svelte": "^5.34.7",
+    "typescript": ">=5.0.4 <7"
+  },
+  "devDependencies": {
+    "tsdown": "^0.20.3",
+    "@types/node": "^22.15.0"
+  }
+}
