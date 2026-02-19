@@ -61,15 +61,70 @@ Run a single command to scan your entire codebase and receive a **0–100 health
 
 ## Installation
 
+### Global Installation (Recommended)
+
+Install `svelte-doctor` globally to use it from anywhere in your terminal.
+
 ```bash
 # Using bun (recommended)
-bun i svelte-doctor
+bun i -g svelte-doctor
 
 # Using npm
-npm install svelte-doctor
+npm install -g svelte-doctor
 
 # Using pnpm
-pnpm add svelte-doctor
+pnpm add -g svelte-doctor
+```
+
+**Add to PATH (Required for first-time setup):**
+
+If you get a "command not found" error after installation, add the global bin folder to your PATH:
+
+**macOS / Linux:**
+```bash
+# For Bun users
+echo 'export PATH="$HOME/.bun/bin:$PATH"' >> ~/.zshrc  # or ~/.bashrc
+source ~/.zshrc  # or source ~/.bashrc
+
+# For npm users (usually automatic, but if needed)
+echo 'export PATH="$(npm config get prefix)/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+**Windows:**
+```powershell
+# For Bun users - run in PowerShell as Administrator
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:USERPROFILE\.bun\bin", "User")
+
+# For npm users - usually automatic
+# If needed, add: %APPDATA%\npm to your PATH
+```
+
+### Local Installation
+
+You can also install it locally in your project:
+
+```bash
+# Using bun
+bun i -D svelte-doctor
+
+# Using npm
+npm install -D svelte-doctor
+
+# Using pnpm
+pnpm add -D svelte-doctor
+```
+
+Then run with:
+```bash
+# Using npx / bunx
+npx svelte-doctor
+bunx svelte-doctor
+
+# Or via package.json scripts
+"scripts": {
+  "doctor": "svelte-doctor check"
+}
 ```
 
 ---
