@@ -35,12 +35,12 @@ export const scan = async (
   const options: Required<ScanOptions> = {
     lint: inputOptions.lint ?? userConfig?.lint ?? true,
     deadCode: inputOptions.deadCode ?? userConfig?.deadCode ?? true,
-    verbose: inputOptions.verbose ?? userConfig?.verbose ?? false,
     scoreOnly: inputOptions.scoreOnly ?? false,
     json: inputOptions.json ?? false,
+    quiet: inputOptions.quiet ?? false,
   };
 
-  const silent = options.scoreOnly || options.json;
+  const silent = options.scoreOnly || options.json || options.quiet;
 
   if (!projectInfo.svelteVersion) {
     const emptyDiagnostics: Diagnostic[] = [];
@@ -161,16 +161,26 @@ export const scan = async (
   const elapsedMs = performance.now() - startTime;
   const scoreResult = calculateScore(diagnostics);
 
-  if (!options.scoreOnly && !options.json) {
+  // compute these once and reuse across history save and output rendering
+  const errorCount = diagnostics.filter((d) => d.severity === "error").length;
+  const warningCount = diagnostics.filter((d) => d.severity === "warning").length;
+  const affectedFileSet = new Set(diagnostics.map((d) => d.filePath));
+
+  // quiet is used internally by fix verification — do not pollute history with those runs
+  if (!options.quiet) {
     saveScoreHistory(directory, {
       timestamp: new Date().toISOString(),
       score: scoreResult.score,
       label: scoreResult.label,
-      errors: diagnostics.filter((d) => d.severity === "error").length,
-      warnings: diagnostics.filter((d) => d.severity === "warning").length,
+      errors: errorCount,
+      warnings: warningCount,
       filesScanned: projectInfo.sourceFileCount,
-      filesAffected: new Set(diagnostics.map((d) => d.filePath)).size,
+      filesAffected: affectedFileSet.size,
     });
+  }
+
+  if (options.quiet) {
+    return { diagnostics, scoreResult };
   }
 
   if (options.json) {
@@ -179,9 +189,9 @@ export const scan = async (
       score: scoreResult.score,
       label: scoreResult.label,
       totalFiles: projectInfo.sourceFileCount,
-      affectedFiles: new Set(diagnostics.map((d) => d.filePath)).size,
-      errors: diagnostics.filter((d) => d.severity === "error").length,
-      warnings: diagnostics.filter((d) => d.severity === "warning").length,
+      affectedFiles: affectedFileSet.size,
+      errors: errorCount,
+      warnings: warningCount,
       elapsedMs: Math.round(elapsedMs),
       diagnostics: diagnostics.map((d) => ({
         rule: d.rule,
@@ -212,7 +222,7 @@ export const scan = async (
     return { diagnostics, scoreResult };
   }
 
-  printDiagnostics(diagnostics, options.verbose);
+  printDiagnostics(diagnostics);
   printSummary(diagnostics, elapsedMs, scoreResult, projectInfo.sourceFileCount);
 
   logger.break();

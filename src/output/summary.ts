@@ -7,7 +7,7 @@ import {
   MILLISECONDS_PER_SECOND,
 } from "../constants.js";
 import type { Diagnostic, ScoreResult } from "../types.js";
-import { logger, highlighter, stripAnsi } from "./logger.js";
+import { logger, highlighter, stripAnsi, sanitize } from "./logger.js";
 
 const colorizeByScore = (score: number): string => {
   const text = String(score);
@@ -43,24 +43,24 @@ const formatElapsed = (ms: number): string => {
   return `${(ms / MILLISECONDS_PER_SECOND).toFixed(1)}s`;
 };
 
-// groups diagnostics by rule name for compact display
-const groupByRule = (diagnostics: Diagnostic[]): Map<string, Diagnostic[]> => {
+// groups diagnostics by rule+message so "Unused export: setTheme" and "Unused export: foo" stay separate
+const groupByRuleAndMessage = (diagnostics: Diagnostic[]): Map<string, Diagnostic[]> => {
   const groups = new Map<string, Diagnostic[]>();
 
   for (const diag of diagnostics) {
-    const existing = groups.get(diag.rule) ?? [];
+    const key = `${diag.rule}::${diag.message}`;
+    const existing = groups.get(key) ?? [];
     existing.push(diag);
-    groups.set(diag.rule, existing);
+    groups.set(key, existing);
   }
 
   return groups;
 };
 
-// prints each rule group with severity icon and affected file locations
-export const printDiagnostics = (diagnostics: Diagnostic[], verbose: boolean) => {
-  const groups = groupByRule(diagnostics);
+// prints each group with severity icon and affected file locations (deduped, sorted)
+export const printDiagnostics = (diagnostics: Diagnostic[]) => {
+  const groups = groupByRuleAndMessage(diagnostics);
 
-  // errors first, warnings second
   const sorted = [...groups.entries()].sort(([, a], [, b]) => {
     const aWeight = a[0].severity === "error" ? 0 : 1;
     const bWeight = b[0].severity === "error" ? 0 : 1;
@@ -74,24 +74,28 @@ export const printDiagnostics = (diagnostics: Diagnostic[], verbose: boolean) =>
     const count = ruleDiagnostics.length;
     const countLabel = count > 1 ? colorizeBySeverity(` (${count})`, first.severity) : "";
 
-    logger.log(`  ${coloredIcon} ${first.message}${countLabel}`);
+    logger.log(`  ${coloredIcon} ${sanitize(first.message)}${countLabel}`);
 
     if (first.help) {
-      logger.dim(`    ${first.help}`);
+      logger.dim(`    ${sanitize(first.help)}`);
     }
 
-    if (verbose) {
-      const fileLines = new Map<string, number[]>();
-      for (const diag of ruleDiagnostics) {
-        const lines = fileLines.get(diag.filePath) ?? [];
-        if (diag.line > 0) lines.push(diag.line);
-        fileLines.set(diag.filePath, lines);
+    const fileLines = new Map<string, number[]>();
+    for (const diag of ruleDiagnostics) {
+      if (diag.line > 0) {
+        const existing = fileLines.get(diag.filePath) ?? [];
+        if (!existing.includes(diag.line)) existing.push(diag.line);
+        fileLines.set(diag.filePath, existing);
+      } else {
+        if (!fileLines.has(diag.filePath)) fileLines.set(diag.filePath, []);
       }
+    }
 
-      for (const [filePath, lines] of fileLines) {
-        const lineLabel = lines.length > 0 ? `:${lines.join(",")}` : "";
-        logger.dim(`    ${filePath}${lineLabel}`);
-      }
+    const sortedFiles = [...fileLines.entries()].sort(([a], [b]) => a.localeCompare(b));
+    for (const [filePath, lines] of sortedFiles) {
+      const uniqueLines = [...new Set(lines)].filter((l) => l > 0).sort((a, b) => a - b);
+      const lineLabel = uniqueLines.length > 0 ? `:${uniqueLines.join(",")}` : "";
+      logger.dim(`    ${sanitize(filePath)}${lineLabel}`);
     }
 
     logger.break();

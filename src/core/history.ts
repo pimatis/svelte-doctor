@@ -46,19 +46,26 @@ const isValidEntry = (entry: unknown): entry is ScoreEntry => {
   return true;
 };
 
-const ensureDirectory = (directory: string): void => {
+// returns false if the dir is a symlink or cannot be created
+const ensureDirectory = (directory: string): boolean => {
   const dirPath = getHistoryDir(directory);
 
   try {
     const stat = fs.lstatSync(dirPath);
-    // refuse to use symlinked directories
-    if (stat.isSymbolicLink()) return;
-    if (stat.isDirectory()) return;
-  } catch {}
+    if (stat.isSymbolicLink()) return false;
+    if (stat.isDirectory()) return true;
+    // exists but is a file — cannot use it
+    return false;
+  } catch {
+    // does not exist yet, create it
+  }
 
   try {
     fs.mkdirSync(dirPath, { recursive: true });
-  } catch {}
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 export const loadScoreHistory = (directory: string): ScoreEntry[] => {
@@ -81,11 +88,7 @@ export const loadScoreHistory = (directory: string): ScoreEntry[] => {
 
 export const saveScoreHistory = (directory: string, entry: ScoreEntry): void => {
   try {
-    ensureDirectory(directory);
-
-    const dirPath = getHistoryDir(directory);
-    const dirStat = fs.lstatSync(dirPath);
-    if (dirStat.isSymbolicLink()) return;
+    if (!ensureDirectory(directory)) return;
 
     const history = loadScoreHistory(directory);
     history.push(entry);

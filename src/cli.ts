@@ -18,7 +18,6 @@ const program = new Command()
 Examples:
   $ svelte-doctor check                 Scan current directory
   $ svelte-doctor check ./my-app        Scan a specific project
-  $ svelte-doctor check --verbose       Show file:line locations per issue
   $ svelte-doctor check --json          Output machine-readable JSON (for AI agents)
   $ svelte-doctor check --score         Output only the numeric score (for CI)
   $ svelte-doctor fix                   Auto-fix issues with an AI agent
@@ -44,18 +43,17 @@ const checkCommand = new Command("check")
   .argument("[directory]", "project directory to scan", ".")
   .option("--no-lint", "skip lint rules")
   .option("--no-dead-code", "skip dead code detection")
-  .option("--verbose", "show affected files and line numbers per rule")
   .option("--score", "output only the numeric score (CI mode)")
   .option("--json", "output machine-readable JSON (for AI agents and scripts)")
   .addHelpText("after", `
 Examples:
   $ svelte-doctor check
-  $ svelte-doctor check ./my-app --verbose
+  $ svelte-doctor check ./my-app
   $ svelte-doctor check --json | jq '.diagnostics[] | select(.severity == "error")'
   $ svelte-doctor check --score
   $ svelte-doctor check --no-dead-code
 `)
-  .action(async (directory: string, flags: { lint: boolean; deadCode: boolean; verbose: boolean; score: boolean; json: boolean }) => {
+  .action(async (directory: string, flags: { lint: boolean; deadCode: boolean; score: boolean; json: boolean }) => {
     try {
       const resolvedDir = path.resolve(directory);
 
@@ -68,7 +66,6 @@ Examples:
       const options: ScanOptions = {
         lint: flags.lint,
         deadCode: flags.deadCode,
-        verbose: flags.verbose,
         scoreOnly: flags.score,
         json: flags.json,
       };
@@ -97,6 +94,7 @@ const fixCommand = new Command("fix")
   .description("Use an AI agent (amp/claude/codex) to auto-fix all reported issues")
   .argument("[directory]", "project directory", ".")
   .option("--agent <name>", "force a specific agent (amp, claude, codex)")
+  .option("--errors-only", "fix only errors first (reduces cascade risk, run again for warnings)")
   .addHelpText("after", `
 Examples:
   $ svelte-doctor fix
@@ -107,8 +105,10 @@ Supported Agents (checked in this priority order):
   amp      Amp        https://ampcode.com/
   claude   Claude Code  https://docs.anthropic.com/en/docs/claude-code
   codex    Codex      https://github.com/openai/codex
+
+Tip: Use --errors-only to fix critical issues first and reduce cascade errors.
 `)
-  .action(async (directory: string, flags: { agent?: string }) => {
+  .action(async (directory: string, flags: { agent?: string; errorsOnly?: boolean }) => {
     try {
       const resolvedDir = path.resolve(directory);
 
@@ -116,8 +116,18 @@ Supported Agents (checked in this priority order):
       logger.log(`  ${highlighter.bold("svelte-doctor fix")} v${VERSION}`);
       logger.break();
 
-      const result = await scan(resolvedDir, { verbose: true });
-      await runFix(resolvedDir, result.diagnostics, flags.agent);
+      const result = await scan(resolvedDir, {});
+      const diagnostics = flags.errorsOnly
+        ? result.diagnostics.filter((d) => d.severity === "error")
+        : result.diagnostics;
+      if (flags.errorsOnly && diagnostics.length === 0) {
+        logger.success("  ✓ No errors to fix. Run without --errors-only to fix warnings.");
+        return;
+      }
+      const fixResult = await runFix(resolvedDir, diagnostics, flags.agent);
+      if (fixResult?.errorsIncreased) {
+        process.exitCode = 1;
+      }
     } catch (error) {
       if (error instanceof Error) {
         logger.error(`  Error: ${error.message}`);
@@ -130,17 +140,15 @@ Supported Agents (checked in this priority order):
 const watchCommand = new Command("watch")
   .description("Watch for file changes and show live diagnostics")
   .argument("[directory]", "project directory", ".")
-  .option("--verbose", "show detailed diagnostics on each change")
   .addHelpText("after", `
 Examples:
   $ svelte-doctor watch
   $ svelte-doctor watch ./my-app
-  $ svelte-doctor watch --verbose
 `)
-  .action(async (directory: string, flags: { verbose: boolean }) => {
+  .action(async (directory: string) => {
     try {
       const resolvedDir = path.resolve(directory);
-      await watch(resolvedDir, { verbose: flags.verbose });
+      await watch(resolvedDir);
     } catch (error) {
       if (error instanceof Error) {
         logger.error(`  Error: ${error.message}`);
@@ -192,7 +200,8 @@ Examples:
   .action((directory: string, flags: { last: string }) => {
     try {
       const resolvedDir = path.resolve(directory);
-      const count = Math.max(1, parseInt(flags.last, 10) || 20);
+      const parsed = parseInt(flags.last, 10);
+      const count = Number.isNaN(parsed) || parsed < 1 ? 20 : Math.min(500, parsed);
 
       printTrend(resolvedDir, count);
     } catch (error) {
@@ -221,8 +230,12 @@ Examples:
       const resolvedDir = path.resolve(directory);
 
       await migrate(resolvedDir, {
-        dryRun: flags.dryRun ?? false,
-        backup: flags.backup ?? true,
+        // Commander sets flags.dryRun to true when --dry-run is passed and
+        // leaves it undefined otherwise — explicit false fallback is correct here
+        dryRun: flags.dryRun === true,
+        // Commander sets flags.backup to false when --no-backup is passed and
+        // to true when absent (default-true option) — no ?? needed
+        backup: flags.backup !== false,
       });
     } catch (error) {
       if (error instanceof Error) {
@@ -244,7 +257,14 @@ program.action(() => {
 });
 
 const main = async () => {
-  await program.parseAsync();
+  try {
+    await program.parseAsync();
+  } catch (error) {
+    if (error instanceof Error) {
+      logger.error(`  Error: ${error.message}`);
+    }
+    process.exit(1);
+  }
 };
 
 main();

@@ -63,11 +63,19 @@ const readPackageJson = (dir: string): PackageJson => {
 };
 
 const collectAllDeps = (pkg: PackageJson): Record<string, string> => {
-  return {
-    ...pkg.dependencies,
-    ...pkg.devDependencies,
-    ...pkg.peerDependencies,
-  };
+  const merged: Record<string, string> = {};
+
+  for (const source of [pkg.dependencies, pkg.devDependencies, pkg.peerDependencies]) {
+    if (!source || typeof source !== "object") continue;
+
+    for (const [name, version] of Object.entries(source)) {
+      if (typeof name === "string" && typeof version === "string") {
+        merged[name] = version;
+      }
+    }
+  }
+
+  return merged;
 };
 
 const checkDeprecated = (deps: Record<string, string>): DepIssue[] => {

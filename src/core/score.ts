@@ -1,5 +1,5 @@
 import type { Diagnostic, ScoreResult } from "../types.js";
-import { PERFECT_SCORE } from "../constants.js";
+import { PERFECT_SCORE, SCORE_GOOD_THRESHOLD, SCORE_OK_THRESHOLD } from "../constants.js";
 
 // higher weight = bigger penalty per diagnostic
 const SEVERITY_WEIGHTS: Record<string, number> = {
@@ -22,8 +22,8 @@ const CATEGORY_MULTIPLIERS: Record<string, number> = {
 
 const getLabel = (score: number): string => {
   if (score >= 90) return "Excellent";
-  if (score >= 75) return "Good";
-  if (score >= 50) return "Needs Work";
+  if (score >= SCORE_GOOD_THRESHOLD) return "Good";
+  if (score >= SCORE_OK_THRESHOLD) return "Needs Work";
   if (score >= 25) return "Poor";
   return "Critical";
 };

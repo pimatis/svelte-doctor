@@ -135,9 +135,6 @@ bunx svelte-doctor
 # Scan your project
 svelte-doctor check
 
-# With verbose output (file paths + line numbers)
-svelte-doctor check --verbose
-
 # Just the score (useful for CI)
 svelte-doctor check --score
 
@@ -163,11 +160,10 @@ svelte-doctor deps
 
 ### `svelte-doctor check [directory] [options]`
 
-Scan your project for issues and output a health score.
+Scan your project for issues and output a health score. Every run saves the score to `.svelte-doctor/history.json`, including `--json` and `--score` modes, so your CI pipeline contributes to the trend graph.
 
 | Option | Description |
 |--------|-------------|
-| `--verbose` | Show affected files and line numbers |
 | `--score` | Output only the numeric score |
 | `--json` | Output machine-readable JSON |
 | `--no-lint` | Skip lint rules |
@@ -175,11 +171,12 @@ Scan your project for issues and output a health score.
 
 ### `svelte-doctor fix [directory] [options]`
 
-Detects installed AI coding agents (**Amp**, **Claude Code**, **Codex**) and uses the best available one to fix all reported issues automatically.
+Detects installed AI coding agents (**Amp**, **Claude Code**, **Codex**) and uses the best available one to fix all reported issues automatically. Diagnostics are sent via stdin. Runs verification after fixes; warns if errors increased. If no agent is installed, the prompt is saved to a temp file for manual use.
 
 | Option | Description |
 |--------|-------------|
 | `--agent <name>` | Force a specific agent (amp, claude, codex) |
+| `--errors-only` | Fix only errors first (reduces cascade errors, run again for warnings) |
 
 ### `svelte-doctor migrate [directory] [options]`
 
@@ -189,11 +186,11 @@ Auto-migrate Svelte 4 syntax to Svelte 5. Deterministic, AST-free codemod that t
 - `$:` reactive statements → `$derived()` / `$effect()`
 - `export let` → `let { ... } = $props()`
 - `<slot>` → `{@render children()}`
-- `<slot name="x">` → `{@render x()}`
+- `<slot name="x">` → `{@render x?.()}`
 - `on:click={handler}` → `onclick={handler}`
-- `createEventDispatcher` → callback props
-- `let:` directives → snippet props
-- Legacy lifecycle imports → `$effect()`
+- `createEventDispatcher` → callback props (with TODO comment)
+- `let:` directives → snippet props (with TODO comment)
+- Legacy lifecycle imports → `$effect()` (with TODO comment)
 
 | Option | Description |
 |--------|-------------|
@@ -202,11 +199,7 @@ Auto-migrate Svelte 4 syntax to Svelte 5. Deterministic, AST-free codemod that t
 
 ### `svelte-doctor watch [directory] [options]`
 
-Watch for file changes and show live diagnostics. Runs an initial full scan, then incrementally re-scans only changed files with debounced updates.
-
-| Option | Description |
-|--------|-------------|
-| `--verbose` | Show detailed diagnostics on each change |
+Watch for file changes and show live diagnostics. Runs an initial full scan, then incrementally re-scans only changed files with 150ms debounced updates.
 
 ```
 [12:34:56] src/Component.svelte changed — Score: 82 → 78 (⚠ 2 issues)
@@ -255,76 +248,78 @@ Check dependency health for Svelte ecosystem compatibility. Fully offline — no
 
 ### Correctness (7)
 
-| Rule | Description |
-|------|-------------|
-| `no-legacy-reactive` | `$:` reactive statements → `$derived` / `$effect` |
-| `no-legacy-lifecycle` | `onMount`/`onDestroy` → `$effect` |
-| `no-export-let` | `export let` → `$props()` |
-| `no-event-dispatcher` | `createEventDispatcher` → callback props |
-| `no-legacy-slots` | `<slot>` → `{@render children()}` |
-| `no-let-directive` | `let:` directive → snippets |
-| `no-on-directive` | `on:event` → `onevent` attributes |
+Rules in this category only fire in **runes-mode projects** (projects that use `$state`, `$derived`, `$effect`, or `$props`). They flag Svelte 4 patterns that are broken or deprecated in Svelte 5.
+
+| Rule | Severity | Description |
+|------|----------|-------------|
+| `no-legacy-reactive` | error | `$:` reactive statements → `$derived` / `$effect` |
+| `no-legacy-lifecycle` | error | `onMount`/`onDestroy` imports → `$effect` |
+| `no-export-let` | error | `export let` → `$props()` |
+| `no-event-dispatcher` | error | `createEventDispatcher` → callback props |
+| `no-legacy-slots` | error | `<slot>` → `{@render children()}` |
+| `no-let-directive` | error | `let:` directive → snippet props |
+| `no-on-directive` | warning | `on:event` → `onevent` attributes |
 
 ### Performance (4)
 
-| Rule | Description |
-|------|-------------|
-| `no-effect-for-derived` | `$effect` used where `$derived` fits |
-| `each-missing-key` | `{#each}` without key expression |
-| `no-inline-object` | Inline objects/arrays in template |
-| `no-transition-all` | `transition: all` is expensive |
+| Rule | Severity | Description |
+|------|----------|-------------|
+| `no-effect-for-derived` | warning | `$effect` used where `$derived` fits |
+| `each-missing-key` | warning | `{#each}` without key expression |
+| `no-inline-object` | warning | Inline objects/arrays in template expressions |
+| `no-transition-all` | warning | `transition: all` is expensive |
 
 ### Architecture (4)
 
-| Rule | Description |
-|------|-------------|
-| `no-giant-component` | Component exceeds 300 lines |
-| `no-deep-nesting` | 3+ levels of template nesting |
-| `no-console` | `console.*` left in components |
-| `no-multi-script` | Multiple `<script>` blocks |
+| Rule | Severity | Description |
+|------|----------|-------------|
+| `no-giant-component` | warning | Component exceeds 300 lines |
+| `no-deep-nesting` | warning | More than 3 levels of template block nesting |
+| `no-console` | warning | `console.*` left in components |
+| `no-multi-script` | warning | Multiple instance `<script>` blocks |
 
 ### Security (4)
 
-| Rule | Description |
-|------|-------------|
-| `no-unsafe-html` | `{@html}` is an XSS vector |
-| `no-secrets` | Hardcoded API keys / tokens |
-| `no-eval` | `eval()` usage |
-| `no-public-env-secrets` | Secrets in public env vars |
+| Rule | Severity | Description |
+|------|----------|-------------|
+| `no-unsafe-html` | error | `{@html}` is an XSS vector |
+| `no-secrets` | error | Hardcoded API keys / tokens |
+| `no-eval` | error | `eval()` usage |
+| `no-public-env-secrets` | error | Secrets imported from public `$env` modules |
 
 ### SvelteKit (5)
 
-| Rule | Description |
-|------|-------------|
-| `no-client-fetch` | `fetch` in components → use `load` |
-| `load-missing-type` | Load function without return type |
-| `no-goto-external` | `goto()` with external URLs |
-| `form-action-no-validation` | Form actions without validation |
-| `missing-error-page` | No `+error.svelte` found |
+| Rule | Severity | Description |
+|------|----------|-------------|
+| `no-client-fetch` | warning | `fetch` in component scripts → use `load` functions |
+| `load-missing-type` | warning | Load function without type annotation (TypeScript only) |
+| `no-goto-external` | warning | `goto()` with external URLs |
+| `form-action-no-validation` | warning | Form actions without input validation |
+| `missing-error-page` | warning | No `+error.svelte` found |
 
 ### Bundle Size (3)
 
-| Rule | Description |
-|------|-------------|
-| `no-barrel-import` | Barrel imports prevent tree-shaking |
-| `no-full-lodash` | Full lodash import (~70kb) |
-| `no-moment` | moment.js is heavy (~300kb) |
+| Rule | Severity | Description |
+|------|----------|-------------|
+| `no-barrel-import` | warning | Barrel imports prevent tree-shaking |
+| `no-full-lodash` | warning | Full `lodash` import (~70kb) |
+| `no-moment` | warning | `moment.js` is heavy (~300kb) |
 
 ### Accessibility (3)
 
-| Rule | Description |
-|------|-------------|
-| `img-missing-alt` | `<img>` without alt text |
-| `click-needs-keyboard` | Click on non-interactive elements |
-| `anchor-no-content` | `<a>` without text or aria-label |
+| Rule | Severity | Description |
+|------|----------|-------------|
+| `img-missing-alt` | warning | `<img>` without `alt` attribute |
+| `click-needs-keyboard` | warning | Click handler on non-interactive element without keyboard support |
+| `anchor-no-content` | warning | `<a>` without text content or `aria-label` |
 
 ### State & Reactivity (3)
 
-| Rule | Description |
-|------|-------------|
-| `no-unnecessary-state` | `$state` for values never mutated |
-| `no-derived-side-effect` | Side effects inside `$derived` |
-| `prefer-runes` | `svelte/store` imports in runes mode |
+| Rule | Severity | Description |
+|------|----------|-------------|
+| `no-unnecessary-state` | warning | `$state` wrapping a value that is never mutated |
+| `no-derived-side-effect` | error | Side effects inside `$derived` |
+| `prefer-runes` | warning | `svelte/store` imports in a runes-mode project |
 
 ---
 
@@ -344,7 +339,7 @@ console.log(result.project);      // ProjectInfo
 
 ## Configuration
 
-Create `svelte-doctor.config.json`:
+Create `svelte-doctor.config.json` in your project root:
 
 ```json
 {
@@ -353,12 +348,21 @@ Create `svelte-doctor.config.json`:
     "files": ["src/legacy/"]
   },
   "lint": true,
-  "deadCode": true,
-  "verbose": false
+  "deadCode": true
 }
 ```
 
-Or add a `"svelte-doctor"` key in `package.json`.
+Or add a `"svelte-doctor"` key in `package.json`:
+
+```json
+{
+  "svelte-doctor": {
+    "ignore": {
+      "rules": ["no-console"]
+    }
+  }
+}
+```
 
 ---
 

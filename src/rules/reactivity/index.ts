@@ -15,92 +15,139 @@ const noUnnecessaryState: Rule = {
     const stateVars: { name: string; line: number; column: number }[] = [];
 
     for (let i = 0; i < lines.length; i++) {
-      const stateMatch = lines[i].match(/let\s+(\w+)\s*=\s*\$state\(/);
-      if (stateMatch)
-        stateVars.push({
-          name: stateMatch[1],
-          line: i + 1,
-          column: (stateMatch.index ?? 0) + 1,
-        });
+      const trimmed = lines[i].trimStart();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
+
+      // match: let varName = $state( or let varName = $state<Type>(
+      // excludes $state.snapshot() and $state.is() which are utility calls, not declarations
+      const stateMatch = lines[i].match(/let\s+(\w+)\s*=\s*\$state\s*(?:<[^>]*>)?\s*\(/);
+      if (!stateMatch) continue;
+
+      // make sure this is $state( not $state.snapshot( or $state.is(
+      const afterDollarState = lines[i].slice((stateMatch.index ?? 0) + stateMatch[0].indexOf("$state") + 6).trimStart();
+      if (afterDollarState.startsWith(".")) continue;
+
+      stateVars.push({
+        name: stateMatch[1],
+        line: i + 1,
+        column: (stateMatch.index ?? 0) + 1,
+      });
     }
 
+    // strip comment lines once so all mutation checks below work on clean source
+    const nonCommentSource = lines
+      .filter((l) => {
+        const t = l.trimStart();
+        return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*");
+      })
+      .join("\n");
+
     for (const stateVar of stateVars) {
-      const source = ctx.source;
+      const escapedName = stateVar.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-      // looks for direct reassignment (varName = ...) but not equality checks (==)
-      const reassignPattern = new RegExp(`\\b${stateVar.name}\\s*=[^=]`);
-      const matches = source.match(new RegExp(reassignPattern, "g"));
+      // direct assignment: varName = expr  (excludes ==, ===, !=, !==)
+      const reassignPattern = new RegExp(`\\b${escapedName}\\s*=[^=]`, "g");
+      const reassignMatches = nonCommentSource.match(reassignPattern);
 
-      // detects array/object mutations like .push(), .splice(), or bracket access
+      // compound assignment: varName += 1, varName -= 1, varName *= 2, etc.
+      const compoundPattern = new RegExp(`\\b${escapedName}\\s*(?:\\+|-|\\*|\\/|%|\\*\\*|&|\\||\\^|<<|>>|>>>)?=\\s*`, "g");
+      const compoundMatches = nonCommentSource.match(compoundPattern);
+
+      // array/object mutation methods and bracket-access writes
       const mutationPattern = new RegExp(
-        `\\b${stateVar.name}\\s*\\.\\s*(push|pop|splice|shift|unshift|sort|reverse|fill)\\s*\\(|\\b${stateVar.name}\\s*\\[`,
+        `\\b${escapedName}\\s*\\.\\s*(?:push|pop|splice|shift|unshift|sort|reverse|fill|set|delete|clear|add)\\s*\\(|\\b${escapedName}\\s*\\[`,
       );
-      const hasMutation = mutationPattern.test(source);
+      const hasMutation = mutationPattern.test(nonCommentSource);
 
-      // first match is the declaration itself, so >1 means actual reassignment
-      if ((!matches || matches.length <= 1) && !hasMutation)
-        diagnostics.push({
-          filePath: ctx.filePath,
-          rule: noUnnecessaryState.name,
-          severity: noUnnecessaryState.severity,
-          message: `\`${stateVar.name}\` is wrapped in \`$state\` but never mutated or reassigned`,
-          help: noUnnecessaryState.help,
-          line: stateVar.line,
-          column: stateVar.column,
-          category: noUnnecessaryState.category,
-        });
+      // the declaration itself counts as one match in both reassign and compound patterns
+      // so >1 means there is at least one real write after the declaration
+      const hasReassign = reassignMatches !== null && reassignMatches.length > 1;
+      const hasCompound = compoundMatches !== null && compoundMatches.length > 1;
+
+      if (hasReassign || hasCompound || hasMutation) continue;
+
+      diagnostics.push({
+        filePath: ctx.filePath,
+        rule: noUnnecessaryState.name,
+        severity: noUnnecessaryState.severity,
+        message: `\`${stateVar.name}\` is wrapped in \`$state\` but never mutated or reassigned`,
+        help: noUnnecessaryState.help,
+        line: stateVar.line,
+        column: stateVar.column,
+        category: noUnnecessaryState.category,
+      });
     }
 
     return diagnostics;
   },
 };
 
-// $derived must be pure since side effects break reactivity guarantees and cause subtle bugs.
+// $derived must be pure — side effects break reactivity guarantees and cause subtle bugs
 const noDerivedSideEffect: Rule = {
   name: "no-derived-side-effect",
   category: "State & Reactivity",
   severity: "error",
-  message:
-    "`$derived` should be a pure computation so side effects are not allowed.",
+  message: "`$derived` should be a pure computation — side effects are not allowed.",
   help: "Move side effects out of `$derived` and into `$effect`. Derived values should only compute and return, never mutate external state or call impure functions",
   check: (ctx) => {
     const diagnostics: Diagnostic[] = [];
-    const lines = ctx.source.split("\n");
+    const source = ctx.source;
 
     const sideEffectPatterns = [
-      /console\./,
-      /fetch\s*\(/,
-      /localStorage\./,
-      /sessionStorage\./,
-      /document\./,
-      /window\./,
+      /console\.\w+\s*\(/,
+      /\bfetch\s*\(/,
+      /\blocalStorage\.\w+/,
+      /\bsessionStorage\.\w+/,
+      /\bdocument\.\w+/,
+      /\bwindow\.\w+/,
     ];
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (!line.includes("$derived")) continue;
+    // matches both $derived( and $derived.by( — both must be pure
+    const derivedStart = /\$derived(?:\.by)?\s*\(/g;
+    let match: RegExpExecArray | null;
 
-      // scan a small window to catch multi-line $derived blocks
-      const block = lines
-        .slice(i, Math.min(i + 5, lines.length))
-        .join(" ");
+    while ((match = derivedStart.exec(source)) !== null) {
+      // find the opening paren of the $derived(...) call itself
+      const openParenIndex = source.indexOf("(", match.index + match[0].indexOf("("));
+      if (openParenIndex === -1) continue;
 
-      if (!block.includes("$derived")) continue;
+      let depth = 1;
+      let cursor = openParenIndex + 1;
+
+      while (cursor < source.length && depth > 0) {
+        const ch = source[cursor];
+        if (ch === "(") depth++;
+        if (ch === ")") depth--;
+        cursor++;
+      }
+
+      // block is the full argument passed to $derived(...) or $derived.by(...)
+      const block = source.slice(openParenIndex + 1, cursor - 1);
+
+      const precedingSource = source.slice(0, match.index);
+      const startLine = precedingSource.split("\n").length;
+
+      const lastNewlineBefore = precedingSource.lastIndexOf("\n");
+      const column = lastNewlineBefore === -1
+        ? match.index + 1
+        : match.index - lastNewlineBefore;
 
       for (const pattern of sideEffectPatterns) {
-        if (pattern.test(block)) {
-          diagnostics.push({
-            filePath: ctx.filePath,
-            rule: noDerivedSideEffect.name,
-            severity: noDerivedSideEffect.severity,
-            message: noDerivedSideEffect.message,
-            help: noDerivedSideEffect.help,
-            line: i + 1,
-            column: line.indexOf("$derived") + 1,
-            category: noDerivedSideEffect.category,
-          });
-          break;
-        }
+        if (!pattern.test(block)) continue;
+
+        diagnostics.push({
+          filePath: ctx.filePath,
+          rule: noDerivedSideEffect.name,
+          severity: noDerivedSideEffect.severity,
+          message: noDerivedSideEffect.message,
+          help: noDerivedSideEffect.help,
+          line: startLine,
+          column,
+          category: noDerivedSideEffect.category,
+        });
+
+        // one diagnostic per $derived block is enough
+        break;
       }
     }
 
@@ -108,13 +155,12 @@ const noDerivedSideEffect: Rule = {
   },
 };
 
-// Svelte 5 runes replace the store API so mixing both creates confusion.
+// Svelte 5 runes replace the store API — mixing both creates confusion and overhead
 const preferRunes: Rule = {
   name: "prefer-runes",
   category: "State & Reactivity",
   severity: "warning",
-  message:
-    "Svelte store (`writable`/`readable`/`derived` from svelte/store) detected so consider using runes.",
+  message: "Svelte store (`writable`/`readable`/`derived` from `svelte/store`) detected — consider using runes.",
   help: "In Svelte 5, `$state` replaces `writable`, `$derived` replaces `derived`, and fine-grained reactivity makes stores unnecessary for most cases",
   check: (ctx) => {
     if (!ctx.projectInfo.usesRunes) return [];
@@ -123,7 +169,10 @@ const preferRunes: Rule = {
     const lines = ctx.source.split("\n");
 
     for (let i = 0; i < lines.length; i++) {
-      if (!lines[i].trim().match(/from\s+['"]svelte\/store['"]/)) continue;
+      if (!/from\s+['"]svelte\/store['"]/.test(lines[i])) continue;
+
+      // type-only imports carry no runtime behavior — skip them
+      if (/import\s+type[\s{]/.test(lines[i])) continue;
 
       diagnostics.push({
         filePath: ctx.filePath,

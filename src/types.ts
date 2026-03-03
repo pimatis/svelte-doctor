@@ -49,9 +49,9 @@ export interface ScanResult {
 export interface ScanOptions {
   lint?: boolean;
   deadCode?: boolean;
-  verbose?: boolean;
   scoreOnly?: boolean;
   json?: boolean;
+  quiet?: boolean;
 }
 
 export interface PackageJson {
@@ -69,7 +69,6 @@ export interface SvelteDoctorConfig {
   };
   lint?: boolean;
   deadCode?: boolean;
-  verbose?: boolean;
 }
 
 export interface RuleContext {

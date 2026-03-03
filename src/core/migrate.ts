@@ -57,74 +57,98 @@ const transformSlots = (line: string): { line: string; changed: boolean } => {
   let changed = false;
   let result = line;
 
-  // <slot name="x" /> or <slot name="x"></slot>
+  // <slot name="x" /> self-closing named slot
   const namedSlotSelfClose = /<slot\s+name="(\w+)"\s*\/>/g;
   result = result.replace(namedSlotSelfClose, (_match, name) => {
     changed = true;
     return `{@render ${name}?.()}`;
   });
 
+  // <slot name="x"></slot> named slot open+close on same line
+  const namedSlotOpenClose = /<slot\s+name="(\w+)"\s*>\s*<\/slot>/g;
+  result = result.replace(namedSlotOpenClose, (_match, name) => {
+    changed = true;
+    return `{@render ${name}?.()}`;
+  });
+
+  // <slot name="x"> named slot open tag only (closing tag on a later line)
   const namedSlotOpen = /<slot\s+name="(\w+)"\s*>/g;
   result = result.replace(namedSlotOpen, (_match, name) => {
     changed = true;
     return `{@render ${name}?.()}`;
   });
 
-  // </slot> closing tag
+  // remove </slot> only when a named open tag was replaced on this same line
+  // (the namedSlotOpen pass above converts the open tag but leaves the close)
   if (changed) {
     result = result.replace(/<\/slot>/g, "");
   }
 
-  // <slot /> (default, self-closing)
+  // <slot /> default self-closing
   result = result.replace(/<slot\s*\/>/g, () => {
     changed = true;
     return "{@render children?.()}";
   });
 
-  // <slot></slot> (default, open+close)
+  // <slot></slot> default open+close on the same line
   result = result.replace(/<slot\s*>\s*<\/slot>/g, () => {
     changed = true;
     return "{@render children?.()}";
   });
 
-  // <slot> (default, open tag only) since closing is handled below.
+  // <slot> default open tag only — closing </slot> may be on a later line
+  // only run this pass when no named slot was matched above to avoid double replacement
   if (!changed) {
-    const defaultSlotOpen = /<slot\s*>/g;
-    result = result.replace(defaultSlotOpen, () => {
+    result = result.replace(/<slot\s*>/g, () => {
       changed = true;
       return "{@render children?.()}";
     });
 
+    // remove inline </slot> that follows the opening tag on the same line
     if (changed) {
       result = result.replace(/<\/slot>/g, "");
     }
   }
 
+  // standalone </slot> closing tag with no matching open on this line
+  // happens when <slot> and </slot> are on separate lines; strip the close
+  if (!changed && /<\/slot>/.test(result)) {
+    result = result.replace(/<\/slot>/g, "");
+    changed = true;
+  }
+
   return { line: result, changed };
 };
 
-const isInsideScriptBlock = (lines: string[], index: number): boolean => {
+// builds a boolean map of which line indices are inside a <script> block
+// O(n) single pass instead of O(n²) from calling the old per-line helper
+const buildScriptLineMap = (lines: string[]): boolean[] => {
+  const map: boolean[] = new Array(lines.length).fill(false);
   let insideScript = false;
 
-  for (let i = 0; i < index; i++) {
+  for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i].trim();
     if (/^<script[\s>]/.test(trimmed)) {
       insideScript = true;
+      continue;
     }
     if (trimmed === "</script>") {
       insideScript = false;
+      continue;
     }
+    map[i] = insideScript;
   }
 
-  return insideScript;
+  return map;
 };
 
-const collectExportLetProps = (lines: string[]): { props: { name: string; defaultValue: string | null; lineIndex: number }[]; } => {
+const collectExportLetProps = (lines: string[]): { props: { name: string; defaultValue: string | null; lineIndex: number }[] } => {
   const props: { name: string; defaultValue: string | null; lineIndex: number }[] = [];
   const exportLetPattern = /^\s*export\s+let\s+(\w+)\s*(?::\s*[^=;]+)?\s*(?:=\s*(.+?))?\s*;?\s*$/;
+  const scriptLineMap = buildScriptLineMap(lines);
 
   for (let i = 0; i < lines.length; i++) {
-    if (!isInsideScriptBlock(lines, i)) continue;
+    if (!scriptLineMap[i]) continue;
 
     const match = exportLetPattern.exec(lines[i]);
     if (!match) continue;
@@ -193,8 +217,14 @@ const transformReactiveStatements = (lines: string[]): { lines: string[]; change
   let changed = false;
   const reactivePattern = /^(\s*)\$:\s+(.+)$/;
 
+  // single-pass script block tracking — avoids O(n²) from calling isInsideScriptBlock per line
+  let insideScript = false;
+
   for (let i = 0; i < result.length; i++) {
-    if (!isInsideScriptBlock(result, i)) continue;
+    const trimmed = result[i].trim();
+    if (/^<script[\s>]/.test(trimmed)) { insideScript = true; continue; }
+    if (trimmed === "</script>") { insideScript = false; continue; }
+    if (!insideScript) continue;
 
     const match = reactivePattern.exec(result[i]);
     if (!match) continue;
@@ -380,15 +410,18 @@ const transformFile = (source: string): { content: string; changes: string[] } =
   let hasLetDirectiveChange = false;
 
   for (let i = 0; i < lines.length; i++) {
-    const onResult = transformOnDirectives(lines[i]);
-    if (onResult.changed) {
-      lines[i] = onResult.line;
-      hasOnDirectiveChange = true;
-    }
-
+    // shorthand must run first: on:click (no =) must be matched before
+    // the value-assignment pass sees on:click= and transforms it, so the
+    // two patterns never overlap on the same token
     const onShorthand = transformOnDirectivesShorthand(lines[i]);
     if (onShorthand.changed) {
       lines[i] = onShorthand.line;
+      hasOnDirectiveChange = true;
+    }
+
+    const onResult = transformOnDirectives(lines[i]);
+    if (onResult.changed) {
+      lines[i] = onResult.line;
       hasOnDirectiveChange = true;
     }
 

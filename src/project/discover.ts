@@ -42,12 +42,16 @@ const hasPreprocessConfig = (dir: string): boolean => {
   const candidates = [
     path.join(dir, "svelte.config.js"),
     path.join(dir, "svelte.config.ts"),
+    path.join(dir, "svelte.config.mjs"),
+    path.join(dir, "svelte.config.cjs"),
   ];
 
   for (const configPath of candidates) {
-    if (!fs.existsSync(configPath)) continue;
-
     try {
+      const stat = fs.lstatSync(configPath);
+      // refuse to follow symlinked config files to prevent path traversal
+      if (stat.isSymbolicLink() || !stat.isFile()) continue;
+
       const content = fs.readFileSync(configPath, "utf-8");
       if (content.includes("preprocess") || content.includes("vitePreprocess")) {
         return true;
@@ -62,8 +66,11 @@ const hasPreprocessConfig = (dir: string): boolean => {
 
 // scans .svelte files for rune patterns ($state, $derived, $effect, $props)
 // early return on first match since we just need a boolean
+// compiled once at module level so repeated calls in watch mode do not recompile
+const RUNES_DETECT_PATTERN = /\$state\s*[<(]|\$derived\s*[<(]|\$effect\s*[.(]|\$props\s*[<(]/;
+
 const detectRunesUsage = (dir: string): boolean => {
-  const runesPattern = /\$state\s*[<(]|\$derived\s*[<(]|\$effect\s*[.(]|\$props\s*[<(]/;
+  const runesPattern = RUNES_DETECT_PATTERN;
 
   const check = (currentDir: string): boolean => {
     let entries: fs.Dirent[];
@@ -75,6 +82,7 @@ const detectRunesUsage = (dir: string): boolean => {
     }
 
     for (const entry of entries) {
+      if (entry.name === "." || entry.name === "..") continue;
       if (IGNORED_DIRS.has(entry.name)) continue;
       if (entry.isSymbolicLink()) continue;
 
@@ -108,12 +116,22 @@ export const discoverProject = (dir: string): ProjectInfo => {
     throw new Error(`No package.json found in ${dir}`);
   }
 
+  // use lstatSync instead of existsSync so a symlinked tsconfig.json is not trusted
+  const hasTypeScript = (() => {
+    try {
+      const stat = fs.lstatSync(path.join(dir, "tsconfig.json"));
+      return !stat.isSymbolicLink() && stat.isFile();
+    } catch {
+      return false;
+    }
+  })();
+
   return {
     rootDirectory: dir,
     projectName: pkg.name ?? path.basename(dir),
     svelteVersion: detectSvelteVersion(pkg),
     framework: detectFramework(pkg),
-    hasTypeScript: fs.existsSync(path.join(dir, "tsconfig.json")),
+    hasTypeScript,
     hasPreprocess: hasPreprocessConfig(dir),
     sourceFileCount: countFiles(dir, SOURCE_FILE_PATTERN),
     usesRunes: detectRunesUsage(dir),

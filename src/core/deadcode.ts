@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Diagnostic } from "../types.js";
+import { toPosix } from "../fs/normalize.js";
 
 interface KnipIssue {
   filePath: string;
@@ -14,7 +15,8 @@ interface KnipIssueRecords {
 
 interface KnipResults {
   issues: {
-    files: Set<string>;
+    // knip returns files as a plain array, not a Set
+    files: string[];
     dependencies: KnipIssueRecords;
     devDependencies: KnipIssueRecords;
     exports: KnipIssueRecords;
@@ -31,6 +33,12 @@ const MESSAGE_MAP: Record<string, string> = {
   duplicates: "Duplicate export",
 };
 
+const HELP_MAP: Record<string, string> = {
+  exports: "Remove the export or add it to a public API surface if it is intentional",
+  types: "Remove the type export or re-export it from an index file if consumers need it",
+  duplicates: "Consolidate duplicate exports into a single canonical export",
+};
+
 const collectRecords = (
   records: KnipIssueRecords,
   issueType: string,
@@ -41,11 +49,11 @@ const collectRecords = (
   for (const issues of Object.values(records)) {
     for (const issue of Object.values(issues)) {
       diagnostics.push({
-        filePath: path.relative(rootDir, issue.filePath),
+        filePath: toPosix(path.relative(rootDir, issue.filePath)),
         rule: issueType,
         severity: "warning",
-        message: `${MESSAGE_MAP[issueType]}: ${issue.symbol}`,
-        help: "",
+        message: `${MESSAGE_MAP[issueType] ?? issueType}: ${issue.symbol}`,
+        help: HELP_MAP[issueType] ?? "",
         line: 0,
         column: 0,
         category: "Dead Code",
@@ -101,9 +109,14 @@ export const runDeadCodeAnalysis = async (rootDir: string): Promise<Diagnostic[]
     const result = (await silenced(() => main(options))) as KnipResults;
     const diagnostics: Diagnostic[] = [];
 
-    for (const unusedFile of result.issues.files) {
+    // guard against knip returning undefined or a non-iterable for files
+    const unusedFiles: string[] = Array.isArray(result.issues?.files)
+      ? result.issues.files
+      : [];
+
+    for (const unusedFile of unusedFiles) {
       diagnostics.push({
-        filePath: path.relative(rootDir, unusedFile),
+        filePath: toPosix(path.relative(rootDir, unusedFile)),
         rule: "files",
         severity: "warning",
         message: "Unused file not imported by any other file in the project",

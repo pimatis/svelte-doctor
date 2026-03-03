@@ -14,9 +14,6 @@ import { loadConfig } from "../project/config.js";
 import { parseSvelteFile, parseScriptFile } from "../parser/svelte.js";
 import { logger, highlighter, sanitize } from "../output/logger.js";
 
-interface WatchOptions {
-  verbose: boolean;
-}
 
 const DEBOUNCE_MS = 150;
 const WATCHABLE_PATTERN = /\.(svelte|ts|js|json)$/;
@@ -41,7 +38,9 @@ const formatTime = (): string => {
 };
 
 const isInsideIgnoredDir = (relativePath: string): boolean => {
-  const segments = relativePath.split(path.sep);
+  // split on both separators so this works whether the caller passes a posix
+  // path (forward slashes) or a native Windows path (backslashes)
+  const segments = relativePath.split(/[\\/]/);
 
   for (const segment of segments) {
     if (IGNORED_DIRS.has(segment)) return true;
@@ -128,10 +127,7 @@ const getAllDiagnostics = (
   return filterIgnored(all, config);
 };
 
-export const watch = async (
-  directory: string,
-  options: WatchOptions,
-): Promise<void> => {
+export const watch = async (directory: string): Promise<void> => {
   validateDirectory(directory);
 
   let projectInfo = discoverProject(directory);
@@ -174,15 +170,13 @@ export const watch = async (
   logger.log(`  ${highlighter.dim("Initial scan:")} Score: ${colorScore(initialScore.score)} ${highlighter.error(`${errorCount} error${errorCount === 1 ? "" : "s"}`)}  ${highlighter.warn(`${warningCount} warning${warningCount === 1 ? "" : "s"}`)}`);
   logger.break();
 
-  if (options.verbose) {
-    for (const diag of initialDiags) {
-      const icon = diag.severity === "error" ? highlighter.error("✗") : highlighter.warn("⚠");
-      logger.log(`  ${icon} ${highlighter.dim(diag.filePath)} ${diag.message}`);
-    }
+  for (const diag of initialDiags) {
+    const icon = diag.severity === "error" ? highlighter.error("✗") : highlighter.warn("⚠");
+    logger.log(`  ${icon} ${highlighter.dim(diag.filePath)} ${diag.message}`);
+  }
 
-    if (initialDiags.length > 0) {
-      logger.break();
-    }
+  if (initialDiags.length > 0) {
+    logger.break();
   }
 
   logger.dim(`  Watching for changes... Press ${highlighter.bold("Ctrl+C")} to stop.`);
@@ -210,12 +204,20 @@ export const watch = async (
   };
 
   const handleFileChange = (relativePath: string) => {
-    const fullPath = path.join(directory, relativePath);
-    const posixPath = toPosix(relativePath);
+    // resolve both sides from the same base to get a stable relative path
+    // path.resolve(directory, relativePath) is safe even when relativePath is
+    // absolute on some platforms — path.relative then normalises back
+    const fullPath = path.resolve(directory, relativePath);
+    const relativeToRoot = path.relative(directory, fullPath);
+
+    // reject any path that escapes the project root (path traversal guard)
+    if (relativeToRoot.startsWith("..") || path.isAbsolute(relativeToRoot)) return;
+
+    const posixPath = toPosix(relativeToRoot);
     const safePath = sanitize(posixPath);
 
-    if (!WATCHABLE_PATTERN.test(relativePath)) return;
-    if (isInsideIgnoredDir(relativePath)) return;
+    if (!WATCHABLE_PATTERN.test(posixPath)) return;
+    if (isInsideIgnoredDir(relativeToRoot)) return;
     if (isSymlink(fullPath)) return;
 
     const existingTimer = debounceTimers.get(posixPath);
@@ -228,7 +230,7 @@ export const watch = async (
         const exists = fs.existsSync(fullPath);
 
         // project-level config changed: refresh projectInfo and rescan everything
-        if (isProjectInfoFile(relativePath)) {
+        if (isProjectInfoFile(posixPath)) {
           projectInfo = discoverProject(directory);
           userConfig = loadConfig(directory);
 
@@ -253,10 +255,12 @@ export const watch = async (
           if (exists) {
             try {
               const content = fs.readFileSync(fullPath, "utf-8");
-              if (RUNES_PATTERN.test(content)) {
+              // single test result reused for both branches to avoid running the regex twice
+              const hasRunes = RUNES_PATTERN.test(content);
+              if (hasRunes) {
                 runeFiles.add(posixPath);
               }
-              if (!RUNES_PATTERN.test(content)) {
+              if (!hasRunes) {
                 runeFiles.delete(posixPath);
               }
             } catch {}
@@ -275,13 +279,17 @@ export const watch = async (
         }
 
         if (exists) {
-          const fileDiags = scanSingleFile(fullPath, relativePath, projectInfo);
+          const fileDiags = scanSingleFile(fullPath, relativeToRoot, projectInfo);
           diagnosticsMap.set(posixPath, fileDiags);
         }
 
         const allDiags = getAllDiagnostics(diagnosticsMap, userConfig);
         const newScore = calculateScore(allDiags);
         const diff = newScore.score - previousScore;
+
+        // capture file diagnostics once so the count is consistent between
+        // the score-change branch and the status message branch below
+        const currentFileDiags = diagnosticsMap.get(posixPath) ?? [];
 
         let scoreChange = highlighter.dim(`${previousScore} → ${newScore.score}`);
         let statusMsg = "";
@@ -293,8 +301,7 @@ export const watch = async (
 
         if (diff < 0) {
           scoreChange = highlighter.error(`${previousScore} → ${newScore.score}`);
-          const fileDiags = diagnosticsMap.get(posixPath) ?? [];
-          const issueCount = fileDiags.length;
+          const issueCount = currentFileDiags.length;
           statusMsg = highlighter.error(` (⚠ ${issueCount} issue${issueCount === 1 ? "" : "s"})`);
         }
 
@@ -306,9 +313,8 @@ export const watch = async (
         const action = exists ? "changed" : "deleted";
         logger.log(`  ${timeLabel} ${safePath} ${action} Score: ${scoreChange}${statusMsg}`);
 
-        if (options.verbose && exists) {
-          const fileDiags = diagnosticsMap.get(posixPath) ?? [];
-          for (const diag of fileDiags) {
+        if (exists) {
+          for (const diag of currentFileDiags) {
             const icon = diag.severity === "error" ? highlighter.error("✗") : highlighter.warn("⚠");
             logger.log(`    ${icon} ${diag.message}${diag.line > 0 ? highlighter.dim(` :${diag.line}`) : ""}`);
           }
@@ -331,12 +337,13 @@ export const watch = async (
     });
 
     watcher.on("error", (error: NodeJS.ErrnoException) => {
-      if (error.code === "EPERM" || error.code === "EACCES") {
-        logger.error(`  Watcher permission error: ${error.message}`);
+      const code = error?.code;
+      if (code === "EPERM" || code === "EACCES") {
+        logger.error(`  Watcher permission error: ${error?.message ?? "Unknown"}`);
         return;
       }
 
-      logger.error(`  Watcher error: ${error.message}`);
+      logger.error(`  Watcher error: ${error?.message ?? "Unknown"}`);
     });
 
     process.on("SIGINT", () => {
