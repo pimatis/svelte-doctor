@@ -21,6 +21,7 @@ Examples:
   $ svelte-doctor check --json          Output machine-readable JSON (for AI agents)
   $ svelte-doctor check --score         Output only the numeric score (for CI)
   $ svelte-doctor fix                   Auto-fix issues with an AI agent
+  $ svelte-doctor fix --agent cursor    Use Cursor CLI (agent)
   $ svelte-doctor fix --agent claude    Use a specific agent
   $ svelte-doctor migrate               Auto-migrate Svelte 4 → Svelte 5
   $ svelte-doctor migrate --dry-run     Preview changes without modifying
@@ -34,7 +35,7 @@ AI Agent Integration:
   svelte-doctor is designed to work with AI coding agents.
   Use --json for structured output that agents can parse.
   Use "svelte-doctor fix" to send diagnostics directly to an agent.
-  Supported agents: Amp, Claude Code, Codex (auto-detected from PATH).
+  Supported agents: Cursor (agent), Amp, Claude Code, Codex (auto-detected from PATH).
 `);
 
 // -- check command --
@@ -77,7 +78,7 @@ Examples:
       }
     } catch (error) {
       if (flags.json) {
-        console.log(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }));
+        logger.log(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }));
         process.exit(1);
         return;
       }
@@ -91,17 +92,19 @@ Examples:
 
 // -- fix command --
 const fixCommand = new Command("fix")
-  .description("Use an AI agent (amp/claude/codex) to auto-fix all reported issues")
+  .description("Use an AI agent (Cursor/amp/claude/codex) to auto-fix all reported issues")
   .argument("[directory]", "project directory", ".")
-  .option("--agent <name>", "force a specific agent (amp, claude, codex)")
+  .option("--agent <name>", "force a specific agent (cursor, amp, claude, codex)")
   .option("--errors-only", "fix only errors first (reduces cascade risk, run again for warnings)")
   .addHelpText("after", `
 Examples:
   $ svelte-doctor fix
   $ svelte-doctor fix ./my-app
+  $ svelte-doctor fix --agent cursor
   $ svelte-doctor fix --agent claude
 
 Supported Agents (checked in this priority order):
+  cursor   Cursor     https://cursor.com/cli (installs as 'agent')
   amp      Amp        https://ampcode.com/
   claude   Claude Code  https://docs.anthropic.com/en/docs/claude-code
   codex    Codex      https://github.com/openai/codex
@@ -174,7 +177,7 @@ Examples:
       runDepsCheck(resolvedDir, flags.json ?? false);
     } catch (error) {
       if (flags.json) {
-        console.log(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }));
+        logger.log(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }));
         process.exit(1);
         return;
       }

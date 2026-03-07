@@ -171,11 +171,11 @@ Scan your project for issues and output a health score. Every run saves the scor
 
 ### `svelte-doctor fix [directory] [options]`
 
-Detects installed AI coding agents (**Amp**, **Claude Code**, **Codex**) and uses the best available one to fix all reported issues automatically. Diagnostics are sent via stdin. Runs verification after fixes; warns if errors increased. If no agent is installed, the prompt is saved to a temp file for manual use.
+Detects installed AI coding agents (**Cursor**, **Amp**, **Claude Code**, **Codex**) and uses the best available one to fix all reported issues automatically. Cursor is invoked via its CLI (`agent` command; install from [cursor.com/cli](https://cursor.com/cli)). Diagnostics are sent via stdin. Runs verification after fixes; warns if errors increased. If no agent is installed, the prompt is saved to a temp file for manual use.
 
 | Option | Description |
 |--------|-------------|
-| `--agent <name>` | Force a specific agent (amp, claude, codex) |
+| `--agent <name>` | Force a specific agent (cursor, amp, claude, codex) |
 | `--errors-only` | Fix only errors first (reduces cascade errors, run again for warnings) |
 
 ### `svelte-doctor migrate [directory] [options]`

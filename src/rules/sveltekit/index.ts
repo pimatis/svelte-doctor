@@ -44,24 +44,27 @@ const noClientFetch: Rule = {
     let functionDepth = 0;
     let insideEventHandler = false;
     let eventHandlerDepth = 0;
+    let prevWasScript = false;
 
     for (let i = 0; i < lines.length; i++) {
-      if (!scriptMap[i]) continue;
+      if (!scriptMap[i]) {
+        // reset state when leaving a script region
+        if (prevWasScript) {
+          functionDepth = 0;
+          insideEventHandler = false;
+          eventHandlerDepth = 0;
+        }
+        prevWasScript = false;
+        continue;
+      }
+      prevWasScript = true;
 
       const trimmed = lines[i].trimStart();
       if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
 
       const line = lines[i];
 
-      // detect entry into a named event / form / submit handler
-      // these are legitimate places to call fetch() directly
-      if (/\b(?:actions|handleSubmit|onSubmit|enhance)\b.*\{/.test(line) ||
-          /\bfunction\s+handle(?:Submit|Form|Action)\b/.test(line)) {
-        insideEventHandler = true;
-        eventHandlerDepth = functionDepth;
-      }
-
-      // track brace depth to know when we leave the handler scope
+      // track brace depth first to know handler scope boundaries
       for (const ch of line) {
         if (ch === "{") functionDepth++;
         if (ch === "}") {
@@ -70,6 +73,14 @@ const noClientFetch: Rule = {
             insideEventHandler = false;
           }
         }
+      }
+
+      // detect entry into a named event / form / submit handler
+      // these are legitimate places to call fetch() directly
+      if (/\b(?:actions|handleSubmit|onSubmit|enhance)\b.*\{/.test(line) ||
+          /\bfunction\s+handle(?:Submit|Form|Action)\b/.test(line)) {
+        insideEventHandler = true;
+        eventHandlerDepth = functionDepth;
       }
 
       if (insideEventHandler) continue;

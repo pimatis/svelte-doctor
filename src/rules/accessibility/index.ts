@@ -62,12 +62,13 @@ const imgMissingAlt: Rule = {
       // gather the full element opening tag which may span multiple lines
       const elementText = collectElementText(lines, i);
 
-      // accept any form of alt:
+      // accept any form of alt attribute:
       //   alt="..."   alt='...'   alt={expr}   {alt}   alt (bare boolean-style)
+      // only match alt as a standalone attribute — not inside other names like data-alt
       const hasAlt =
         /\balt\s*=/.test(elementText) ||
-        /\{alt\b/.test(elementText) ||
-        /\balt\b/.test(elementText);
+        /\{alt\}/.test(elementText) ||
+        /\s+alt(?:\s|\/?>)/.test(elementText);
 
       if (!hasAlt) {
         diagnostics.push({

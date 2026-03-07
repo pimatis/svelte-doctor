@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { Diagnostic } from "../types.js";
+import type { AgentInfo, Diagnostic } from "../types.js";
 import { highlighter, logger } from "../output/logger.js";
 import { detectAgents, getPreferredAgent } from "./detect.js";
 import { scan } from "../core/scanner.js";
@@ -108,18 +108,41 @@ const cleanupPromptFile = (promptPath: string): void => {
   } catch {}
 };
 
-// spawns the agent and feeds the prompt via stdin
-// agents like amp, claude, codex all support reading a prompt from stdin
-// this avoids shell injection and arg-length OS limits
-const spawnAgent = (command: string, cwd: string, prompt: string): Promise<number> => {
-  return new Promise((resolve) => {
-    const child = spawn(command, [], {
-      cwd,
-      stdio: ["pipe", "inherit", "inherit"],
-    });
+// Most agents read prompt from stdin; Cursor only accepts prompt as positional [prompt...] args
+const spawnAgent = (agent: AgentInfo, cwd: string, prompt: string): Promise<number> => {
+  const baseArgs = agent.getSpawnArgs?.(cwd) ?? [];
+  const args = agent.usePromptAsArg ? [...baseArgs, prompt] : baseArgs;
+  const formatOutput = agent.formatStreamingOutput;
+  const stdoutMode = formatOutput ? "pipe" : "inherit";
+  const stdinMode = agent.usePromptAsArg ? "ignore" : "pipe";
+  const stdio: [typeof stdinMode, typeof stdoutMode, "inherit"] = [stdinMode, stdoutMode, "inherit"];
 
-    child.stdin.write(prompt);
-    child.stdin.end();
+  return new Promise((resolve) => {
+    const child = spawn(agent.command, args, { cwd, stdio });
+
+    if (!agent.usePromptAsArg && child.stdin) {
+      child.stdin.write(prompt);
+      child.stdin.end();
+    }
+
+    if (formatOutput && child.stdout) {
+      let buffer = "";
+      child.stdout.on("data", (chunk: Buffer) => {
+        buffer += chunk.toString();
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const formatted = formatOutput(line);
+          if (formatted) process.stdout.write(formatted);
+        }
+      });
+      child.stdout.on("end", () => {
+        if (buffer.trim()) {
+          const formatted = formatOutput(buffer);
+          if (formatted) process.stdout.write(formatted);
+        }
+      });
+    }
 
     child.on("close", (code) => resolve(code ?? 1));
     child.on("error", () => resolve(1));
@@ -174,10 +197,10 @@ export const runFix = async (
   const prompt = FIX_PROMPT + formatDiagnosticsForAgent(diagnostics);
 
   if (agentOverride) {
-    const forced = agents.find((a) => a.command === agentOverride);
+    const forced = agents.find((a) => (a.id ?? a.command) === agentOverride);
 
     if (!forced) {
-      logger.error(`  Unknown agent: ${agentOverride}. Available: amp, claude, codex`);
+      logger.error(`  Unknown agent: ${agentOverride}. Available: cursor, amp, claude, codex`);
       return { agentExitedSuccess: false, beforeErrors, beforeWarnings };
     }
 
@@ -187,9 +210,13 @@ export const runFix = async (
     }
 
     logger.log(`  Using ${highlighter.info(forced.name)} (forced) to fix ${highlighter.warn(String(diagnostics.length))} issues...`);
+    if (forced.formatStreamingOutput) {
+      logger.dim("  Large fix sets may take several minutes. Streaming output below...");
+    }
+    logger.break();
 
     const promptPath = writePromptFile(prompt);
-    const code = await spawnAgent(forced.command, directory, prompt);
+    const code = await spawnAgent(forced, directory, prompt);
 
     if (code === 0) {
       cleanupPromptFile(promptPath);
@@ -206,6 +233,7 @@ export const runFix = async (
     logger.error("  No coding agents found on your system.");
     logger.break();
     logger.log("  Install one of the following:");
+    logger.dim("    • Cursor:      https://cursor.com/cli (installs as 'agent')");
     logger.dim("    • Amp:         https://ampcode.com/");
     logger.dim("    • Claude Code: https://docs.anthropic.com/en/docs/claude-code");
     logger.dim("    • Codex:       https://github.com/openai/codex");
@@ -228,10 +256,13 @@ export const runFix = async (
   }
 
   logger.log(`  Using ${highlighter.info(preferred.name)} to fix ${highlighter.warn(String(diagnostics.length))} issues...`);
+  if (preferred.formatStreamingOutput) {
+    logger.dim("  Large fix sets may take several minutes. Streaming output below...");
+  }
   logger.break();
 
   const promptPath = writePromptFile(prompt);
-  const code = await spawnAgent(preferred.command, directory, prompt);
+  const code = await spawnAgent(preferred, directory, prompt);
 
   if (code === 0) {
     cleanupPromptFile(promptPath);

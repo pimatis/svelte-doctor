@@ -59,7 +59,7 @@ export const scan = async (
         diagnostics: [],
         warning: "No Svelte dependency found in package.json. This project does not appear to be a Svelte project.",
       };
-      console.log(JSON.stringify(output, null, 2));
+      logger.log(JSON.stringify(output, null, 2));
       return { diagnostics: emptyDiagnostics, scoreResult: emptyScore };
     }
 
@@ -204,7 +204,7 @@ export const scan = async (
         column: d.column,
       })),
     };
-    console.log(JSON.stringify(output, null, 2));
+    logger.log(JSON.stringify(output, null, 2));
     return { diagnostics, scoreResult };
   }
 

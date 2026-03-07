@@ -32,8 +32,11 @@ const transformOnDirectives = (line: string): { line: string; changed: boolean }
   const onDirectivePattern = /\son:(\w+)(\|[a-zA-Z|]+)?=/g;
   let changed = false;
 
-  const result = line.replace(onDirectivePattern, (_match, eventName) => {
+  const result = line.replace(onDirectivePattern, (_match, eventName, modifiers) => {
     changed = true;
+    if (modifiers) {
+      return ` on${eventName}= /* TODO: modifiers ${modifiers} removed — handle manually */`;
+    }
     return ` on${eventName}=`;
   });
 
@@ -45,8 +48,11 @@ const transformOnDirectivesShorthand = (line: string): { line: string; changed: 
   const shorthandPattern = /\son:(\w+)(\|[a-zA-Z|]+)?(?=[>\s/])/g;
   let changed = false;
 
-  const result = line.replace(shorthandPattern, (_match, eventName) => {
+  const result = line.replace(shorthandPattern, (_match, eventName, modifiers) => {
     changed = true;
+    if (modifiers) {
+      return ` on${eventName} /* TODO: modifiers ${modifiers} removed — handle manually */`;
+    }
     return ` on${eventName}`;
   });
 
@@ -193,6 +199,9 @@ const transformExportLetProps = (lines: string[]): { lines: string[]; changed: b
 const isReactiveExpression = (statement: string): boolean => {
   const trimmed = statement.trim();
 
+  // await expressions are side effects, not pure derivations
+  if (/\bawait\b/.test(trimmed)) return false;
+
   // assignment with computation on the right side
   if (/^\w+\s*=\s*.+/.test(trimmed)) return true;
 
@@ -206,8 +215,8 @@ const isSideEffect = (statement: string): boolean => {
   if (/^\w+[\w.]*\s*\(/.test(trimmed)) return true;
   // if blocks
   if (trimmed.startsWith("if ")) return true;
-  // await expressions
-  if (trimmed.startsWith("await ")) return true;
+  // await expressions anywhere in the statement
+  if (/\bawait\b/.test(trimmed)) return true;
 
   return false;
 };
@@ -216,6 +225,14 @@ const transformReactiveStatements = (lines: string[]): { lines: string[]; change
   const result = [...lines];
   let changed = false;
   const reactivePattern = /^(\s*)\$:\s+(.+)$/;
+
+  // collect all prior variable declarations so we can detect existing bindings
+  // and avoid generating duplicate `const` declarations
+  const declaredVars = new Set<string>();
+  for (const line of result) {
+    const declMatch = /^\s*(?:let|const|var)\s+(\w+)/.exec(line);
+    if (declMatch) declaredVars.add(declMatch[1]);
+  }
 
   // single-pass script block tracking — avoids O(n²) from calling isInsideScriptBlock per line
   let insideScript = false;
@@ -234,9 +251,16 @@ const transformReactiveStatements = (lines: string[]): { lines: string[]; change
 
     // Multi-line block for $: { ... }.
     if (statement.trim() === "{" || statement.trim().startsWith("{")) {
-      const blockContent = extractBlockContent(result, i, statement);
-      if (blockContent) {
+      const blockEndIndex = findBlockEnd(result, i, statement);
+      if (blockEndIndex >= 0) {
         result[i] = `${indent}$effect(() => ${statement}`;
+        // append ); to the closing brace line
+        if (blockEndIndex !== i) {
+          result[blockEndIndex] = result[blockEndIndex].replace(/\}\s*$/, "});");
+        }
+        if (blockEndIndex === i) {
+          result[i] = result[i].replace(/\}\s*$/, "});");
+        }
         changed = true;
         continue;
       }
@@ -246,7 +270,13 @@ const transformReactiveStatements = (lines: string[]): { lines: string[]; change
       // $: doubled = count * 2  →  const doubled = $derived(count * 2)
       const assignMatch = /^(\w+)\s*=\s*(.+?);\s*$/.exec(statement);
       if (assignMatch) {
-        result[i] = `${indent}const ${assignMatch[1]} = $derived(${assignMatch[2]});`;
+        const varName = assignMatch[1];
+        if (declaredVars.has(varName)) {
+          result[i] = `${indent}${varName} = $derived(${assignMatch[2]});`;
+        }
+        if (!declaredVars.has(varName)) {
+          result[i] = `${indent}const ${varName} = $derived(${assignMatch[2]});`;
+        }
         changed = true;
         continue;
       }
@@ -254,7 +284,13 @@ const transformReactiveStatements = (lines: string[]): { lines: string[]; change
       // fallback for expressions without semicolon
       const assignMatchNoSemi = /^(\w+)\s*=\s*(.+)$/.exec(statement);
       if (assignMatchNoSemi) {
-        result[i] = `${indent}const ${assignMatchNoSemi[1]} = $derived(${assignMatchNoSemi[2]});`;
+        const varName = assignMatchNoSemi[1];
+        if (declaredVars.has(varName)) {
+          result[i] = `${indent}${varName} = $derived(${assignMatchNoSemi[2]});`;
+        }
+        if (!declaredVars.has(varName)) {
+          result[i] = `${indent}const ${varName} = $derived(${assignMatchNoSemi[2]});`;
+        }
         changed = true;
         continue;
       }
@@ -276,7 +312,7 @@ const transformReactiveStatements = (lines: string[]): { lines: string[]; change
   return { lines: result, changed };
 };
 
-const extractBlockContent = (lines: string[], startIndex: number, firstLine: string): boolean => {
+const findBlockEnd = (lines: string[], startIndex: number, firstLine: string): number => {
   let depth = 0;
 
   for (const ch of firstLine) {
@@ -284,17 +320,17 @@ const extractBlockContent = (lines: string[], startIndex: number, firstLine: str
     if (ch === "}") depth--;
   }
 
-  if (depth === 0) return true;
+  if (depth === 0) return startIndex;
 
   for (let i = startIndex + 1; i < lines.length; i++) {
     for (const ch of lines[i]) {
       if (ch === "{") depth++;
       if (ch === "}") depth--;
     }
-    if (depth === 0) return true;
+    if (depth === 0) return i;
   }
 
-  return false;
+  return -1;
 };
 
 const transformEventDispatcher = (lines: string[]): { lines: string[]; changed: boolean } => {
@@ -360,16 +396,27 @@ const transformLifecycleImports = (lines: string[]): { lines: string[]; changed:
 };
 
 const transformLetDirectives = (line: string): { line: string; changed: boolean } => {
-  // let:value={localVar} → remove (requires manual snippet migration)
+  // let:value={localVar} → remove the directive attribute in-place
+  // and append a TODO comment after the closing > of the element
   const letDirectivePattern = /\slet:(\w+)(?:=\{(\w+)\})?/g;
   let changed = false;
+  const removedDirectives: string[] = [];
 
   const result = line.replace(letDirectivePattern, (_match, name) => {
     changed = true;
-    return ` /* TODO: let:${name} removed. Use snippet props with {@render}. */`;
+    removedDirectives.push(name);
+    return "";
   });
 
-  return { line: result, changed };
+  if (!changed) return { line, changed: false };
+
+  const comment = ` <!-- TODO: let:${removedDirectives.join(", let:")} removed — use snippet props with {@render} -->`;
+  const closingTagIndex = result.lastIndexOf(">");
+  if (closingTagIndex >= 0) {
+    return { line: result.slice(0, closingTagIndex + 1) + comment + result.slice(closingTagIndex + 1), changed: true };
+  }
+
+  return { line: result + comment, changed: true };
 };
 
 const transformFile = (source: string): { content: string; changes: string[] } => {
@@ -404,12 +451,21 @@ const transformFile = (source: string): { content: string; changes: string[] } =
     changes.push("lifecycle → $effect");
   }
 
-  // Line-by-line transforms.
+  // Line-by-line template transforms — only run outside <script> and <style> blocks
   let hasOnDirectiveChange = false;
   let hasSlotChange = false;
   let hasLetDirectiveChange = false;
 
+  const scriptLineMap = buildScriptLineMap(lines);
+  let insideStyle = false;
+
   for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (/^<style[\s>]/.test(trimmed)) { insideStyle = true; continue; }
+    if (trimmed === "</style>") { insideStyle = false; continue; }
+
+    if (scriptLineMap[i] || insideStyle) continue;
+
     // shorthand must run first: on:click (no =) must be matched before
     // the value-assignment pass sees on:click= and transforms it, so the
     // two patterns never overlap on the same token

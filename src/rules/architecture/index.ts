@@ -129,6 +129,8 @@ const noConsole: Rule = {
     if (/\.(test|spec)\.(ts|js)$/.test(ctx.filePath)) return [];
     // dedicated logger/logging utilities are expected to call console directly
     if (/\blogger\b|\blogging\b/.test(ctx.filePath)) return [];
+    // CLI entry is the intended stdout surface
+    if (/cli\.(ts|js)$/.test(ctx.filePath)) return [];
 
     const diagnostics: Diagnostic[] = [];
     const lines = ctx.source.split("\n");

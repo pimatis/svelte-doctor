@@ -247,7 +247,7 @@ export const runDepsCheck = (dir: string, json: boolean) => {
   }
 
   if (json) {
-    console.log(JSON.stringify(result, null, 2));
+    logger.log(JSON.stringify(result, null, 2));
     return result;
   }
 

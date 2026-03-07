@@ -50,21 +50,29 @@ const noUnnecessaryState: Rule = {
       const reassignMatches = nonCommentSource.match(reassignPattern);
 
       // compound assignment: varName += 1, varName -= 1, varName *= 2, etc.
-      const compoundPattern = new RegExp(`\\b${escapedName}\\s*(?:\\+|-|\\*|\\/|%|\\*\\*|&|\\||\\^|<<|>>|>>>)?=\\s*`, "g");
+      const compoundPattern = new RegExp(`\\b${escapedName}\\s*(?:\\+|-|\\*|\\/|%|\\*\\*|&|\\||\\^|<<|>>|>>>)=`, "g");
       const compoundMatches = nonCommentSource.match(compoundPattern);
 
-      // array/object mutation methods and bracket-access writes
+      // increment/decrement: varName++ or varName-- or ++varName or --varName
+      const incDecPattern = new RegExp(`\\b${escapedName}\\s*(?:\\+\\+|--)|\\.\\+\\+${escapedName}\\b|--${escapedName}\\b`);
+      const hasIncDec = incDecPattern.test(nonCommentSource);
+
+      // array/object mutation methods
       const mutationPattern = new RegExp(
-        `\\b${escapedName}\\s*\\.\\s*(?:push|pop|splice|shift|unshift|sort|reverse|fill|set|delete|clear|add)\\s*\\(|\\b${escapedName}\\s*\\[`,
+        `\\b${escapedName}\\s*\\.\\s*(?:push|pop|splice|shift|unshift|sort|reverse|fill|set|delete|clear|add)\\s*\\(`,
       );
       const hasMutation = mutationPattern.test(nonCommentSource);
 
-      // the declaration itself counts as one match in both reassign and compound patterns
+      // property writes: varName.prop = or varName[expr] =
+      const propWritePattern = new RegExp(`\\b${escapedName}\\s*(?:\\.[\\w.]+|\\[[^\\]]+\\])\\s*=[^=]`);
+      const hasPropWrite = propWritePattern.test(nonCommentSource);
+
+      // the declaration itself counts as one match in reassign pattern
       // so >1 means there is at least one real write after the declaration
       const hasReassign = reassignMatches !== null && reassignMatches.length > 1;
-      const hasCompound = compoundMatches !== null && compoundMatches.length > 1;
+      const hasCompound = compoundMatches !== null && compoundMatches.length > 0;
 
-      if (hasReassign || hasCompound || hasMutation) continue;
+      if (hasReassign || hasCompound || hasIncDec || hasMutation || hasPropWrite) continue;
 
       diagnostics.push({
         filePath: ctx.filePath,

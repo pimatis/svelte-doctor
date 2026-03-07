@@ -3,20 +3,21 @@ import type { Diagnostic, SvelteDoctorConfig } from "../types.js";
 // matches a file path against a glob-like pattern
 // supports * (any chars except /) and ** (any chars including /)
 const matchesPattern = (filePath: string, pattern: string): boolean => {
-  // escape regex special chars except * which we handle manually
+  // escape regex special chars — * is handled separately after escaping
   const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
 
   // ** matches any path segment sequence (including slashes)
   // * matches any chars except a slash
-  const regexSource = escaped
-    .replace(/\\\*\\\*/g, "[\x00-\xFF]*")
-    .replace(/\\\*/g, "[^/]*");
+  // first replace ** (escaped as \*\*) then single * (escaped as \*)
+  const withGlobs = escaped.replace(/\*/g, "\x00");
+  const regexSource = withGlobs
+    .replace(/\x00\x00/g, ".*")
+    .replace(/\x00/g, "[^/]*");
 
   try {
     const regex = new RegExp(`^${regexSource}$`);
     return regex.test(filePath);
   } catch {
-    // malformed pattern falls back to exact substring check
     return filePath.includes(pattern);
   }
 };

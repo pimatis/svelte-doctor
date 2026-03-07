@@ -90,5 +90,13 @@ export interface Rule {
 export interface AgentInfo {
   name: string;
   command: string;
+  /** CLI flag value for --agent (defaults to command when omitted) */
+  id?: string;
+  /** Extra CLI args when spawning (e.g. Cursor needs --print --trust for non-interactive) */
+  getSpawnArgs?: (cwd: string) => string[];
+  /** If true, pass prompt as last CLI arg instead of stdin (Cursor does not read stdin) */
+  usePromptAsArg?: boolean;
+  /** Format raw streaming output (e.g. JSONL) into readable lines; return null to skip */
+  formatStreamingOutput?: (line: string) => string | null;
   available: boolean;
 }
