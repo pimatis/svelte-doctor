@@ -1,6 +1,6 @@
 {
   "name": "svelte-doctor",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Diagnose and fix performance, correctness, and architecture issues in your Svelte codebase",
   "keywords": [
     "svelte",
@@ -53,7 +53,7 @@
   },
   "scripts": {
     "dev": "tsdown --watch",
-    "build": "rm -rf dist && NODE_ENV=production tsdown && rm -f dist/*.map && sed -i '' '/sourceMappingURL/d' dist/*.mjs",
+    "build": "rm -rf dist && NODE_ENV=production tsdown && rm -f dist/*.map && node -e \"const fs=require('node:fs'); for (const file of fs.readdirSync('dist')) { if (!file.endsWith('.mjs')) continue; const path='dist/' + file; const source=fs.readFileSync(path,'utf8').replace(/^\\/\\/\\# sourceMappingURL=.*$/gm,'').replace(/\\n{3,}/g,'\\n\\n'); fs.writeFileSync(path, source, 'utf8'); }\"",
     "typecheck": "tsc --noEmit",
     "test": "node -e \"console.log('No repository test suite configured')\""
   },
