@@ -61,6 +61,10 @@ Run a single command to scan your entire codebase and receive a **0–100 health
 
 ## Installation
 
+**Runtime Requirement:** Node.js `22.18.0+`
+
+If you are on Node 18 or Node 20, upgrade Node before installing or building `svelte-doctor`.
+
 ### Global Installation (Recommended)
 
 Install `svelte-doctor` globally to use it from anywhere in your terminal.
@@ -146,6 +150,12 @@ svelte-doctor fix
 
 # Generate a secure prompt without spawning an agent
 svelte-doctor fix --dry-run-prompt
+
+# Update the global CLI from npm
+svelte-doctor update
+
+# Check whether a newer version exists
+svelte-doctor update --check
 
 # Auto-migrate Svelte 4 → Svelte 5
 svelte-doctor migrate
@@ -255,6 +265,18 @@ Check dependency health for Svelte ecosystem compatibility. Fully offline — no
 
 | Option | Description |
 |--------|-------------|
+| `--json` | Output machine-readable JSON |
+
+### `svelte-doctor update [options]`
+
+Checks the official npm registry for the latest `svelte-doctor` version and updates the **global CLI installation**. This command does not update local project dependencies.
+
+| Option | Description |
+|--------|-------------|
+| `--check` | Check for an update without installing |
+| `--dry-run` | Print the global install command without running it |
+| `--manager <npm|pnpm|bun>` | Override package manager detection |
+| `--tag <latest>` | Release tag to install (`latest` only) |
 | `--json` | Output machine-readable JSON |
 
 ---

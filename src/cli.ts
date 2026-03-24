@@ -6,9 +6,10 @@ import { runDepsCheck } from "./core/deps.js";
 import { runFix } from "./agents/fix.js";
 import { migrate } from "./core/migrate.js";
 import { printTrend } from "./core/history.js";
+import { runUpdate } from "./core/update.js";
 import { logger, highlighter } from "./output/logger.js";
 import { VERSION } from "./constants.js";
-import type { DeadCodeMode, ScanOptions, VerificationLevel } from "./types.js";
+import type { DeadCodeMode, PackageManager, ScanOptions, UpdateResult, VerificationLevel } from "./types.js";
 
 const parseDeadCodeMode = (value: string): DeadCodeMode => {
   if (value === "off" || value === "lazy" || value === "full") return value;
@@ -20,6 +21,44 @@ const parseVerifyLevel = (value: string): VerificationLevel => {
     return value;
   }
   throw new Error(`Invalid verify level "${value}". Use diagnostics, typecheck, tests, or full.`);
+};
+
+const parsePackageManager = (value: string): PackageManager => {
+  if (value === "npm" || value === "pnpm" || value === "bun") return value;
+  throw new Error(`Invalid package manager "${value}". Use npm, pnpm, or bun.`);
+};
+
+const printUpdateResult = (result: UpdateResult, json: boolean): void => {
+  if (json) {
+    logger.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  logger.break();
+  logger.log(`  ${highlighter.bold("svelte-doctor update")} v${VERSION}`);
+  logger.break();
+  logger.log(`  Current: ${highlighter.info(result.currentVersion)}`);
+  logger.log(`  Latest:  ${highlighter.info(result.latestVersion)}`);
+  logger.log(`  Manager: ${highlighter.info(result.manager)}`);
+  logger.log(`  Command: ${highlighter.dim(result.installCommand.join(" "))}`);
+  logger.break();
+
+  if (result.alreadyLatest) {
+    logger.success("  ✓ Already up to date.");
+    logger.break();
+    return;
+  }
+
+  if (result.dryRun) {
+    logger.dim("  Dry run only. No update was installed.");
+    logger.break();
+    return;
+  }
+
+  if (result.updated) {
+    logger.success(`  ✓ Updated from ${result.currentVersion} to ${result.latestVersion}.`);
+    logger.break();
+  }
 };
 
 const program = new Command()
@@ -37,6 +76,8 @@ Examples:
   $ svelte-doctor fix --dry-run-prompt  Preview the secure agent prompt
   $ svelte-doctor fix --agent cursor    Use Cursor CLI (agent)
   $ svelte-doctor fix --agent claude    Use a specific agent
+  $ svelte-doctor update                Update the global CLI from npm
+  $ svelte-doctor update --check        Check for a newer npm release
   $ svelte-doctor migrate               Auto-migrate Svelte 4 → Svelte 5
   $ svelte-doctor migrate --dry-run     Preview changes without modifying
   $ svelte-doctor watch                 Watch for changes and show live score
@@ -234,6 +275,56 @@ Examples:
     }
   });
 
+// -- update command --
+const updateCommand = new Command("update")
+  .description("Check npm for the latest svelte-doctor version and update the global CLI")
+  .option("--check", "check for updates without installing")
+  .option("--dry-run", "print the global install command without running it")
+  .option("--manager <name>", "override package manager (npm, pnpm, bun)", parsePackageManager)
+  .option("--tag <name>", "release tag to install", "latest")
+  .option("--json", "output machine-readable JSON")
+  .addHelpText("after", `
+Examples:
+  $ svelte-doctor update
+  $ svelte-doctor update --check
+  $ svelte-doctor update --dry-run
+  $ svelte-doctor update --manager npm
+`)
+  .action(async (flags: {
+    check?: boolean;
+    dryRun?: boolean;
+    manager?: PackageManager;
+    tag: string;
+    json?: boolean;
+  }) => {
+    try {
+      if (flags.tag !== "latest") {
+        throw new Error(`Unsupported tag "${flags.tag}". Only "latest" is supported.`);
+      }
+
+      const result = await runUpdate({
+        checkOnly: flags.check ?? false,
+        dryRun: flags.dryRun ?? false,
+        manager: flags.manager,
+        tag: "latest",
+        json: flags.json ?? false,
+      });
+
+      printUpdateResult(result, flags.json ?? false);
+    } catch (error) {
+      if (flags.json) {
+        logger.log(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }));
+        process.exit(1);
+        return;
+      }
+
+      if (error instanceof Error) {
+        logger.error(`  Error: ${error.message}`);
+      }
+      process.exit(1);
+    }
+  });
+
 // -- trend command --
 const trendCommand = new Command("trend")
   .description("Show score history and trend over time")
@@ -298,6 +389,7 @@ program.addCommand(fixCommand);
 program.addCommand(watchCommand);
 program.addCommand(trendCommand);
 program.addCommand(depsCommand);
+program.addCommand(updateCommand);
 program.addCommand(migrateCommand);
 
 program.action(() => {

@@ -17,6 +17,7 @@ export type RuleAppliesTo = FileKind | "all";
 export type RuleCost = "low" | "medium" | "high";
 export type DeadCodeMode = "off" | "lazy" | "full";
 export type VerificationLevel = "diagnostics" | "typecheck" | "tests" | "full";
+export type PackageManager = "npm" | "pnpm" | "bun";
 
 export interface Diagnostic {
   filePath: string;
@@ -148,4 +149,23 @@ export interface ScanCacheData {
     diagnostics: Diagnostic[];
     sourceSignature: string;
   };
+}
+
+export interface UpdateOptions {
+  checkOnly?: boolean;
+  dryRun?: boolean;
+  manager?: PackageManager;
+  tag?: "latest";
+  json?: boolean;
+}
+
+export interface UpdateResult {
+  packageName: string;
+  currentVersion: string;
+  latestVersion: string;
+  manager: PackageManager;
+  installCommand: string[];
+  updated: boolean;
+  alreadyLatest: boolean;
+  dryRun: boolean;
 }

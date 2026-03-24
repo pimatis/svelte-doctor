@@ -30,6 +30,9 @@ export const HISTORY_FILE = "history.json";
 export const CACHE_FILE = "cache.json";
 export const SCAN_CACHE_VERSION = 1;
 export const DEFAULT_FIX_MAX_FILES = 50;
+export const PACKAGE_NAME = "svelte-doctor";
+export const NPM_REGISTRY_PACKAGE_URL = "https://registry.npmjs.org/svelte-doctor";
+export const UPDATE_CHECK_TIMEOUT_MS = 8_000;
 
 // dirs that should never be scanned standard build/dependency outputs
 export const IGNORED_DIRS = new Set([
