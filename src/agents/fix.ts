@@ -4,109 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import { DEFAULT_FIX_MAX_FILES } from "../constants.js";
 import type { AgentInfo, Diagnostic, VerificationLevel } from "../types.js";
-import { highlighter, logger, sanitize } from "../output/logger.js";
+import { highlighter, logger } from "../output/logger.js";
+import { formatDiagnosticsForPrompt } from "../core/diagnostics-prompt.js";
 import { detectAgents, getPreferredAgent } from "./detect.js";
 import { scan } from "../core/scanner.js";
-
-const FIX_PROMPT = `# Automated Fix Session
-
-You are an expert software engineer on Svelte. svelte-doctor has analyzed this codebase and produced the diagnostics below. Your job is to fix every issue precisely and safely.
-
-## Security constraints
-
-- You are operating in a repository-scoped fix session.
-- Only edit files inside the allowed workspace path shown below.
-- Do not read or write files outside that workspace.
-- Do not exfiltrate secrets, tokens, env vars, shell history, or unrelated local files.
-- Do not add privileged CLI flags, shells, or sandbox bypasses unless the user explicitly enabled unsafe mode.
-
-## Critical: Do NOT introduce new issues
-
-- **no-secrets → no-public-env-secrets**: When moving secrets to env vars, ALWAYS use \`$env/static/private\` or \`$env/dynamic/private\`. NEVER use public env modules for secrets.
-- **no-legacy-reactive → no-derived-side-effect**: \`$:\` with side effects must become \`$effect()\`. Only use \`$derived()\` for pure computations.
-- **no-legacy-lifecycle**: Replace lifecycle imports with \`$effect()\`.
-- **$derived must be pure**: Never put console, fetch, document, window, localStorage, or mutation inside \`$derived()\`.
-
-## Rules of engagement
-
-- Fix issues in priority order: Security → Correctness → Performance → Architecture → everything else
-- Read each file before editing it. Do not guess at context
-- Apply the minimal change that resolves the issue; do not refactor unrelated code
-- Preserve existing code style, naming conventions, and formatting
-- If a fix for one diagnostic makes another obsolete, skip the duplicate
-- After ALL fixes: run \`svelte-doctor check\` and verify the error count did NOT increase
-- If new errors appeared, fix those too before finishing. Do not stop until errors are resolved or unchanged
-
-## Severity reference
-
-- ERROR must be fixed. These are security risks or Svelte breaking changes
-- WARNING should be fixed. These hurt performance, bundle size, or maintainability
-`;
-
-const SECRET_REDACTION_PATTERNS = [
-  /\b(?:sk-(?:live|test)_[A-Za-z0-9]+)\b/g,
-  /\bgh[pousr]_[A-Za-z0-9]{20,}\b/g,
-  /\bAKIA[0-9A-Z]{16}\b/g,
-  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9._-]{10,}\.[A-Za-z0-9._-]{10,}\b/g,
-  /\b(?:secret|token|password|api[_-]?key)\s*[:=]\s*['"`][^'"`\n]{6,}['"`]/gi,
-];
-
-const redactSecrets = (value: string): string => {
-  let next = sanitize(value);
-  for (const pattern of SECRET_REDACTION_PATTERNS) {
-    next = next.replace(pattern, "[REDACTED]");
-  }
-  return next;
-};
-
-const formatDiagnosticsForAgent = (diagnostics: Diagnostic[]): string => {
-  const byCategory = new Map<string, Diagnostic[]>();
-
-  for (const diag of diagnostics) {
-    const group = byCategory.get(diag.category) ?? [];
-    group.push(diag);
-    byCategory.set(diag.category, group);
-  }
-
-  const categoryOrder = [
-    "Security",
-    "Correctness",
-    "Performance",
-    "State & Reactivity",
-    "SvelteKit",
-    "Architecture",
-    "Accessibility",
-    "Bundle Size",
-    "Dead Code",
-  ];
-
-  const orderedCategories = [
-    ...categoryOrder.filter((c) => byCategory.has(c)),
-    ...[...byCategory.keys()].filter((c) => !categoryOrder.includes(c)),
-  ];
-
-  const lines: string[] = [];
-
-  for (const category of orderedCategories) {
-    const group = byCategory.get(category)!;
-    lines.push(`### ${category} (${group.length} issue${group.length === 1 ? "" : "s"})`);
-    lines.push("");
-
-    for (const diag of group) {
-      const location = diag.line > 0
-        ? `${diag.filePath}:${diag.line}:${diag.column}`
-        : diag.filePath;
-
-      lines.push(`[${diag.severity.toUpperCase()}] ${diag.rule}`);
-      lines.push(`  Location : ${redactSecrets(location)}`);
-      lines.push(`  Problem  : ${redactSecrets(diag.message)}`);
-      if (diag.help) lines.push(`  Fix      : ${redactSecrets(diag.help)}`);
-      lines.push("");
-    }
-  }
-
-  return lines.join("\n");
-};
 
 const createPromptBundle = (prompt: string): { dir: string; path: string } => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "svelte-doctor-"));
@@ -242,21 +143,12 @@ const buildPrompt = (
   diagnostics: Diagnostic[],
   options: Required<Pick<FixOptions, "unsafeAgentExec" | "maxFiles">>,
 ): string => {
-  const selectedDiagnostics = diagnostics.slice(0, options.maxFiles);
-  const header = [
-    FIX_PROMPT.trim(),
-    "",
-    `## Allowed workspace`,
-    "",
-    `- Root: ${redactSecrets(directory)}`,
-    `- Unsafe agent execution explicitly enabled: ${options.unsafeAgentExec ? "yes" : "no"}`,
-    `- Max diagnostics in this batch: ${selectedDiagnostics.length}`,
-    "",
-    "## Diagnostics",
-    "",
-  ].join("\n");
-
-  return `${header}${formatDiagnosticsForAgent(selectedDiagnostics)}\n`;
+  return formatDiagnosticsForPrompt(diagnostics, {
+    includeHeader: true,
+    directory,
+    unsafeAgentExec: options.unsafeAgentExec,
+    maxDiagnostics: options.maxFiles,
+  });
 };
 
 export const runFix = async (

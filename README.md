@@ -52,8 +52,10 @@ Run a single command to scan your entire codebase and receive a **0–100 health
 
 - **45 Diagnostic Rules** covering correctness, performance, security, architecture, and SvelteKit reliability
 - **Safe-by-default AI Fix** flow with secure temp prompts, opt-in unsafe execution, and post-fix verification
+- **AI-Friendly Copy Export** via `check --copy` with clipboard-first fallback behavior
 - **Svelte 4→5 Auto-Migration** with deterministic codemods
 - **Cached Scans + Incremental Watch** for faster repeat checks and tighter feedback loops
+- **Automatic `.gitignore` Sync** for the generated `.svelte-doctor/` cache/history directory
 - **Dependency Health Checks** for ecosystem compatibility
 - **Zero Configuration** works out of the box
 
@@ -142,6 +144,9 @@ svelte-doctor check
 # Force a cold scan without cache
 svelte-doctor check --no-cache
 
+# Copy diagnostics into an AI-friendly prompt
+svelte-doctor check --copy
+
 # Just the score (useful for CI)
 svelte-doctor check --score
 
@@ -168,6 +173,7 @@ svelte-doctor trend
 
 # Check dependency health
 svelte-doctor deps
+
 ```
 
 ---
@@ -176,7 +182,7 @@ svelte-doctor deps
 
 ### `svelte-doctor check [directory] [options]`
 
-Scan your project for issues and output a health score. Every run saves the score to `.svelte-doctor/history.json`, including `--json` and `--score` modes, so your CI pipeline contributes to the trend graph.
+Scan your project for issues and output a health score. Every run saves the score to `.svelte-doctor/history.json`, including `--json` and `--score` modes, so your CI pipeline contributes to the trend graph. When `svelte-doctor` first creates its local `.svelte-doctor/` directory, it also ensures the scanned project's `.gitignore` contains a `.svelte-doctor` entry.
 
 | Option | Description |
 |--------|-------------|
@@ -185,6 +191,23 @@ Scan your project for issues and output a health score. Every run saves the scor
 | `--no-lint` | Skip lint rules |
 | `--no-dead-code` | Skip dead code detection |
 | `--no-cache` | Disable the on-disk scan cache for this run |
+| `--copy` | Export diagnostics in an AI-friendly format |
+| `--copy-output <clipboard\|stdout\|file>` | Choose clipboard, stdout, or file output |
+| `--copy-file <path>` | Write export output to a file inside the scanned project root |
+| `--copy-max <count>` | Limit how many diagnostics are included in the export |
+| `--copy-errors-only` | Export only error-level diagnostics |
+| `--copy-format <prompt\|raw>` | Export as a structured prompt or raw text |
+
+`--copy` is designed for cases where you want to paste diagnostics into a different AI agent instead of using `svelte-doctor fix`. The default mode tries the system clipboard first, then falls back to stdout if no clipboard integration is available. If you need deterministic output for scripts, use `--copy-output file`.
+
+Examples:
+
+```bash
+svelte-doctor check --copy
+svelte-doctor check --copy --copy-errors-only
+svelte-doctor check --copy --copy-output stdout
+svelte-doctor check --copy --copy-output file --copy-file .svelte-doctor/diagnostics.txt
+```
 
 ### `svelte-doctor fix [directory] [options]`
 

@@ -1,7 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
-import { CACHE_DIR, CACHE_FILE, SCAN_CACHE_VERSION } from "../constants.js";
+import {
+  CACHE_DIR,
+  CACHE_FILE,
+  GITIGNORE_SVELTE_DOCTOR_ENTRY,
+  SCAN_CACHE_VERSION,
+} from "../constants.js";
 import type { ProjectFileManifest, ScanCacheData, ScanCacheEntry } from "../types.js";
+import { ensureProjectGitignoreEntry } from "../project/gitignore.js";
 
 // Cache lives under .svelte-doctor so it stays local to the target project.
 // We keep the path helpers tiny and centralized because scan, watch, and
@@ -23,6 +29,7 @@ const ensureCacheDir = (directory: string): boolean => {
     return !stat.isSymbolicLink() && stat.isDirectory();
   } catch {
     try {
+      ensureProjectGitignoreEntry(directory, GITIGNORE_SVELTE_DOCTOR_ENTRY);
       fs.mkdirSync(dir, { recursive: true });
       return true;
     } catch {

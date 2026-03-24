@@ -18,6 +18,8 @@ export type RuleCost = "low" | "medium" | "high";
 export type DeadCodeMode = "off" | "lazy" | "full";
 export type VerificationLevel = "diagnostics" | "typecheck" | "tests" | "full";
 export type PackageManager = "npm" | "pnpm" | "bun";
+export type CopyOutput = "clipboard" | "stdout" | "file";
+export type CopyFormat = "prompt" | "raw";
 
 export interface Diagnostic {
   filePath: string;
@@ -168,4 +170,20 @@ export interface UpdateResult {
   updated: boolean;
   alreadyLatest: boolean;
   dryRun: boolean;
+}
+
+export interface CopyOptions {
+  enabled?: boolean;
+  output?: CopyOutput;
+  filePath?: string;
+  maxDiagnostics?: number;
+  errorsOnly?: boolean;
+  format?: CopyFormat;
+}
+
+export interface CopyResult {
+  copied: boolean;
+  output: CopyOutput | "stdout-fallback";
+  filePath?: string;
+  diagnosticsIncluded: number;
 }

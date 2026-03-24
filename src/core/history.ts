@@ -2,7 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import pc from "picocolors";
 import { logger, highlighter, sanitize } from "../output/logger.js";
-import { VERSION } from "../constants.js";
+import {
+  GITIGNORE_SVELTE_DOCTOR_ENTRY,
+  VERSION,
+} from "../constants.js";
+import { ensureProjectGitignoreEntry } from "../project/gitignore.js";
 
 const HISTORY_DIR = ".svelte-doctor";
 const HISTORY_FILE = "history.json";
@@ -61,6 +65,7 @@ const ensureDirectory = (directory: string): boolean => {
   }
 
   try {
+    ensureProjectGitignoreEntry(directory, GITIGNORE_SVELTE_DOCTOR_ENTRY);
     fs.mkdirSync(dirPath, { recursive: true });
     return true;
   } catch {

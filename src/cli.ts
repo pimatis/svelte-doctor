@@ -7,9 +7,18 @@ import { runFix } from "./agents/fix.js";
 import { migrate } from "./core/migrate.js";
 import { printTrend } from "./core/history.js";
 import { runUpdate } from "./core/update.js";
+import { exportDiagnosticsForAi } from "./core/export.js";
 import { logger, highlighter } from "./output/logger.js";
-import { VERSION } from "./constants.js";
-import type { DeadCodeMode, PackageManager, ScanOptions, UpdateResult, VerificationLevel } from "./types.js";
+import { DEFAULT_COPY_MAX_DIAGNOSTICS, VERSION } from "./constants.js";
+import type {
+  CopyFormat,
+  CopyOutput,
+  DeadCodeMode,
+  PackageManager,
+  ScanOptions,
+  UpdateResult,
+  VerificationLevel,
+} from "./types.js";
 
 const parseDeadCodeMode = (value: string): DeadCodeMode => {
   if (value === "off" || value === "lazy" || value === "full") return value;
@@ -26,6 +35,16 @@ const parseVerifyLevel = (value: string): VerificationLevel => {
 const parsePackageManager = (value: string): PackageManager => {
   if (value === "npm" || value === "pnpm" || value === "bun") return value;
   throw new Error(`Invalid package manager "${value}". Use npm, pnpm, or bun.`);
+};
+
+const parseCopyOutput = (value: string): CopyOutput => {
+  if (value === "clipboard" || value === "stdout" || value === "file") return value;
+  throw new Error(`Invalid copy output "${value}". Use clipboard, stdout, or file.`);
+};
+
+const parseCopyFormat = (value: string): CopyFormat => {
+  if (value === "prompt" || value === "raw") return value;
+  throw new Error(`Invalid copy format "${value}". Use prompt or raw.`);
 };
 
 const printUpdateResult = (result: UpdateResult, json: boolean): void => {
@@ -70,6 +89,7 @@ Examples:
   $ svelte-doctor check                 Scan current directory
   $ svelte-doctor check ./my-app        Scan a specific project
   $ svelte-doctor check --no-cache      Force a cold scan
+  $ svelte-doctor check --copy          Copy diagnostics for another AI agent
   $ svelte-doctor check --json          Output machine-readable JSON (for AI agents)
   $ svelte-doctor check --score         Output only the numeric score (for CI)
   $ svelte-doctor fix                   Auto-fix issues with an AI agent
@@ -103,17 +123,42 @@ const checkCommand = new Command("check")
   .option("--no-cache", "disable scan cache for this run")
   .option("--score", "output only the numeric score (CI mode)")
   .option("--json", "output machine-readable JSON (for AI agents and scripts)")
+  .option("--copy", "export diagnostics in an AI-friendly format")
+  .option("--copy-output <target>", "copy target: clipboard, stdout, or file", parseCopyOutput, "clipboard")
+  .option("--copy-file <path>", "write AI export to a file inside the scanned project root")
+  .option("--copy-max <count>", "maximum diagnostics to include in copy/export output", String(DEFAULT_COPY_MAX_DIAGNOSTICS))
+  .option("--copy-errors-only", "export only error diagnostics in copy/export output")
+  .option("--copy-format <format>", "copy format: prompt or raw", parseCopyFormat, "prompt")
   .addHelpText("after", `
 Examples:
   $ svelte-doctor check
   $ svelte-doctor check ./my-app
+  $ svelte-doctor check --copy
+  $ svelte-doctor check --copy --copy-errors-only
+  $ svelte-doctor check --copy --copy-output stdout
+  $ svelte-doctor check --copy --copy-output file --copy-file .svelte-doctor/diagnostics.txt
   $ svelte-doctor check --json | jq '.diagnostics[] | select(.severity == "error")'
   $ svelte-doctor check --score
   $ svelte-doctor check --no-dead-code
 `)
-  .action(async (directory: string, flags: { lint: boolean; deadCode: boolean; cache: boolean; score: boolean; json: boolean }) => {
+  .action(async (directory: string, flags: {
+    lint: boolean;
+    deadCode: boolean;
+    cache: boolean;
+    score: boolean;
+    json: boolean;
+    copy?: boolean;
+    copyOutput: CopyOutput;
+    copyFile?: string;
+    copyMax: string;
+    copyErrorsOnly?: boolean;
+    copyFormat: CopyFormat;
+  }) => {
     try {
       const resolvedDir = path.resolve(directory);
+      if (flags.copy && (flags.json || flags.score) && flags.copyOutput !== "file") {
+        throw new Error("Use --copy-output file when combining --copy with --json or --score.");
+      }
 
       if (!flags.score && !flags.json) {
         logger.break();
@@ -130,6 +175,32 @@ Examples:
       };
 
       const result = await scan(resolvedDir, options);
+      const parsedCopyMax = parseInt(flags.copyMax, 10);
+
+      if (flags.copy) {
+        const exportResult = await exportDiagnosticsForAi(resolvedDir, result.diagnostics, {
+          enabled: true,
+          output: flags.copyOutput,
+          filePath: flags.copyFile,
+          maxDiagnostics: Number.isFinite(parsedCopyMax) && parsedCopyMax > 0
+            ? parsedCopyMax
+            : DEFAULT_COPY_MAX_DIAGNOSTICS,
+          errorsOnly: flags.copyErrorsOnly ?? false,
+          format: flags.copyFormat,
+        });
+
+        if (!flags.score && !flags.json) {
+          if (exportResult.output === "clipboard") {
+            logger.success(`  ✓ Copied ${exportResult.diagnosticsIncluded} diagnostic(s) to the clipboard.`);
+          } else if (exportResult.output === "stdout-fallback") {
+            logger.warn("  Clipboard unavailable. Printed AI export to stdout instead.");
+          } else if (exportResult.output === "stdout") {
+            logger.success(`  ✓ Printed ${exportResult.diagnosticsIncluded} diagnostic(s) to stdout.`);
+          } else if (exportResult.output === "file" && exportResult.filePath) {
+            logger.success(`  ✓ Wrote AI export to ${exportResult.filePath}`);
+          }
+        }
+      }
 
       if (result.diagnostics.some((d) => d.severity === "error")) {
         process.exitCode = 1;
