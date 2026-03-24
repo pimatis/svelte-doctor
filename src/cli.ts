@@ -8,7 +8,19 @@ import { migrate } from "./core/migrate.js";
 import { printTrend } from "./core/history.js";
 import { logger, highlighter } from "./output/logger.js";
 import { VERSION } from "./constants.js";
-import type { ScanOptions } from "./types.js";
+import type { DeadCodeMode, ScanOptions, VerificationLevel } from "./types.js";
+
+const parseDeadCodeMode = (value: string): DeadCodeMode => {
+  if (value === "off" || value === "lazy" || value === "full") return value;
+  throw new Error(`Invalid dead-code mode "${value}". Use off, lazy, or full.`);
+};
+
+const parseVerifyLevel = (value: string): VerificationLevel => {
+  if (value === "diagnostics" || value === "typecheck" || value === "tests" || value === "full") {
+    return value;
+  }
+  throw new Error(`Invalid verify level "${value}". Use diagnostics, typecheck, tests, or full.`);
+};
 
 const program = new Command()
   .name("svelte-doctor")
@@ -18,14 +30,17 @@ const program = new Command()
 Examples:
   $ svelte-doctor check                 Scan current directory
   $ svelte-doctor check ./my-app        Scan a specific project
+  $ svelte-doctor check --no-cache      Force a cold scan
   $ svelte-doctor check --json          Output machine-readable JSON (for AI agents)
   $ svelte-doctor check --score         Output only the numeric score (for CI)
   $ svelte-doctor fix                   Auto-fix issues with an AI agent
+  $ svelte-doctor fix --dry-run-prompt  Preview the secure agent prompt
   $ svelte-doctor fix --agent cursor    Use Cursor CLI (agent)
   $ svelte-doctor fix --agent claude    Use a specific agent
   $ svelte-doctor migrate               Auto-migrate Svelte 4 → Svelte 5
   $ svelte-doctor migrate --dry-run     Preview changes without modifying
   $ svelte-doctor watch                 Watch for changes and show live score
+  $ svelte-doctor watch --dead-code lazy  Re-run dead code lazily in watch mode
 
 Exit Codes:
   0  No errors found
@@ -44,6 +59,7 @@ const checkCommand = new Command("check")
   .argument("[directory]", "project directory to scan", ".")
   .option("--no-lint", "skip lint rules")
   .option("--no-dead-code", "skip dead code detection")
+  .option("--no-cache", "disable scan cache for this run")
   .option("--score", "output only the numeric score (CI mode)")
   .option("--json", "output machine-readable JSON (for AI agents and scripts)")
   .addHelpText("after", `
@@ -54,7 +70,7 @@ Examples:
   $ svelte-doctor check --score
   $ svelte-doctor check --no-dead-code
 `)
-  .action(async (directory: string, flags: { lint: boolean; deadCode: boolean; score: boolean; json: boolean }) => {
+  .action(async (directory: string, flags: { lint: boolean; deadCode: boolean; cache: boolean; score: boolean; json: boolean }) => {
     try {
       const resolvedDir = path.resolve(directory);
 
@@ -67,6 +83,7 @@ Examples:
       const options: ScanOptions = {
         lint: flags.lint,
         deadCode: flags.deadCode,
+        cache: flags.cache,
         scoreOnly: flags.score,
         json: flags.json,
       };
@@ -96,12 +113,19 @@ const fixCommand = new Command("fix")
   .argument("[directory]", "project directory", ".")
   .option("--agent <name>", "force a specific agent (cursor, amp, claude, codex)")
   .option("--errors-only", "fix only errors first (reduces cascade risk, run again for warnings)")
+  .option("--unsafe-agent-exec", "allow agent-specific privileged execution flags (opt-in only)")
+  .option("--dry-run-prompt", "write the agent prompt to a secure temp file without spawning an agent")
+  .option("--verify-level <level>", "verification depth: diagnostics, typecheck, tests, or full", parseVerifyLevel, "diagnostics")
+  .option("--max-files <count>", "maximum diagnostics to include in a single agent batch", "50")
   .addHelpText("after", `
 Examples:
   $ svelte-doctor fix
   $ svelte-doctor fix ./my-app
   $ svelte-doctor fix --agent cursor
   $ svelte-doctor fix --agent claude
+  $ svelte-doctor fix --dry-run-prompt
+  $ svelte-doctor fix --verify-level full
+  $ svelte-doctor fix --unsafe-agent-exec
 
 Supported Agents (checked in this priority order):
   cursor   Cursor     https://cursor.com/cli (installs as 'agent')
@@ -109,9 +133,20 @@ Supported Agents (checked in this priority order):
   claude   Claude Code  https://docs.anthropic.com/en/docs/claude-code
   codex    Codex      https://github.com/openai/codex
 
+Security:
+  Agent execution is safe-by-default.
+  Privileged agent flags are disabled unless you pass --unsafe-agent-exec.
+
 Tip: Use --errors-only to fix critical issues first and reduce cascade errors.
 `)
-  .action(async (directory: string, flags: { agent?: string; errorsOnly?: boolean }) => {
+  .action(async (directory: string, flags: {
+    agent?: string;
+    errorsOnly?: boolean;
+    unsafeAgentExec?: boolean;
+    dryRunPrompt?: boolean;
+    verifyLevel: VerificationLevel;
+    maxFiles: string;
+  }) => {
     try {
       const resolvedDir = path.resolve(directory);
 
@@ -127,8 +162,16 @@ Tip: Use --errors-only to fix critical issues first and reduce cascade errors.
         logger.success("  ✓ No errors to fix. Run without --errors-only to fix warnings.");
         return;
       }
-      const fixResult = await runFix(resolvedDir, diagnostics, flags.agent);
-      if (fixResult?.errorsIncreased) {
+
+      const parsedMaxFiles = parseInt(flags.maxFiles, 10);
+      const fixResult = await runFix(resolvedDir, diagnostics, {
+        agentOverride: flags.agent,
+        unsafeAgentExec: flags.unsafeAgentExec ?? false,
+        dryRunPrompt: flags.dryRunPrompt ?? false,
+        verifyLevel: flags.verifyLevel,
+        maxFiles: Number.isFinite(parsedMaxFiles) && parsedMaxFiles > 0 ? parsedMaxFiles : 50,
+      });
+      if (fixResult?.errorsIncreased || fixResult?.verificationPassed === false) {
         process.exitCode = 1;
       }
     } catch (error) {
@@ -143,15 +186,17 @@ Tip: Use --errors-only to fix critical issues first and reduce cascade errors.
 const watchCommand = new Command("watch")
   .description("Watch for file changes and show live diagnostics")
   .argument("[directory]", "project directory", ".")
+  .option("--dead-code <mode>", "dead code mode: off, lazy, or full", parseDeadCodeMode, "off")
   .addHelpText("after", `
 Examples:
   $ svelte-doctor watch
   $ svelte-doctor watch ./my-app
+  $ svelte-doctor watch --dead-code lazy
 `)
-  .action(async (directory: string) => {
+  .action(async (directory: string, flags: { deadCode: DeadCodeMode }) => {
     try {
       const resolvedDir = path.resolve(directory);
-      await watch(resolvedDir);
+      await watch(resolvedDir, flags.deadCode);
     } catch (error) {
       if (error instanceof Error) {
         logger.error(`  Error: ${error.message}`);

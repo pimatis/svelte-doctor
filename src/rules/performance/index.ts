@@ -41,6 +41,8 @@ const noEffectForDerived: Rule = {
   severity: "warning",
   message: "$effect used to derive a single value — use $derived instead",
   help: "Replace `$effect(() => { x = expr })` with `const x = $derived(expr)` for better reactivity tracking and fewer re-runs.",
+  appliesTo: ["svelte"],
+  cost: "medium",
   check: (ctx: RuleContext): Diagnostic[] => {
     if (!ctx.filePath.endsWith(".svelte")) return [];
 
@@ -123,6 +125,8 @@ const eachMissingKey: Rule = {
   severity: "warning",
   message: "{#each} block is missing a key expression",
   help: "Add a key expression like `{#each items as item (item.id)}` so Svelte can efficiently diff list updates instead of re-creating DOM nodes.",
+  appliesTo: ["svelte"],
+  cost: "low",
   check: (ctx: RuleContext): Diagnostic[] => {
     // {#each} is a Svelte template construct — irrelevant in plain .ts/.js files
     if (!ctx.filePath.endsWith(".svelte")) return [];
@@ -171,6 +175,8 @@ const noInlineObject: Rule = {
   severity: "warning",
   message: "Inline object or array literal in template expression causes re-creation on every render",
   help: "Extract the value into a `$derived` or a module-level constant to avoid allocating a new reference each render cycle.",
+  appliesTo: ["svelte"],
+  cost: "low",
   check: (ctx: RuleContext): Diagnostic[] => {
     if (!ctx.filePath.endsWith(".svelte")) return [];
 
@@ -220,6 +226,8 @@ const noTransitionAll: Rule = {
   severity: "warning",
   message: "`transition: all` is expensive — specify individual properties instead.",
   help: "Replace `transition: all` with explicit properties like `transition: opacity 0.2s, transform 0.2s` to reduce layout and paint cost.",
+  appliesTo: ["svelte"],
+  cost: "low",
   check: (ctx: RuleContext): Diagnostic[] => {
     const diagnostics: Diagnostic[] = [];
     const lines = ctx.source.split("\n");
@@ -250,9 +258,146 @@ const noTransitionAll: Rule = {
   },
 };
 
+const noLargeInlineListTransform: Rule = {
+  name: "no-large-inline-list-transform",
+  category: "Performance",
+  severity: "warning",
+  message: "Inline list transform chain in template can re-run on every render",
+  help: "Move `.filter()`, `.map()`, or `.sort()` chains out of the template into `$derived()` or a cached helper.",
+  appliesTo: ["svelte"],
+  cost: "low",
+  check: (ctx: RuleContext): Diagnostic[] => {
+    const diagnostics: Diagnostic[] = [];
+    const scriptMap = buildScriptLineMap(ctx.source);
+    const styleMap = buildStyleLineMap(ctx.source);
+    const pattern = /\{[^}\n]*(?:\.\s*filter\([^}]+\)|\.\s*map\([^}]+\)|\.\s*sort\([^}]+\)){2,}[^}\n]*\}/;
+
+    for (let i = 0; i < ctx.lines.length; i++) {
+      if (scriptMap[i] || styleMap[i]) continue;
+      const match = pattern.exec(ctx.lines[i]);
+      if (!match) continue;
+
+      diagnostics.push({
+        filePath: ctx.filePath,
+        rule: noLargeInlineListTransform.name,
+        severity: noLargeInlineListTransform.severity,
+        message: noLargeInlineListTransform.message,
+        help: noLargeInlineListTransform.help,
+        line: i + 1,
+        column: match.index + 1,
+        category: noLargeInlineListTransform.category,
+      });
+    }
+
+    return diagnostics;
+  },
+};
+
+const noRepeatedDerivedAllocation: Rule = {
+  name: "no-repeated-derived-allocation",
+  category: "Performance",
+  severity: "warning",
+  message: "Repeated allocation inside `$derived()` can churn memory and recomputation cost",
+  help: "Avoid allocating new arrays or objects in heavy `$derived()` blocks unless the allocation is required and bounded.",
+  appliesTo: ["svelte"],
+  cost: "medium",
+  check: (ctx: RuleContext): Diagnostic[] => {
+    const diagnostics: Diagnostic[] = [];
+
+    for (let i = 0; i < ctx.lines.length; i++) {
+      const line = ctx.lines[i];
+      if (!/\$derived\s*\(/.test(line)) continue;
+
+      const window = ctx.lines.slice(i, Math.min(ctx.lines.length, i + 5)).join(" ");
+      if (!/(new\s+Map|new\s+Set|new\s+Array|\.map\(|\.filter\(|\.reduce\(|\[[^\]]+\]|\{[^}]+\})/.test(window)) {
+        continue;
+      }
+
+      diagnostics.push({
+        filePath: ctx.filePath,
+        rule: noRepeatedDerivedAllocation.name,
+        severity: noRepeatedDerivedAllocation.severity,
+        message: noRepeatedDerivedAllocation.message,
+        help: noRepeatedDerivedAllocation.help,
+        line: i + 1,
+        column: Math.max(1, line.indexOf("$derived") + 1),
+        category: noRepeatedDerivedAllocation.category,
+      });
+    }
+
+    return diagnostics;
+  },
+};
+
+const noBlockingSyncFsInHotCliPath: Rule = {
+  name: "no-blocking-sync-fs-in-hot-cli-path",
+  category: "Performance",
+  severity: "warning",
+  message: "Synchronous fs access in a hot CLI path can slow large scans",
+  help: "Prefer shared manifests, caching, or async APIs for repeated filesystem access on hot paths.",
+  appliesTo: ["script"],
+  cost: "low",
+  check: (ctx: RuleContext): Diagnostic[] => {
+    if (/\.(test|spec)\.(ts|js)$/.test(ctx.filePath)) return [];
+    if (/(?:^|[\\/])tests?[\\/]/.test(ctx.filePath)) return [];
+    if (!/(?:^|\/)(?:cli|scanner|hooks\.server|server)\.(ts|js)$/.test(ctx.filePath)) return [];
+
+    const matches: Array<{ line: number; column: number }> = [];
+
+    for (let i = 0; i < ctx.lines.length; i++) {
+      const line = ctx.lines[i];
+      const match = /\bfs\.(readFileSync|readdirSync|statSync|lstatSync|existsSync)\b/.exec(line);
+      if (!match) continue;
+      matches.push({ line: i + 1, column: match.index + 1 });
+    }
+
+    if (matches.length < 3) return [];
+
+    return matches.map((match) => ({
+      filePath: ctx.filePath,
+      rule: noBlockingSyncFsInHotCliPath.name,
+      severity: noBlockingSyncFsInHotCliPath.severity,
+      message: noBlockingSyncFsInHotCliPath.message,
+      help: noBlockingSyncFsInHotCliPath.help,
+      line: match.line,
+      column: match.column,
+      category: noBlockingSyncFsInHotCliPath.category,
+    }));
+  },
+};
+
+const preferLazyDeadcodePhase: Rule = {
+  name: "prefer-lazy-deadcode-phase",
+  category: "Performance",
+  severity: "warning",
+  message: "Heavy dead-code analysis is enabled in watch mode",
+  help: "Prefer `watch.deadCode = \"off\"` or `\"lazy\"` for faster feedback loops unless you explicitly need full dead-code scans on each change.",
+  appliesTo: ["script"],
+  cost: "low",
+  check: (ctx: RuleContext): Diagnostic[] => {
+    if (ctx.filePath !== "svelte-doctor.config.json" && ctx.filePath !== "package.json") return [];
+    if (!/["']deadCode["']\s*:\s*["']full["']/.test(ctx.source)) return [];
+
+    return [{
+      filePath: ctx.filePath,
+      rule: preferLazyDeadcodePhase.name,
+      severity: preferLazyDeadcodePhase.severity,
+      message: preferLazyDeadcodePhase.message,
+      help: preferLazyDeadcodePhase.help,
+      line: 1,
+      column: 1,
+      category: preferLazyDeadcodePhase.category,
+    }];
+  },
+};
+
 export const performanceRules: Rule[] = [
   noEffectForDerived,
   eachMissingKey,
   noInlineObject,
   noTransitionAll,
+  noLargeInlineListTransform,
+  noRepeatedDerivedAllocation,
+  noBlockingSyncFsInHotCliPath,
+  preferLazyDeadcodePhase,
 ];

@@ -127,6 +127,7 @@ const noConsole: Rule = {
 
     // test files intentionally use console for output — skip them
     if (/\.(test|spec)\.(ts|js)$/.test(ctx.filePath)) return [];
+    if (/(?:^|[\\/])tests?[\\/]/.test(ctx.filePath)) return [];
     // dedicated logger/logging utilities are expected to call console directly
     if (/\blogger\b|\blogging\b/.test(ctx.filePath)) return [];
     // CLI entry is the intended stdout surface

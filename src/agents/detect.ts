@@ -2,7 +2,24 @@ import fs from "node:fs";
 import path from "node:path";
 import type { AgentInfo } from "../types.js";
 import { formatClaudeLine } from "./claude/output.js";
-import { formatCursorLine } from "./cursor/output.js";
+
+const formatCursorLine = (line: string): string | null => {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+
+  try {
+    const event = JSON.parse(trimmed) as Record<string, unknown>;
+    const message =
+      (typeof event.message === "string" && event.message) ||
+      (typeof event.text === "string" && event.text) ||
+      (typeof event.output === "string" && event.output);
+
+    if (message) return `  ${message}\n`;
+    return null;
+  } catch {
+    return `  ${trimmed}\n`;
+  }
+};
 
 // resolves whether a command exists by searching PATH entries directly
 // this avoids shell injection risks that come with execSync("which ...")
@@ -36,14 +53,14 @@ export const detectAgents = (): AgentInfo[] => [
     command: "agent",
     id: "cursor",
     available: isCommandAvailable("agent"),
-    getSpawnArgs: (cwd) => [
+    getSpawnArgs: (cwd, mode) => [
       "--print",
-      "--trust",
       "--workspace",
       cwd,
       "--output-format",
       "stream-json",
       "--stream-partial-output",
+      ...(mode === "unsafe" ? ["--trust"] : []),
     ],
     usePromptAsArg: true,
     formatStreamingOutput: formatCursorLine,
@@ -61,7 +78,12 @@ export const detectAgents = (): AgentInfo[] => [
     command: "codex",
     id: "codex",
     available: isCommandAvailable("codex"),
-    getSpawnArgs: (cwd) => ["exec", "-C", cwd, "--dangerously-bypass-approvals-and-sandbox"],
+    getSpawnArgs: (cwd, mode) => [
+      "exec",
+      "-C",
+      cwd,
+      ...(mode === "unsafe" ? ["--dangerously-bypass-approvals-and-sandbox"] : []),
+    ],
   },
 ];
 

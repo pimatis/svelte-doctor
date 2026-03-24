@@ -56,6 +56,8 @@ const noUnsafeHtml: Rule = {
   severity: "error",
   message: "Usage of `{@html}` detected — this is an XSS risk",
   help: "Avoid `{@html}` with untrusted data. Sanitize content with a library like `dompurify` before rendering, or restructure to avoid raw HTML injection entirely.",
+  appliesTo: ["svelte"],
+  cost: "low",
   check: (ctx) => {
     // {@html} is a template directive — it only exists in .svelte template sections
     if (!ctx.filePath.endsWith(".svelte")) return [];
@@ -132,6 +134,8 @@ const noSecrets: Rule = {
   severity: "error",
   message: "Possible hardcoded secret or API key detected",
   help: "Move secrets to environment variables and access them through `$env/static/private` or a server-side `.env` file. Never commit secrets to source control.",
+  appliesTo: ["all"],
+  cost: "low",
   check: (ctx) => {
     // .env files are expected to contain secrets — they are gitignored, not source files
     if (/(?:^|[\\/])\.env(?:\.\w+)?$/.test(ctx.filePath)) return [];
@@ -181,6 +185,8 @@ const noEval: Rule = {
   severity: "error",
   message: "Usage of `eval()` detected — allows arbitrary code execution",
   help: "Remove `eval()` and use safer alternatives like `JSON.parse()` for data, or structured alternatives for dynamic logic. `eval` is a common code injection vector.",
+  appliesTo: ["all"],
+  cost: "low",
   check: (ctx) => {
     // skip test files where eval may legitimately be tested or asserted against
     if (/\.(test|spec)\.(ts|js|svelte)$/.test(ctx.filePath)) return [];
@@ -242,6 +248,8 @@ const noPublicEnvSecrets: Rule = {
   severity: "error",
   message: "Sensitive environment variable imported from a public `$env` module",
   help: "Use `$env/static/private` or `$env/dynamic/private` for secrets. Public env vars are bundled into the client and visible to anyone who inspects the page.",
+  appliesTo: ["all"],
+  cost: "low",
   check: (ctx) => {
     if (ctx.projectInfo.framework !== "sveltekit") return [];
 
@@ -287,9 +295,218 @@ const noPublicEnvSecrets: Rule = {
   },
 };
 
+const noDangerousRedirectParam: Rule = {
+  name: "no-dangerous-redirect-param",
+  category: "Security",
+  severity: "error",
+  message: "Potential open redirect from untrusted redirect parameter",
+  help: "Validate redirect targets against an allowlist or force internal relative paths before calling redirect/goto/location.href.",
+  appliesTo: ["all"],
+  cost: "low",
+  check: (ctx) => {
+    if (/\.(test|spec)\.(ts|js|svelte)$/.test(ctx.filePath)) return [];
+    if (/(?:^|[\\/])tests?[\\/]/.test(ctx.filePath)) return [];
+
+    const diagnostics: Diagnostic[] = [];
+
+    for (let i = 0; i < ctx.lines.length; i++) {
+      const line = ctx.lines[i];
+      if (!/(redirect|goto|location\.href|location\.assign)/.test(line)) continue;
+      if (!/(searchParams\.get\(['"`]redirect['"`]\)|url\.searchParams\.get\(['"`]redirect['"`]\)|params\.redirect|query\.redirect)/.test(line)) {
+        continue;
+      }
+
+      diagnostics.push({
+        filePath: ctx.filePath,
+        rule: noDangerousRedirectParam.name,
+        severity: noDangerousRedirectParam.severity,
+        message: noDangerousRedirectParam.message,
+        help: noDangerousRedirectParam.help,
+        line: i + 1,
+        column: Math.max(1, line.search(/redirect|goto|location\.href|location\.assign/) + 1),
+        category: noDangerousRedirectParam.category,
+      });
+    }
+
+    return diagnostics;
+  },
+};
+
+const cookieMissingSecureFlags: Rule = {
+  name: "cookie-missing-secure-flags",
+  category: "Security",
+  severity: "error",
+  message: "cookies.set() call is missing secure cookie flags",
+  help: "Set `httpOnly`, `secure`, and `sameSite` explicitly on cookies written from SvelteKit server code.",
+  appliesTo: ["script"],
+  cost: "low",
+  check: (ctx) => {
+    if (ctx.projectInfo.framework !== "sveltekit") return [];
+    if (!/\.(server|hooks)\.(ts|js)$/.test(ctx.filePath) && !/\+page\.server\.(ts|js)$/.test(ctx.filePath)) return [];
+
+    const diagnostics: Diagnostic[] = [];
+    for (let i = 0; i < ctx.lines.length; i++) {
+      const line = ctx.lines[i];
+      if (!/cookies\.set\s*\(/.test(line)) continue;
+      const window = ctx.lines.slice(i, Math.min(ctx.lines.length, i + 6)).join(" ");
+      if (/\bhttpOnly\s*:/.test(window) && /\bsecure\s*:/.test(window) && /\bsameSite\s*:/.test(window)) continue;
+
+      diagnostics.push({
+        filePath: ctx.filePath,
+        rule: cookieMissingSecureFlags.name,
+        severity: cookieMissingSecureFlags.severity,
+        message: cookieMissingSecureFlags.message,
+        help: cookieMissingSecureFlags.help,
+        line: i + 1,
+        column: line.indexOf("cookies.set") + 1,
+        category: cookieMissingSecureFlags.category,
+      });
+    }
+
+    return diagnostics;
+  },
+};
+
+const noBroadCors: Rule = {
+  name: "no-broad-cors",
+  category: "Security",
+  severity: "error",
+  message: "Overly broad CORS configuration detected",
+  help: "Avoid `Access-Control-Allow-Origin: *` on authenticated endpoints and never combine wildcard origins with credentials.",
+  appliesTo: ["script"],
+  cost: "low",
+  check: (ctx) => {
+    if (/\.(test|spec)\.(ts|js|svelte)$/.test(ctx.filePath)) return [];
+    if (/(?:^|[\\/])tests?[\\/]/.test(ctx.filePath)) return [];
+
+    const diagnostics: Diagnostic[] = [];
+
+    for (let i = 0; i < ctx.lines.length; i++) {
+      const line = ctx.lines[i];
+      const lineHasWildcardOrigin =
+        /Access-Control-Allow-Origin['"`]?\s*[:,]\s*['"`]\*['"`]/.test(line) ||
+        /setHeaders?\([^)]*Access-Control-Allow-Origin[^)]*['"`]\*['"`]/.test(line) ||
+        /headers\.set\(\s*['"`]Access-Control-Allow-Origin['"`]\s*,\s*['"`]\*['"`]\s*\)/.test(line);
+      if (!lineHasWildcardOrigin) continue;
+
+      const nearby = ctx.lines.slice(Math.max(0, i - 2), Math.min(ctx.lines.length, i + 4)).join(" ");
+      const withCredentials = /Access-Control-Allow-Credentials['"`]?\s*[:,]\s*(?:true|['"`]true['"`])/.test(nearby) ||
+        /headers\.set\(\s*['"`]Access-Control-Allow-Credentials['"`]\s*,\s*['"`]true['"`]\s*\)/.test(nearby);
+
+      diagnostics.push({
+        filePath: ctx.filePath,
+        rule: noBroadCors.name,
+        severity: noBroadCors.severity,
+        message: withCredentials
+          ? "Wildcard CORS origin combined with credentials is unsafe"
+          : noBroadCors.message,
+        help: noBroadCors.help,
+        line: i + 1,
+        column: 1,
+        category: noBroadCors.category,
+      });
+    }
+
+    return diagnostics;
+  },
+};
+
+const noServerSecretLeak: Rule = {
+  name: "no-server-secret-leak",
+  category: "Security",
+  severity: "error",
+  message: "Private env value appears to be returned to the client",
+  help: "Do not include private env vars in load() return values, JSON responses, or serialized payloads.",
+  appliesTo: ["script"],
+  cost: "medium",
+  check: (ctx) => {
+    if (ctx.projectInfo.framework !== "sveltekit") return [];
+    if (!/\.(server|hooks)\.(ts|js)$/.test(ctx.filePath) && !/\+page\.server\.(ts|js)$/.test(ctx.filePath)) return [];
+
+    const privateEnvNames = new Set<string>();
+    for (const line of ctx.lines) {
+      const match = line.match(/import\s+\{([^}]+)\}\s+from\s+['"]\$env\/(?:static|dynamic)\/private['"]/);
+      if (!match) continue;
+      for (const entry of match[1].split(",")) {
+        const normalized = entry.trim().split(/\s+as\s+/i).pop();
+        if (normalized) privateEnvNames.add(normalized.trim());
+      }
+    }
+
+    if (privateEnvNames.size === 0) return [];
+
+    const diagnostics: Diagnostic[] = [];
+    for (let i = 0; i < ctx.lines.length; i++) {
+      const line = ctx.lines[i];
+      if (!/\b(return|json)\b/.test(line)) continue;
+
+      for (const envName of privateEnvNames) {
+        if (!new RegExp(`\\b${envName}\\b`).test(line)) continue;
+        diagnostics.push({
+          filePath: ctx.filePath,
+          rule: noServerSecretLeak.name,
+          severity: noServerSecretLeak.severity,
+          message: noServerSecretLeak.message,
+          help: noServerSecretLeak.help,
+          line: i + 1,
+          column: Math.max(1, line.indexOf(envName) + 1),
+          category: noServerSecretLeak.category,
+        });
+      }
+    }
+
+    return diagnostics;
+  },
+};
+
+const noUnsafeShell: Rule = {
+  name: "no-unsafe-shell",
+  category: "Security",
+  severity: "error",
+  message: "Unsafe shell execution pattern detected",
+  help: "Prefer direct argv-based process spawning. Avoid `exec`, `execSync`, or `spawn(..., { shell: true })` with untrusted input.",
+  appliesTo: ["script"],
+  cost: "low",
+  check: (ctx) => {
+    if (/\.(test|spec)\.(ts|js|svelte)$/.test(ctx.filePath)) return [];
+    if (/(?:^|[\\/])tests?[\\/]/.test(ctx.filePath)) return [];
+
+    const diagnostics: Diagnostic[] = [];
+
+    for (let i = 0; i < ctx.lines.length; i++) {
+      const line = ctx.lines[i];
+      const trimmed = line.trimStart();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
+      if (trimmed.startsWith("message:") || trimmed.startsWith("help:")) continue;
+      if (/(?:const|let|var)\s+\w+\s*=\s*\/.*(?:exec|spawn|shell).*\/[dgimsuy]*/.test(line)) continue;
+      if (/:\s*\/.*(?:exec|spawn|shell).*\/[dgimsuy]*/.test(line)) continue;
+      const match = /(?<!\.)\b(exec|execSync)\s*\(|(?<!\.)\bspawn\s*\([^)]*\{[^}]*shell\s*:\s*true/.exec(line);
+      if (!match) continue;
+
+      diagnostics.push({
+        filePath: ctx.filePath,
+        rule: noUnsafeShell.name,
+        severity: noUnsafeShell.severity,
+        message: noUnsafeShell.message,
+        help: noUnsafeShell.help,
+        line: i + 1,
+        column: match.index + 1,
+        category: noUnsafeShell.category,
+      });
+    }
+
+    return diagnostics;
+  },
+};
+
 export const securityRules: Rule[] = [
   noUnsafeHtml,
   noSecrets,
   noEval,
   noPublicEnvSecrets,
+  noDangerousRedirectParam,
+  cookieMissingSecureFlags,
+  noBroadCors,
+  noServerSecretLeak,
+  noUnsafeShell,
 ];

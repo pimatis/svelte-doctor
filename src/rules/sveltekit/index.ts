@@ -27,6 +27,8 @@ const noClientFetch: Rule = {
   severity: "warning",
   message: "Avoid `fetch()` in component scripts — use SvelteKit `load` functions or form actions instead.",
   help: "Move data fetching to `+page.ts` / `+page.server.ts` load functions, or use form actions for mutations.",
+  appliesTo: ["svelte"],
+  cost: "low",
   check: (ctx: RuleContext): Diagnostic[] => {
     if (ctx.projectInfo.framework !== "sveltekit") return [];
     if (!ctx.filePath.endsWith(".svelte")) return [];
@@ -110,6 +112,8 @@ const loadMissingType: Rule = {
   severity: "warning",
   message: "Load function is missing a type annotation or `satisfies` clause",
   help: "Add a type annotation like `export const load: PageLoad = ...` or use `satisfies PageLoad` for full type inference.",
+  appliesTo: ["script"],
+  cost: "low",
   check: (ctx: RuleContext): Diagnostic[] => {
     // only applies to SvelteKit route files
     if (!/\+(page|layout)\.(ts|server\.ts|js|server\.js)$/.test(ctx.filePath)) return [];
@@ -161,6 +165,8 @@ const noGotoExternal: Rule = {
   severity: "warning",
   message: "`goto()` should not be used with external URLs",
   help: "SvelteKit's `goto()` is designed for internal navigation. Use `window.location.href` or an `<a>` tag for external redirects.",
+  appliesTo: ["all"],
+  cost: "low",
   check: (ctx: RuleContext): Diagnostic[] => {
     if (ctx.projectInfo.framework !== "sveltekit") return [];
 
@@ -200,6 +206,8 @@ const formActionNoValidation: Rule = {
   severity: "warning",
   message: "Form action reads `formData` without apparent input validation",
   help: "Validate form data with a schema library (zod, valibot, yup, joi, arktype) or manual type checks (typeof, instanceof) before using it.",
+  appliesTo: ["script"],
+  cost: "low",
   check: (ctx: RuleContext): Diagnostic[] => {
     // applies to both .ts and .js server files
     if (!/\+page\.server\.(ts|js)$/.test(ctx.filePath)) return [];
@@ -238,6 +246,8 @@ const missingErrorPage: Rule = {
   severity: "warning",
   message: "No root `+error.svelte` page found — unhandled errors will show SvelteKit's default error page.",
   help: "Create `src/routes/+error.svelte` to provide a custom error page for your users.",
+  appliesTo: ["svelte"],
+  cost: "low",
   check: (ctx: RuleContext): Diagnostic[] => {
     if (ctx.projectInfo.framework !== "sveltekit") return [];
 
@@ -267,6 +277,63 @@ const missingErrorPage: Rule = {
   },
 };
 
+const serverLoadMissingErrorGuard: Rule = {
+  name: "server-load-missing-error-guard",
+  category: "SvelteKit",
+  severity: "warning",
+  message: "Server load function fetches remote data without obvious error handling",
+  help: "Wrap remote calls in try/catch or normalize failures with `error()` / fallback data to avoid leaking raw server exceptions.",
+  appliesTo: ["script"],
+  cost: "low",
+  check: (ctx: RuleContext): Diagnostic[] => {
+    if (!/\+(page|layout)\.server\.(ts|js)$/.test(ctx.filePath)) return [];
+    if (!/\bload\b/.test(ctx.source) || !/\bfetch\s*\(/.test(ctx.source)) return [];
+    if (/try\s*\{/.test(ctx.source) || /\berror\s*\(/.test(ctx.source)) return [];
+
+    for (let i = 0; i < ctx.lines.length; i++) {
+      if (!/\bfetch\s*\(/.test(ctx.lines[i])) continue;
+      return [{
+        filePath: ctx.filePath,
+        rule: serverLoadMissingErrorGuard.name,
+        severity: serverLoadMissingErrorGuard.severity,
+        message: serverLoadMissingErrorGuard.message,
+        help: serverLoadMissingErrorGuard.help,
+        line: i + 1,
+        column: ctx.lines[i].indexOf("fetch") + 1,
+        category: serverLoadMissingErrorGuard.category,
+      }];
+    }
+
+    return [];
+  },
+};
+
+const formActionMissingAuthCheck: Rule = {
+  name: "form-action-missing-auth-check",
+  category: "SvelteKit",
+  severity: "warning",
+  message: "Form action may be mutating data without an obvious auth/session check",
+  help: "Sensitive actions should check `locals`, `cookies`, or session/auth state before processing mutations.",
+  appliesTo: ["script"],
+  cost: "low",
+  check: (ctx: RuleContext): Diagnostic[] => {
+    if (!/\+page\.server\.(ts|js)$/.test(ctx.filePath)) return [];
+    if (!/\bactions\s*=/.test(ctx.source) && !/\bexport\s+const\s+actions\b/.test(ctx.source)) return [];
+    if (/\b(locals|cookies|getSession|requireAuth|requireUser|isAuthenticated)\b/.test(ctx.source)) return [];
+
+    return [{
+      filePath: ctx.filePath,
+      rule: formActionMissingAuthCheck.name,
+      severity: formActionMissingAuthCheck.severity,
+      message: formActionMissingAuthCheck.message,
+      help: formActionMissingAuthCheck.help,
+      line: 1,
+      column: 1,
+      category: formActionMissingAuthCheck.category,
+    }];
+  },
+};
+
 
 
 export const sveltekitRules: Rule[] = [
@@ -275,4 +342,6 @@ export const sveltekitRules: Rule[] = [
   noGotoExternal,
   formActionNoValidation,
   missingErrorPage,
+  serverLoadMissingErrorGuard,
+  formActionMissingAuthCheck,
 ];

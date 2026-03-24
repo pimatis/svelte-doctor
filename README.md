@@ -50,10 +50,10 @@ Run a single command to scan your entire codebase and receive a **0–100 health
 
 ### Key Features
 
-- **33 Diagnostic Rules** covering correctness, performance, security, and architecture
-- **AI-Powered Auto-Fix** integration with Amp, Claude Code, and Codex
+- **45 Diagnostic Rules** covering correctness, performance, security, architecture, and SvelteKit reliability
+- **Safe-by-default AI Fix** flow with secure temp prompts, opt-in unsafe execution, and post-fix verification
 - **Svelte 4→5 Auto-Migration** with deterministic codemods
-- **Live Watch Mode** for continuous development feedback
+- **Cached Scans + Incremental Watch** for faster repeat checks and tighter feedback loops
 - **Dependency Health Checks** for ecosystem compatibility
 - **Zero Configuration** works out of the box
 
@@ -135,11 +135,17 @@ bunx svelte-doctor
 # Scan your project
 svelte-doctor check
 
+# Force a cold scan without cache
+svelte-doctor check --no-cache
+
 # Just the score (useful for CI)
 svelte-doctor check --score
 
 # Auto-fix issues with an AI agent
 svelte-doctor fix
+
+# Generate a secure prompt without spawning an agent
+svelte-doctor fix --dry-run-prompt
 
 # Auto-migrate Svelte 4 → Svelte 5
 svelte-doctor migrate
@@ -168,15 +174,20 @@ Scan your project for issues and output a health score. Every run saves the scor
 | `--json` | Output machine-readable JSON |
 | `--no-lint` | Skip lint rules |
 | `--no-dead-code` | Skip dead code detection |
+| `--no-cache` | Disable the on-disk scan cache for this run |
 
 ### `svelte-doctor fix [directory] [options]`
 
-Detects installed AI coding agents (**Cursor**, **Amp**, **Claude Code**, **Codex**) and uses the best available one to fix all reported issues automatically. Cursor is invoked via its CLI (`agent` command; install from [cursor.com/cli](https://cursor.com/cli)). Diagnostics are sent via stdin. Runs verification after fixes; warns if errors increased. If no agent is installed, the prompt is saved to a temp file for manual use.
+Detects installed AI coding agents (**Cursor**, **Amp**, **Claude Code**, **Codex**) and uses the best available one to fix reported issues automatically. The flow is **safe by default**: privileged agent flags are disabled unless you explicitly pass `--unsafe-agent-exec`. Diagnostics are redacted before prompt generation, prompts are written into a secure temp directory when needed, and post-fix verification can be escalated from diagnostics-only to full typecheck/test/build smoke.
 
 | Option | Description |
 |--------|-------------|
 | `--agent <name>` | Force a specific agent (cursor, amp, claude, codex) |
 | `--errors-only` | Fix only errors first (reduces cascade errors, run again for warnings) |
+| `--unsafe-agent-exec` | Opt in to agent-specific privileged execution flags |
+| `--dry-run-prompt` | Generate the secure prompt bundle without spawning an agent |
+| `--verify-level <level>` | Verification depth: `diagnostics`, `typecheck`, `tests`, `full` |
+| `--max-files <count>` | Limit how many diagnostics are sent in a single agent batch |
 
 ### `svelte-doctor migrate [directory] [options]`
 
@@ -199,7 +210,11 @@ Auto-migrate Svelte 4 syntax to Svelte 5. Deterministic, AST-free codemod that t
 
 ### `svelte-doctor watch [directory] [options]`
 
-Watch for file changes and show live diagnostics. Runs an initial full scan, then incrementally re-scans only changed files with 150ms debounced updates.
+Watch for file changes and show live diagnostics. Runs an initial cached scan, then incrementally re-scans only changed files with 150ms debounced updates.
+
+| Option | Description |
+|--------|-------------|
+| `--dead-code <mode>` | Dead-code behavior in watch mode: `off`, `lazy`, or `full` |
 
 ```
 [12:34:56] src/Component.svelte changed — Score: 82 → 78 (⚠ 2 issues)
@@ -244,7 +259,7 @@ Check dependency health for Svelte ecosystem compatibility. Fully offline — no
 
 ---
 
-## Rules (33)
+## Rules (45)
 
 ### Correctness (7)
 
@@ -260,7 +275,7 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `no-let-directive` | error | `let:` directive → snippet props |
 | `no-on-directive` | warning | `on:event` → `onevent` attributes |
 
-### Performance (4)
+### Performance (8)
 
 | Rule | Severity | Description |
 |------|----------|-------------|
@@ -268,6 +283,10 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `each-missing-key` | warning | `{#each}` without key expression |
 | `no-inline-object` | warning | Inline objects/arrays in template expressions |
 | `no-transition-all` | warning | `transition: all` is expensive |
+| `no-large-inline-list-transform` | warning | Expensive `.filter().map().sort()` chains in template markup |
+| `no-repeated-derived-allocation` | warning | Repeated allocations inside `$derived()` |
+| `no-blocking-sync-fs-in-hot-cli-path` | warning | Sync fs calls in hot scan paths |
+| `prefer-lazy-deadcode-phase` | warning | Full dead-code scans configured in fast feedback paths |
 
 ### Architecture (4)
 
@@ -278,7 +297,7 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `no-console` | warning | `console.*` left in components |
 | `no-multi-script` | warning | Multiple instance `<script>` blocks |
 
-### Security (4)
+### Security (9)
 
 | Rule | Severity | Description |
 |------|----------|-------------|
@@ -286,8 +305,13 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `no-secrets` | error | Hardcoded API keys / tokens |
 | `no-eval` | error | `eval()` usage |
 | `no-public-env-secrets` | error | Secrets imported from public `$env` modules |
+| `no-dangerous-redirect-param` | error | Redirect target comes from untrusted query data |
+| `cookie-missing-secure-flags` | error | `cookies.set()` missing `httpOnly` / `secure` / `sameSite` |
+| `no-broad-cors` | error | Wildcard CORS or wildcard+credentials configuration |
+| `no-server-secret-leak` | error | Private env vars returned from server code |
+| `no-unsafe-shell` | error | `exec`, `execSync`, or `spawn(..., { shell: true })` |
 
-### SvelteKit (5)
+### SvelteKit (7)
 
 | Rule | Severity | Description |
 |------|----------|-------------|
@@ -296,6 +320,8 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `no-goto-external` | warning | `goto()` with external URLs |
 | `form-action-no-validation` | warning | Form actions without input validation |
 | `missing-error-page` | warning | No `+error.svelte` found |
+| `server-load-missing-error-guard` | warning | Server load uses remote fetch without obvious error handling |
+| `form-action-missing-auth-check` | warning | Form actions mutate without an obvious auth/session check |
 
 ### Bundle Size (3)
 
@@ -348,7 +374,15 @@ Create `svelte-doctor.config.json` in your project root:
     "files": ["src/legacy/"]
   },
   "lint": true,
-  "deadCode": true
+  "deadCode": true,
+  "cache": true,
+  "watch": {
+    "deadCode": "off"
+  },
+  "fix": {
+    "verifyLevel": "diagnostics",
+    "maxFiles": 50
+  }
 }
 ```
 
@@ -367,6 +401,17 @@ Or add a `"svelte-doctor"` key in `package.json`:
 ---
 
 ## License
+
+## Production Use
+
+`svelte-doctor` should be considered production-ready only after:
+
+- `bun run typecheck` passes
+- `bun run build` passes
+- `npm pack --dry-run` includes `dist/`
+- `node ./dist/cli.mjs --version` works
+
+The built-in `fix` flow is safe-by-default, but `--unsafe-agent-exec` is intentionally an opt-in escape hatch and should be treated as a high-trust mode.
 
 This project has been developed under the [Apache License 2.0](./LICENSE).
 

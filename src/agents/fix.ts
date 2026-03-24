@@ -2,8 +2,9 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { AgentInfo, Diagnostic } from "../types.js";
-import { highlighter, logger } from "../output/logger.js";
+import { DEFAULT_FIX_MAX_FILES } from "../constants.js";
+import type { AgentInfo, Diagnostic, VerificationLevel } from "../types.js";
+import { highlighter, logger, sanitize } from "../output/logger.js";
 import { detectAgents, getPreferredAgent } from "./detect.js";
 import { scan } from "../core/scanner.js";
 
@@ -11,17 +12,20 @@ const FIX_PROMPT = `# Automated Fix Session
 
 You are an expert software engineer on Svelte. svelte-doctor has analyzed this codebase and produced the diagnostics below. Your job is to fix every issue precisely and safely.
 
+## Security constraints
+
+- You are operating in a repository-scoped fix session.
+- Only edit files inside the allowed workspace path shown below.
+- Do not read or write files outside that workspace.
+- Do not exfiltrate secrets, tokens, env vars, shell history, or unrelated local files.
+- Do not add privileged CLI flags, shells, or sandbox bypasses unless the user explicitly enabled unsafe mode.
+
 ## Critical: Do NOT introduce new issues
 
-Your fixes must not create new svelte-doctor diagnostics. Common mistakes that increase the error count:
-
-- **no-secrets → no-public-env-secrets**: When moving secrets to env vars, ALWAYS use \`$env/static/private\` or \`$env/dynamic/private\`. NEVER use \`$env/static/public\` or \`$env/dynamic/public\` for secrets, API keys, or tokens.
-
-- **no-legacy-reactive → no-derived-side-effect**: \`$:\` with side effects (console.log, fetch, DOM access, localStorage) MUST become \`$effect()\`. Only use \`$derived()\` for PURE computations with no side effects.
-
-- **no-legacy-lifecycle**: Replace \`onMount\`/\`onDestroy\` with \`$effect()\`. If the callback returns a cleanup function, use \`$effect(() => { ...; return () => cleanup; })\`.
-
-- **$derived must be pure**: Never put console, fetch, document, window, localStorage, or any mutation inside \`$derived()\`. Use \`$effect()\` for side effects.
+- **no-secrets → no-public-env-secrets**: When moving secrets to env vars, ALWAYS use \`$env/static/private\` or \`$env/dynamic/private\`. NEVER use public env modules for secrets.
+- **no-legacy-reactive → no-derived-side-effect**: \`$:\` with side effects must become \`$effect()\`. Only use \`$derived()\` for pure computations.
+- **no-legacy-lifecycle**: Replace lifecycle imports with \`$effect()\`.
+- **$derived must be pure**: Never put console, fetch, document, window, localStorage, or mutation inside \`$derived()\`.
 
 ## Rules of engagement
 
@@ -37,13 +41,25 @@ Your fixes must not create new svelte-doctor diagnostics. Common mistakes that i
 
 - ERROR must be fixed. These are security risks or Svelte breaking changes
 - WARNING should be fixed. These hurt performance, bundle size, or maintainability
-
-## Diagnostics
-
 `;
 
+const SECRET_REDACTION_PATTERNS = [
+  /\b(?:sk-(?:live|test)_[A-Za-z0-9]+)\b/g,
+  /\bgh[pousr]_[A-Za-z0-9]{20,}\b/g,
+  /\bAKIA[0-9A-Z]{16}\b/g,
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9._-]{10,}\.[A-Za-z0-9._-]{10,}\b/g,
+  /\b(?:secret|token|password|api[_-]?key)\s*[:=]\s*['"`][^'"`\n]{6,}['"`]/gi,
+];
+
+const redactSecrets = (value: string): string => {
+  let next = sanitize(value);
+  for (const pattern of SECRET_REDACTION_PATTERNS) {
+    next = next.replace(pattern, "[REDACTED]");
+  }
+  return next;
+};
+
 const formatDiagnosticsForAgent = (diagnostics: Diagnostic[]): string => {
-  // group by category so the agent processes related issues together
   const byCategory = new Map<string, Diagnostic[]>();
 
   for (const diag of diagnostics) {
@@ -52,7 +68,6 @@ const formatDiagnosticsForAgent = (diagnostics: Diagnostic[]): string => {
     byCategory.set(diag.category, group);
   }
 
-  // severity order matches fix priority defined in the prompt above
   const categoryOrder = [
     "Security",
     "Correctness",
@@ -83,9 +98,9 @@ const formatDiagnosticsForAgent = (diagnostics: Diagnostic[]): string => {
         : diag.filePath;
 
       lines.push(`[${diag.severity.toUpperCase()}] ${diag.rule}`);
-      lines.push(`  Location : ${location}`);
-      lines.push(`  Problem  : ${diag.message}`);
-      if (diag.help) lines.push(`  Fix      : ${diag.help}`);
+      lines.push(`  Location : ${redactSecrets(location)}`);
+      lines.push(`  Problem  : ${redactSecrets(diag.message)}`);
+      if (diag.help) lines.push(`  Fix      : ${redactSecrets(diag.help)}`);
       lines.push("");
     }
   }
@@ -93,24 +108,26 @@ const formatDiagnosticsForAgent = (diagnostics: Diagnostic[]): string => {
   return lines.join("\n");
 };
 
-// writes prompt to a temp file and returns its path
-// avoids OS arg length limits when passing diagnostics to agents
-const writePromptFile = (prompt: string): string => {
-  const tmpDir = os.tmpdir();
-  const promptPath = path.join(tmpDir, `svelte-doctor-prompt-${process.pid}.txt`);
-  fs.writeFileSync(promptPath, prompt, "utf-8");
-  return promptPath;
+const createPromptBundle = (prompt: string): { dir: string; path: string } => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "svelte-doctor-"));
+  const promptPath = path.join(dir, "prompt.txt");
+  fs.writeFileSync(promptPath, prompt, { encoding: "utf-8", mode: 0o600 });
+  return { dir, path: promptPath };
 };
 
-const cleanupPromptFile = (promptPath: string): void => {
+const cleanupPromptBundle = (bundle: { dir: string; path: string }): void => {
   try {
-    fs.unlinkSync(promptPath);
+    fs.rmSync(bundle.dir, { recursive: true, force: true });
   } catch {}
 };
 
-// Most agents read prompt from stdin; Cursor only accepts prompt as positional [prompt...] args
-const spawnAgent = (agent: AgentInfo, cwd: string, prompt: string): Promise<number> => {
-  const baseArgs = agent.getSpawnArgs?.(cwd) ?? [];
+const spawnAgent = (
+  agent: AgentInfo,
+  cwd: string,
+  prompt: string,
+  mode: "safe" | "unsafe",
+): Promise<number> => {
+  const baseArgs = agent.getSpawnArgs?.(cwd, mode) ?? [];
   const args = agent.usePromptAsArg ? [...baseArgs, prompt] : baseArgs;
   const formatOutput = agent.formatStreamingOutput;
   const stdoutMode = formatOutput ? "pipe" : "inherit";
@@ -137,10 +154,9 @@ const spawnAgent = (agent: AgentInfo, cwd: string, prompt: string): Promise<numb
         }
       });
       child.stdout.on("end", () => {
-        if (buffer.trim()) {
-          const formatted = formatOutput(buffer);
-          if (formatted) process.stdout.write(formatted);
-        }
+        if (!buffer.trim()) return;
+        const formatted = formatOutput(buffer);
+        if (formatted) process.stdout.write(formatted);
       });
     }
 
@@ -157,6 +173,52 @@ const printPromptFallback = (promptPath: string, exitCode: number): void => {
   logger.dim("  Paste the file contents into your preferred AI agent manually.");
 };
 
+const detectPackageManager = (directory: string): { command: string; args: (script: string) => string[] } => {
+  if (fs.existsSync(path.join(directory, "bun.lockb"))) {
+    return { command: "bun", args: (script) => ["run", script] };
+  }
+  if (fs.existsSync(path.join(directory, "pnpm-lock.yaml"))) {
+    return { command: "pnpm", args: (script) => ["run", script] };
+  }
+  if (fs.existsSync(path.join(directory, "yarn.lock"))) {
+    return { command: "yarn", args: (script) => [script] };
+  }
+  return { command: "npm", args: (script) => ["run", script] };
+};
+
+const runCommand = (command: string, args: string[], cwd: string): Promise<number> =>
+  new Promise((resolve) => {
+    const child = spawn(command, args, { cwd, stdio: "inherit" });
+    child.on("close", (code) => resolve(code ?? 1));
+    child.on("error", () => resolve(1));
+  });
+
+const verifyScripts = async (directory: string, level: VerificationLevel): Promise<boolean> => {
+  const packageManager = detectPackageManager(directory);
+
+  const runScript = async (script: string): Promise<boolean> => {
+    logger.dim(`  Running ${packageManager.command} ${packageManager.args(script).join(" ")}...`);
+    const exitCode = await runCommand(packageManager.command, packageManager.args(script), directory);
+    return exitCode === 0;
+  };
+
+  if (level === "typecheck" || level === "tests" || level === "full") {
+    if (!await runScript("typecheck")) return false;
+  }
+
+  if (level === "tests" || level === "full") {
+    if (!await runScript("test")) return false;
+  }
+
+  if (level === "full") {
+    if (!await runScript("build")) return false;
+    if (await runCommand("npm", ["pack", "--dry-run"], directory) !== 0) return false;
+    if (await runCommand("node", ["dist/cli.mjs", "--version"], directory) !== 0) return false;
+  }
+
+  return true;
+};
+
 export type FixResult = {
   agentExitedSuccess: boolean;
   beforeErrors: number;
@@ -164,119 +226,143 @@ export type FixResult = {
   afterErrors?: number;
   afterWarnings?: number;
   errorsIncreased?: boolean;
+  verificationPassed?: boolean;
+};
+
+export type FixOptions = {
+  agentOverride?: string;
+  unsafeAgentExec?: boolean;
+  dryRunPrompt?: boolean;
+  verifyLevel?: VerificationLevel;
+  maxFiles?: number;
+};
+
+const buildPrompt = (
+  directory: string,
+  diagnostics: Diagnostic[],
+  options: Required<Pick<FixOptions, "unsafeAgentExec" | "maxFiles">>,
+): string => {
+  const selectedDiagnostics = diagnostics.slice(0, options.maxFiles);
+  const header = [
+    FIX_PROMPT.trim(),
+    "",
+    `## Allowed workspace`,
+    "",
+    `- Root: ${redactSecrets(directory)}`,
+    `- Unsafe agent execution explicitly enabled: ${options.unsafeAgentExec ? "yes" : "no"}`,
+    `- Max diagnostics in this batch: ${selectedDiagnostics.length}`,
+    "",
+    "## Diagnostics",
+    "",
+  ].join("\n");
+
+  return `${header}${formatDiagnosticsForAgent(selectedDiagnostics)}\n`;
 };
 
 export const runFix = async (
   directory: string,
   diagnostics: Diagnostic[],
-  agentOverride?: string,
+  options: FixOptions = {},
 ): Promise<FixResult> => {
   const beforeErrors = diagnostics.filter((d) => d.severity === "error").length;
   const beforeWarnings = diagnostics.filter((d) => d.severity === "warning").length;
+  const maxFiles = Math.max(1, Math.min(options.maxFiles ?? DEFAULT_FIX_MAX_FILES, diagnostics.length || DEFAULT_FIX_MAX_FILES));
+  const verifyLevel = options.verifyLevel ?? "diagnostics";
 
   if (diagnostics.length === 0) {
     logger.success("  ✓ No issues to fix!");
-    return { agentExitedSuccess: true, beforeErrors: 0, beforeWarnings: 0 };
+    return {
+      agentExitedSuccess: true,
+      beforeErrors: 0,
+      beforeWarnings: 0,
+      verificationPassed: true,
+    };
   }
 
   const agents = detectAgents();
-
   logger.break();
   logger.log("  Detected coding agents:");
   logger.break();
-
   for (const agent of agents) {
-    const status = agent.available
-      ? highlighter.success("✓ installed")
-      : highlighter.dim("✗ not found");
+    const status = agent.available ? highlighter.success("✓ installed") : highlighter.dim("✗ not found");
     logger.log(`    ${agent.name}: ${status}`);
   }
-
   logger.break();
 
-  const prompt = FIX_PROMPT + formatDiagnosticsForAgent(diagnostics);
+  const prompt = buildPrompt(directory, diagnostics, {
+    unsafeAgentExec: options.unsafeAgentExec ?? false,
+    maxFiles,
+  });
+  const promptBundle = createPromptBundle(prompt);
 
-  if (agentOverride) {
-    const forced = agents.find((a) => (a.id ?? a.command) === agentOverride);
-
-    if (!forced) {
-      logger.error(`  Unknown agent: ${agentOverride}. Available: cursor, amp, claude, codex`);
-      return { agentExitedSuccess: false, beforeErrors, beforeWarnings };
-    }
-
-    if (!forced.available) {
-      logger.error(`  Agent "${agentOverride}" is not installed.`);
-      return { agentExitedSuccess: false, beforeErrors, beforeWarnings };
-    }
-
-    logger.log(`  Using ${highlighter.info(forced.name)} (forced) to fix ${highlighter.warn(String(diagnostics.length))} issues...`);
-    if (forced.formatStreamingOutput) {
-      logger.dim("  Large fix sets may take several minutes. Streaming output below...");
-    }
+  if (options.dryRunPrompt) {
+    logger.dim("  Dry-run prompt generated:");
+    logger.info(`  ${promptBundle.path}`);
     logger.break();
-
-    const promptPath = writePromptFile(prompt);
-    const code = await spawnAgent(forced, directory, prompt);
-
-    if (code === 0) {
-      cleanupPromptFile(promptPath);
-      return verifyFixResult(directory, beforeErrors, beforeWarnings);
-    }
-
-    printPromptFallback(promptPath, code);
-    return { agentExitedSuccess: false, beforeErrors, beforeWarnings };
+    return {
+      agentExitedSuccess: true,
+      beforeErrors,
+      beforeWarnings,
+      verificationPassed: true,
+    };
   }
 
-  const available = agents.filter((a) => a.available);
+  const pickAgent = (): AgentInfo | null => {
+    if (options.agentOverride) {
+      const forced = agents.find((a) => (a.id ?? a.command) === options.agentOverride);
+      if (!forced) {
+        logger.error(`  Unknown agent: ${options.agentOverride}. Available: cursor, amp, claude, codex`);
+        return null;
+      }
+      if (!forced.available) {
+        logger.error(`  Agent "${options.agentOverride}" is not installed.`);
+        return null;
+      }
+      return forced;
+    }
 
-  if (available.length === 0) {
-    logger.error("  No coding agents found on your system.");
-    logger.break();
-    logger.log("  Install one of the following:");
-    logger.dim("    • Cursor:      https://cursor.com/cli (installs as 'agent')");
-    logger.dim("    • Amp:         https://ampcode.com/");
-    logger.dim("    • Claude Code: https://docs.anthropic.com/en/docs/claude-code");
-    logger.dim("    • Codex:       https://github.com/openai/codex");
-    logger.break();
+    return getPreferredAgent();
+  };
 
-    const promptPath = writePromptFile(prompt);
+  const agent = pickAgent();
+  if (!agent) {
     logger.dim("  Prompt saved for manual use:");
-    logger.info(`  ${promptPath}`);
+    logger.info(`  ${promptBundle.path}`);
     logger.break();
-
-    return { agentExitedSuccess: false, beforeErrors, beforeWarnings };
+    return { agentExitedSuccess: false, beforeErrors, beforeWarnings, verificationPassed: false };
   }
 
-  const preferred = getPreferredAgent();
-
-  // getPreferredAgent returns null only when available is empty, guarded above
-  if (!preferred) {
-    logger.error("  Could not determine preferred agent.");
-    return { agentExitedSuccess: false, beforeErrors, beforeWarnings };
-  }
-
-  logger.log(`  Using ${highlighter.info(preferred.name)} to fix ${highlighter.warn(String(diagnostics.length))} issues...`);
-  if (preferred.formatStreamingOutput) {
+  logger.log(`  Using ${highlighter.info(agent.name)} to fix ${highlighter.warn(String(Math.min(diagnostics.length, maxFiles)))} issues...`);
+  logger.dim(`  Agent mode: ${options.unsafeAgentExec ? highlighter.warn("unsafe opt-in") : highlighter.success("safe by default")}`);
+  if (agent.formatStreamingOutput) {
     logger.dim("  Large fix sets may take several minutes. Streaming output below...");
   }
   logger.break();
 
-  const promptPath = writePromptFile(prompt);
-  const code = await spawnAgent(preferred, directory, prompt);
+  const code = await spawnAgent(agent, directory, prompt, options.unsafeAgentExec ? "unsafe" : "safe");
 
-  if (code === 0) {
-    cleanupPromptFile(promptPath);
-    return verifyFixResult(directory, beforeErrors, beforeWarnings);
+  if (code !== 0) {
+    printPromptFallback(promptBundle.path, code);
+    return { agentExitedSuccess: false, beforeErrors, beforeWarnings, verificationPassed: false };
   }
 
-  printPromptFallback(promptPath, code);
-  return { agentExitedSuccess: false, beforeErrors, beforeWarnings };
+  const verification = await verifyFixResult(directory, beforeErrors, beforeWarnings, verifyLevel);
+  if (verification.verificationPassed) {
+    cleanupPromptBundle(promptBundle);
+  } else {
+    logger.dim("  Verification failed. Prompt directory kept for inspection:");
+    logger.info(`  ${promptBundle.path}`);
+    logger.break();
+  }
+
+  return verification;
 };
 
 const verifyFixResult = async (
   directory: string,
   beforeErrors: number,
   beforeWarnings: number,
+  verifyLevel: VerificationLevel,
 ): Promise<FixResult> => {
   logger.break();
   logger.dim("  Verifying fixes...");
@@ -287,14 +373,11 @@ const verifyFixResult = async (
     const afterWarnings = result.diagnostics.filter((d) => d.severity === "warning").length;
     const errorsIncreased = afterErrors > beforeErrors;
 
-    logger.break();
-
     if (errorsIncreased) {
+      logger.break();
       logger.error(`  ⚠ Verification failed: errors increased from ${beforeErrors} to ${afterErrors}`);
       logger.dim("    Some fixes may have introduced new issues. Run svelte-doctor check to see details.");
-      logger.dim("    Consider running svelte-doctor fix again; the improved prompt should avoid common cascade errors.");
       logger.break();
-
       return {
         agentExitedSuccess: true,
         beforeErrors,
@@ -302,23 +385,35 @@ const verifyFixResult = async (
         afterErrors,
         afterWarnings,
         errorsIncreased: true,
+        verificationPassed: false,
       };
     }
 
-    if (afterErrors < beforeErrors || afterWarnings < beforeWarnings) {
-      const msg = afterErrors < beforeErrors
-        ? `  ✓ Errors reduced: ${beforeErrors} → ${afterErrors}`
-        : `  ✓ Errors unchanged: ${beforeErrors}`;
-
-      logger.success(msg);
-
-      if (afterWarnings < beforeWarnings) {
-        logger.success(`  ✓ Warnings reduced: ${beforeWarnings} → ${afterWarnings}`);
-      }
-    } else {
-      logger.success("  ✓ Agent finished. No new issues introduced.");
+    if (!await verifyScripts(directory, verifyLevel)) {
+      logger.break();
+      logger.error(`  ⚠ Verification failed during ${verifyLevel} checks.`);
+      logger.break();
+      return {
+        agentExitedSuccess: true,
+        beforeErrors,
+        beforeWarnings,
+        afterErrors,
+        afterWarnings,
+        errorsIncreased: false,
+        verificationPassed: false,
+      };
     }
 
+    logger.break();
+    if (afterErrors < beforeErrors) {
+      logger.success(`  ✓ Errors reduced: ${beforeErrors} → ${afterErrors}`);
+    } else {
+      logger.success(`  ✓ Errors unchanged: ${beforeErrors}`);
+    }
+    if (afterWarnings < beforeWarnings) {
+      logger.success(`  ✓ Warnings reduced: ${beforeWarnings} → ${afterWarnings}`);
+    }
+    logger.success(`  ✓ Verification passed at ${verifyLevel} level.`);
     logger.break();
     logger.dim(`  Run ${highlighter.info("svelte-doctor check")} for full report.`);
     logger.break();
@@ -330,17 +425,17 @@ const verifyFixResult = async (
       afterErrors,
       afterWarnings,
       errorsIncreased: false,
+      verificationPassed: true,
     };
   } catch {
     logger.break();
-    logger.success("  ✓ Agent finished.");
-    logger.dim("  Run svelte-doctor check to verify improvements.");
+    logger.error("  ⚠ Verification failed unexpectedly.");
     logger.break();
-
     return {
       agentExitedSuccess: true,
       beforeErrors,
       beforeWarnings,
+      verificationPassed: false,
     };
   }
 };

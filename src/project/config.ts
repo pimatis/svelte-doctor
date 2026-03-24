@@ -1,6 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { SvelteDoctorConfig } from "../types.js";
+import type { DeadCodeMode, SvelteDoctorConfig, VerificationLevel } from "../types.js";
+
+const isDeadCodeMode = (value: unknown): value is DeadCodeMode =>
+  value === "off" || value === "lazy" || value === "full";
+
+const isVerificationLevel = (value: unknown): value is VerificationLevel =>
+  value === "diagnostics" ||
+  value === "typecheck" ||
+  value === "tests" ||
+  value === "full";
 
 // validates and returns only known keys to prevent prototype pollution
 const sanitizeConfig = (raw: unknown): SvelteDoctorConfig | null => {
@@ -11,6 +20,24 @@ const sanitizeConfig = (raw: unknown): SvelteDoctorConfig | null => {
 
   if (typeof obj.lint === "boolean") result.lint = obj.lint;
   if (typeof obj.deadCode === "boolean") result.deadCode = obj.deadCode;
+  if (typeof obj.cache === "boolean") result.cache = obj.cache;
+
+  if (typeof obj.watch === "object" && obj.watch !== null) {
+    const watch = obj.watch as Record<string, unknown>;
+    if (isDeadCodeMode(watch.deadCode)) {
+      result.watch = { deadCode: watch.deadCode };
+    }
+  }
+
+  if (typeof obj.fix === "object" && obj.fix !== null) {
+    const fix = obj.fix as Record<string, unknown>;
+    const nextFix: NonNullable<SvelteDoctorConfig["fix"]> = {};
+    if (isVerificationLevel(fix.verifyLevel)) nextFix.verifyLevel = fix.verifyLevel;
+    if (typeof fix.maxFiles === "number" && Number.isFinite(fix.maxFiles) && fix.maxFiles > 0) {
+      nextFix.maxFiles = Math.floor(fix.maxFiles);
+    }
+    if (Object.keys(nextFix).length > 0) result.fix = nextFix;
+  }
 
   if (typeof obj.ignore === "object" && obj.ignore !== null) {
     const ignore = obj.ignore as Record<string, unknown>;

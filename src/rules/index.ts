@@ -8,16 +8,18 @@ import { bundleRules } from "./bundle/index.js";
 import { accessibilityRules } from "./accessibility/index.js";
 import { reactivityRules } from "./reactivity/index.js";
 
+export const ruleRegistry = {
+  Correctness: correctnessRules,
+  Performance: performanceRules,
+  Architecture: architectureRules,
+  Security: securityRules,
+  SvelteKit: sveltekitRules,
+  "Bundle Size": bundleRules,
+  Accessibility: accessibilityRules,
+  "State & Reactivity": reactivityRules,
+} satisfies Record<string, Rule[]>;
+
 // All rules combined so the scanner iterates this against every file.
-export const allRules: Rule[] = [
-  ...correctnessRules,
-  ...performanceRules,
-  ...architectureRules,
-  ...securityRules,
-  ...sveltekitRules,
-  ...bundleRules,
-  ...accessibilityRules,
-  ...reactivityRules,
-];
+export const allRules: Rule[] = Object.values(ruleRegistry).flat();
 
 export const getRuleCount = (): number => allRules.length;

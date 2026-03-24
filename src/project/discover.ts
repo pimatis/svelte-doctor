@@ -1,10 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { IGNORED_DIRS } from "../constants.js";
-import { countFiles } from "../fs/walker.js";
-import type { Framework, PackageJson, ProjectInfo } from "../types.js";
-
-const SOURCE_FILE_PATTERN = /\.(svelte|ts|js)$/;
+import { collectProjectFiles } from "../fs/walker.js";
+import type { Framework, PackageJson, ProjectFileManifest, ProjectInfo } from "../types.js";
 
 const readPackageJson = (dir: string): PackageJson | null => {
   const filePath = path.join(dir, "package.json");
@@ -69,44 +66,17 @@ const hasPreprocessConfig = (dir: string): boolean => {
 // compiled once at module level so repeated calls in watch mode do not recompile
 const RUNES_DETECT_PATTERN = /\$state\s*[<(]|\$derived\s*[<(]|\$effect\s*[.(]|\$props\s*[<(]/;
 
-const detectRunesUsage = (dir: string): boolean => {
-  const runesPattern = RUNES_DETECT_PATTERN;
-
-  const check = (currentDir: string): boolean => {
-    let entries: fs.Dirent[];
-
+const detectRunesUsage = (manifest: ProjectFileManifest): boolean => {
+  for (const fullPath of manifest.svelteFiles) {
     try {
-      entries = fs.readdirSync(currentDir, { withFileTypes: true });
+      const content = fs.readFileSync(fullPath, "utf-8");
+      if (RUNES_DETECT_PATTERN.test(content)) return true;
     } catch {
-      return false;
+      continue;
     }
+  }
 
-    for (const entry of entries) {
-      if (entry.name === "." || entry.name === "..") continue;
-      if (IGNORED_DIRS.has(entry.name)) continue;
-      if (entry.isSymbolicLink()) continue;
-
-      const fullPath = path.join(currentDir, entry.name);
-
-      if (entry.isDirectory()) {
-        if (check(fullPath)) return true;
-        continue;
-      }
-
-      if (!entry.name.endsWith(".svelte")) continue;
-
-      try {
-        const content = fs.readFileSync(fullPath, "utf-8");
-        if (runesPattern.test(content)) return true;
-      } catch {
-        continue;
-      }
-    }
-
-    return false;
-  };
-
-  return check(dir);
+  return false;
 };
 
 export const discoverProject = (dir: string): ProjectInfo => {
@@ -126,6 +96,8 @@ export const discoverProject = (dir: string): ProjectInfo => {
     }
   })();
 
+  const manifest = collectProjectFiles(dir);
+
   return {
     rootDirectory: dir,
     projectName: pkg.name ?? path.basename(dir),
@@ -133,8 +105,8 @@ export const discoverProject = (dir: string): ProjectInfo => {
     framework: detectFramework(pkg),
     hasTypeScript,
     hasPreprocess: hasPreprocessConfig(dir),
-    sourceFileCount: countFiles(dir, SOURCE_FILE_PATTERN),
-    usesRunes: detectRunesUsage(dir),
+    sourceFileCount: manifest.sourceFileCount,
+    usesRunes: detectRunesUsage(manifest),
   };
 };
 

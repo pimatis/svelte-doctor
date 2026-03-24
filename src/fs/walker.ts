@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { IGNORED_DIRS } from "../constants.js";
+import { IGNORED_DIRS, SVELTE_FILE_PATTERN, TS_FILE_PATTERN } from "../constants.js";
+import type { ProjectFileManifest } from "../types.js";
 
 // recursively walks a directory and returns files matching the pattern
 // skips symlinks entirely to prevent path traversal and cycle attacks
@@ -69,4 +70,48 @@ export const countFiles = (dir: string, pattern: RegExp): number => {
 
   walk(dir);
   return count;
+};
+
+export const collectProjectFiles = (dir: string): ProjectFileManifest => {
+  const manifest: ProjectFileManifest = {
+    svelteFiles: [],
+    scriptFiles: [],
+    sourceFileCount: 0,
+  };
+
+  const walk = (currentDir: string) => {
+    let entries: fs.Dirent[];
+
+    try {
+      entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (IGNORED_DIRS.has(entry.name)) continue;
+      if (entry.isSymbolicLink()) continue;
+
+      const fullPath = path.join(currentDir, entry.name);
+
+      if (entry.isDirectory()) {
+        walk(fullPath);
+        continue;
+      }
+
+      if (SVELTE_FILE_PATTERN.test(entry.name)) {
+        manifest.svelteFiles.push(fullPath);
+        manifest.sourceFileCount++;
+        continue;
+      }
+
+      if (TS_FILE_PATTERN.test(entry.name)) {
+        manifest.scriptFiles.push(fullPath);
+        manifest.sourceFileCount++;
+      }
+    }
+  };
+
+  walk(dir);
+  return manifest;
 };

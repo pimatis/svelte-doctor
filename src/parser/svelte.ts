@@ -2,6 +2,25 @@ import fs from "node:fs";
 import { parse } from "svelte/compiler";
 import type { RuleContext, ProjectInfo } from "../types.js";
 
+const buildContext = (
+  filePath: string,
+  source: string,
+  ast: any,
+  projectInfo: ProjectInfo,
+  fileKind: "svelte" | "script",
+): RuleContext => ({
+  filePath,
+  source,
+  lines: source.split("\n"),
+  fileKind,
+  ast,
+  projectInfo,
+  analysisMeta: {
+    hasScript: /<script[\s>]/.test(source),
+    hasStyle: /<style[\s>]/.test(source),
+  },
+});
+
 // parses a .svelte file into an AST using svelte's modern parser
 // reads the file once and falls back to text-only mode if parsing fails
 // (some files with preprocessor syntax can't be parsed raw, but we can still
@@ -20,10 +39,10 @@ export const parseSvelteFile = (
 
   try {
     const ast = parse(source, { modern: true });
-    return { filePath, source, ast, projectInfo };
+    return buildContext(filePath, source, ast, projectInfo, "svelte");
   } catch {
     // AST parse failed but we still have the source text
-    return { filePath, source, ast: null, projectInfo };
+    return buildContext(filePath, source, null, projectInfo, "svelte");
   }
 };
 
@@ -34,7 +53,7 @@ export const parseScriptFile = (
 ): RuleContext | null => {
   try {
     const source = fs.readFileSync(filePath, "utf-8");
-    return { filePath, source, ast: null, projectInfo };
+    return buildContext(filePath, source, null, projectInfo, "script");
   } catch {
     return null;
   }
