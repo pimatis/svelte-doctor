@@ -6,6 +6,13 @@ import { DEFAULT_FIX_MAX_FILES } from "../constants.js";
 import type { AgentInfo, Diagnostic, VerificationLevel } from "../types.js";
 import { highlighter, logger } from "../output/logger.js";
 import { formatDiagnosticsForPrompt } from "../core/prompt.js";
+import {
+  buildPackSmokeCommand,
+  buildScriptCommand,
+  readPackageScripts,
+  resolvePackageManager,
+  type ResolvedPackageManager,
+} from "../core/runtime.js";
 import { detectAgents, getPreferredAgent } from "./detect.js";
 import { scan } from "../core/scanner.js";
 
@@ -74,33 +81,77 @@ const printPromptFallback = (promptPath: string, exitCode: number): void => {
   logger.dim("  Paste the file contents into your preferred AI agent manually.");
 };
 
-const detectPackageManager = (directory: string): { command: string; args: (script: string) => string[] } => {
-  if (fs.existsSync(path.join(directory, "bun.lockb"))) {
-    return { command: "bun", args: (script) => ["run", script] };
-  }
-  if (fs.existsSync(path.join(directory, "pnpm-lock.yaml"))) {
-    return { command: "pnpm", args: (script) => ["run", script] };
-  }
-  if (fs.existsSync(path.join(directory, "yarn.lock"))) {
-    return { command: "yarn", args: (script) => [script] };
-  }
-  return { command: "npm", args: (script) => ["run", script] };
+type CommandResult = {
+  ok: boolean;
+  status: "ok" | "missing-binary" | "command-failed";
+  code: number | null;
 };
 
-const runCommand = (command: string, args: string[], cwd: string): Promise<number> =>
+type VerifyScriptsOptions = {
+  packageManager?: ResolvedPackageManager;
+  runCommand?: typeof runCommand;
+  scripts?: Record<string, string>;
+};
+
+export const runCommand = (command: string, args: string[], cwd: string): Promise<CommandResult> =>
   new Promise((resolve) => {
     const child = spawn(command, args, { cwd, stdio: "inherit" });
-    child.on("close", (code) => resolve(code ?? 1));
-    child.on("error", () => resolve(1));
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve({ ok: true, status: "ok", code: 0 });
+        return;
+      }
+
+      resolve({ ok: false, status: "command-failed", code });
+    });
+    child.on("error", () => resolve({ ok: false, status: "missing-binary", code: null }));
   });
 
-const verifyScripts = async (directory: string, level: VerificationLevel): Promise<boolean> => {
-  const packageManager = detectPackageManager(directory);
+const logCommandFailure = (label: string, result: CommandResult): void => {
+  if (result.status === "missing-binary") {
+    logger.error(`  Missing binary while running ${label}.`);
+    return;
+  }
+
+  logger.error(`  Command failed while running ${label}${typeof result.code === "number" ? ` (exit ${result.code})` : ""}.`);
+};
+
+const hasScript = (scripts: Record<string, string>, script: string): boolean =>
+  typeof scripts[script] === "string" && scripts[script].trim().length > 0;
+
+export const verifyScripts = async (
+  directory: string,
+  level: VerificationLevel,
+  options: VerifyScriptsOptions = {},
+): Promise<boolean> => {
+  const packageManager = options.packageManager ?? resolvePackageManager(directory);
+  const scripts = options.scripts ?? readPackageScripts(directory);
+  const execute = options.runCommand ?? runCommand;
 
   const runScript = async (script: string): Promise<boolean> => {
-    logger.dim(`  Running ${packageManager.command} ${packageManager.args(script).join(" ")}...`);
-    const exitCode = await runCommand(packageManager.command, packageManager.args(script), directory);
-    return exitCode === 0;
+    if (!hasScript(scripts, script)) {
+      logger.error(`  Missing package.json script: ${script}`);
+      return false;
+    }
+
+    const command = buildScriptCommand(packageManager, script);
+    logger.dim(`  Running ${command.command} ${command.args.join(" ")}...`);
+    const result = await execute(command.command, command.args, directory);
+    if (result.ok) return true;
+    logCommandFailure(`${packageManager} ${script}`, result);
+    return false;
+  };
+
+  const runPackSmoke = async (): Promise<boolean> => {
+    const command = buildPackSmokeCommand(packageManager);
+    if (!command) return true;
+
+    logger.dim(`  Running ${command.command} ${command.args.join(" ")}...`);
+    const result = await execute(command.command, command.args, directory);
+    command.cleanup?.();
+    if (result.ok) return true;
+    logCommandFailure(`${packageManager} pack smoke`, result);
+    return false;
   };
 
   if (level === "typecheck" || level === "tests" || level === "full") {
@@ -113,8 +164,13 @@ const verifyScripts = async (directory: string, level: VerificationLevel): Promi
 
   if (level === "full") {
     if (!await runScript("build")) return false;
-    if (await runCommand("npm", ["pack", "--dry-run"], directory) !== 0) return false;
-    if (await runCommand("node", ["dist/cli.mjs", "--version"], directory) !== 0) return false;
+    if (!await runPackSmoke()) return false;
+
+    logger.dim("  Running node dist/cli.mjs --version...");
+    const versionCheck = await execute("node", ["dist/cli.mjs", "--version"], directory);
+    if (versionCheck.ok) return true;
+    logCommandFailure("node dist/cli.mjs --version", versionCheck);
+    return false;
   }
 
   return true;

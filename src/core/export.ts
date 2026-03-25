@@ -28,7 +28,7 @@ const buildExportBody = (directory: string, diagnostics: Diagnostic[], options: 
   });
 };
 
-const resolveExportPath = (directory: string, filePath: string): string => {
+export const resolveExportPath = (directory: string, filePath: string): string => {
   const root = path.resolve(directory);
   const candidate = path.resolve(root, filePath);
   const relative = path.relative(root, candidate);
@@ -63,7 +63,7 @@ const assertNoSymlinkAncestors = (root: string, targetPath: string): void => {
   }
 };
 
-const writeExportFile = (directory: string, filePath: string, contents: string): string => {
+export const writeExportFile = (directory: string, filePath: string, contents: string): string => {
   const root = path.resolve(directory);
   const targetPath = resolveExportPath(root, filePath);
 
@@ -82,6 +82,22 @@ const writeExportFile = (directory: string, filePath: string, contents: string):
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
   fs.writeFileSync(targetPath, contents, { encoding: "utf-8", mode: 0o600 });
   return targetPath;
+};
+
+export const copyWithFallback = async (
+  body: string,
+  copy: (text: string) => Promise<boolean> = copyToClipboard,
+): Promise<CopyResult> => {
+  if (await copy(body)) {
+    return { copied: true, output: "clipboard", diagnosticsIncluded: 0 };
+  }
+
+  process.stdout.write(`${sanitize(body)}\n`);
+  return {
+    copied: true,
+    output: "stdout-fallback",
+    diagnosticsIncluded: 0,
+  };
 };
 
 export const exportDiagnosticsForAi = async (
@@ -115,14 +131,9 @@ export const exportDiagnosticsForAi = async (
     };
   }
 
-  if (await copyToClipboard(body)) {
-    return { copied: true, output, diagnosticsIncluded: selectedDiagnostics.length };
-  }
-
-  process.stdout.write(`${sanitize(body)}\n`);
+  const copyResult = await copyWithFallback(body);
   return {
-    copied: true,
-    output: "stdout-fallback",
+    ...copyResult,
     diagnosticsIncluded: selectedDiagnostics.length,
   };
 };

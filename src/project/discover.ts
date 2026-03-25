@@ -3,6 +3,10 @@ import path from "node:path";
 import { collectProjectFiles } from "../fs/walker.js";
 import type { Framework, PackageJson, ProjectFileManifest, ProjectInfo } from "../types.js";
 
+type ProjectDiscoveryOptions = {
+  usesRunes?: boolean;
+};
+
 const readPackageJson = (dir: string): PackageJson | null => {
   const filePath = path.join(dir, "package.json");
   if (!fs.existsSync(filePath)) return null;
@@ -66,7 +70,7 @@ const hasPreprocessConfig = (dir: string): boolean => {
 // compiled once at module level so repeated calls in watch mode do not recompile
 const RUNES_DETECT_PATTERN = /\$state\s*[<(]|\$derived\s*[<(]|\$effect\s*[.(]|\$props\s*[<(]/;
 
-const detectRunesUsage = (manifest: ProjectFileManifest): boolean => {
+export const detectRunesUsage = (manifest: ProjectFileManifest): boolean => {
   for (const fullPath of manifest.svelteFiles) {
     try {
       const content = fs.readFileSync(fullPath, "utf-8");
@@ -82,6 +86,7 @@ const detectRunesUsage = (manifest: ProjectFileManifest): boolean => {
 export const discoverProject = (
   dir: string,
   manifest: ProjectFileManifest = collectProjectFiles(dir),
+  options: ProjectDiscoveryOptions = {},
 ): ProjectInfo => {
   const pkg = readPackageJson(dir);
 
@@ -107,7 +112,7 @@ export const discoverProject = (
     hasTypeScript,
     hasPreprocess: hasPreprocessConfig(dir),
     sourceFileCount: manifest.sourceFileCount,
-    usesRunes: detectRunesUsage(manifest),
+    usesRunes: options.usesRunes ?? detectRunesUsage(manifest),
   };
 };
 

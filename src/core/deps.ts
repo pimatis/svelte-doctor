@@ -28,7 +28,6 @@ const DEPRECATED_PACKAGES: Record<string, string> = {
   "@rollup/plugin-svelte": "Use @sveltejs/vite-plugin-svelte with Vite instead of Rollup",
   "rollup-plugin-svelte": "Use @sveltejs/vite-plugin-svelte with Vite instead of Rollup",
   "svelte-loader": "Use @sveltejs/vite-plugin-svelte with Vite instead of Webpack",
-  "svelte-check": "Still maintained, but ensure version ≥4.0 for Svelte 5 compatibility",
   "svelte-hmr": "HMR is now built into @sveltejs/vite-plugin-svelte",
 };
 
@@ -78,6 +77,16 @@ const collectAllDeps = (pkg: PackageJson): Record<string, string> => {
   return merged;
 };
 
+const extractMajorVersion = (version: string): number | null => {
+  const match = version.match(/\d+/);
+  if (!match) return null;
+
+  const major = Number.parseInt(match[0], 10);
+  if (!Number.isFinite(major)) return null;
+
+  return major;
+};
+
 const checkDeprecated = (deps: Record<string, string>): DepIssue[] => {
   const issues: DepIssue[] = [];
 
@@ -99,6 +108,19 @@ const checkSvelte5Compatibility = (deps: Record<string, string>): DepIssue[] => 
   const issues: DepIssue[] = [];
 
   for (const [name, version] of Object.entries(deps)) {
+    if (name === "svelte-check") {
+      const major = extractMajorVersion(version);
+      if (major === null || major >= 4) continue;
+
+      issues.push({
+        name,
+        version,
+        type: "incompatible",
+        message: "Upgrade to svelte-check >=4.0 for Svelte 5 compatibility",
+      });
+      continue;
+    }
+
     if (!SVELTE5_INCOMPATIBLE[name]) continue;
 
     issues.push({

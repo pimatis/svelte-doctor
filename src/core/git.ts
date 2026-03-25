@@ -8,6 +8,20 @@ interface GitSelectionOptions {
   since?: string;
 }
 
+export const validateGitRef = (value: string): string => {
+  const ref = value.trim();
+  if (ref.length === 0) {
+    throw new Error("Git ref cannot be empty.");
+  }
+  if (ref.includes("\0")) {
+    throw new Error("Git ref cannot contain NUL bytes.");
+  }
+  if (ref.includes("\n") || ref.includes("\r")) {
+    throw new Error("Git ref cannot contain newlines.");
+  }
+  return ref;
+};
+
 const runGit = (directory: string, args: string[]): string => {
   const result = spawnSync("git", args, {
     cwd: directory,
@@ -43,13 +57,24 @@ export const getSelectedGitFiles = (
 
   ensureGitRepository(directory);
 
-  let relativeFiles: string[];
+  let relativeFiles: string[] = [];
   if (options.staged) {
     relativeFiles = readGitFileList(directory, ["diff", "--cached", "--name-only", "--diff-filter=ACMR"]);
-  } else if (options.since) {
-    relativeFiles = readGitFileList(directory, ["diff", "--name-only", "--diff-filter=ACMR", `${options.since}...HEAD`]);
   } else {
-    relativeFiles = readGitFileList(directory, ["diff", "--name-only", "--diff-filter=ACMR", "HEAD"]);
+    if (options.since) {
+      const safeRef = validateGitRef(options.since);
+
+      try {
+        runGit(directory, ["rev-parse", "--verify", safeRef]);
+      } catch {
+        throw new Error(`Git ref "${safeRef}" is invalid or not found.`);
+      }
+
+      relativeFiles = readGitFileList(directory, ["diff", "--name-only", "--diff-filter=ACMR", `${safeRef}...HEAD`]);
+    }
+    if (!options.since) {
+      relativeFiles = readGitFileList(directory, ["diff", "--name-only", "--diff-filter=ACMR", "HEAD"]);
+    }
   }
 
   return relativeFiles
