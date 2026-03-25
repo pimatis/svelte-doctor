@@ -1,16 +1,42 @@
 import { spawn } from "node:child_process";
 import { NPM_REGISTRY_PACKAGE_URL, PACKAGE_NAME, UPDATE_CHECK_TIMEOUT_MS, VERSION } from "../constants.js";
 import type { PackageManager, UpdateOptions, UpdateResult } from "../types.js";
+import { resolvePackageManager } from "./runtime.js";
 
 const isPackageManager = (value: string): value is PackageManager =>
   value === "npm" || value === "pnpm" || value === "bun";
 
-const fetchLatestVersion = async (): Promise<string> => {
+type FetchLike = typeof fetch;
+
+type InstallCommandResult = {
+  ok: boolean;
+  status: "ok" | "missing-binary" | "command-failed";
+};
+
+export const parseLatestVersion = (data: unknown): string => {
+  if (typeof data !== "object" || data === null) {
+    throw new Error("Registry response is not a valid JSON object");
+  }
+
+  const latest = (data as {
+    "dist-tags"?: {
+      latest?: unknown;
+    };
+  })["dist-tags"]?.latest;
+
+  if (typeof latest !== "string" || !/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(latest)) {
+    throw new Error("Registry response is missing a valid dist-tags.latest version");
+  }
+
+  return latest;
+};
+
+export const fetchLatestVersion = async (fetchImpl: FetchLike = fetch): Promise<string> => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), UPDATE_CHECK_TIMEOUT_MS);
 
   try {
-    const response = await fetch(NPM_REGISTRY_PACKAGE_URL, {
+    const response = await fetchImpl(NPM_REGISTRY_PACKAGE_URL, {
       method: "GET",
       headers: {
         accept: "application/json",
@@ -22,18 +48,7 @@ const fetchLatestVersion = async (): Promise<string> => {
       throw new Error(`Registry request failed with status ${response.status}`);
     }
 
-    const data = await response.json() as {
-      "dist-tags"?: {
-        latest?: unknown;
-      };
-    };
-
-    const latest = data["dist-tags"]?.latest;
-    if (typeof latest !== "string" || !/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(latest)) {
-      throw new Error("Registry response is missing a valid dist-tags.latest version");
-    }
-
-    return latest;
+    return parseLatestVersion(await response.json());
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error(`Registry request timed out after ${UPDATE_CHECK_TIMEOUT_MS}ms`);
@@ -47,14 +62,34 @@ const fetchLatestVersion = async (): Promise<string> => {
   }
 };
 
-const detectPackageManager = (): PackageManager => {
-  const userAgent = process.env.npm_config_user_agent ?? "";
+const detectPackageManagerFromUserAgent = (userAgent: string): PackageManager | null => {
   if (userAgent.startsWith("pnpm/")) return "pnpm";
   if (userAgent.startsWith("bun/")) return "bun";
+  if (userAgent.startsWith("npm/")) return "npm";
+  return null;
+};
+
+const isBunRuntime = (): boolean => {
+  return typeof globalThis === "object" && "Bun" in globalThis;
+};
+
+export const detectPackageManager = (
+  directory: string = process.cwd(),
+  userAgent: string = process.env.npm_config_user_agent ?? "",
+): PackageManager => {
+  const detectedFromAgent = detectPackageManagerFromUserAgent(userAgent);
+  if (detectedFromAgent) return detectedFromAgent;
+
+  const detectedFromDirectory = resolvePackageManager(directory);
+  if (detectedFromDirectory === "bun" || detectedFromDirectory === "pnpm") {
+    return detectedFromDirectory;
+  }
+
+  if (isBunRuntime()) return "bun";
   return "npm";
 };
 
-const buildInstallCommand = (
+export const buildInstallCommand = (
   manager: PackageManager,
   tag: "latest" = "latest",
 ): string[] => {
@@ -71,12 +106,22 @@ const buildInstallCommand = (
   }
 };
 
-const runInstallCommand = async (command: string[]): Promise<boolean> =>
+export const runInstallCommand = async (
+  command: string[],
+  spawnImpl: typeof spawn = spawn,
+): Promise<InstallCommandResult> =>
   new Promise((resolve) => {
     const [bin, ...args] = command;
-    const child = spawn(bin, args, { stdio: "inherit" });
-    child.on("close", (code) => resolve(code === 0));
-    child.on("error", () => resolve(false));
+    const child = spawnImpl(bin, args, { stdio: "inherit" });
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve({ ok: true, status: "ok" });
+        return;
+      }
+
+      resolve({ ok: false, status: "command-failed" });
+    });
+    child.on("error", () => resolve({ ok: false, status: "missing-binary" }));
   });
 
 export const runUpdate = async (options: UpdateOptions = {}): Promise<UpdateResult> => {
@@ -106,7 +151,11 @@ export const runUpdate = async (options: UpdateOptions = {}): Promise<UpdateResu
   }
 
   const updated = await runInstallCommand(installCommand);
-  if (!updated) {
+  if (!updated.ok) {
+    if (updated.status === "missing-binary") {
+      throw new Error(`Install binary not found for update command: ${installCommand[0]}`);
+    }
+
     throw new Error(`Global update command failed: ${installCommand.join(" ")}`);
   }
 

@@ -72,9 +72,35 @@ export const watch = async (
 ): Promise<void> => {
   validateDirectory(directory);
 
-  let projectInfo = discoverProject(directory);
+  const diagnosticsMap = new Map<string, Diagnostic[]>();
+  let deadCodeDiagnostics: Diagnostic[] = [];
+  const runeFiles = new Set<string>();
+  const scanCache = loadScanCache(directory);
   let userConfig = loadConfig(directory);
   let effectiveDeadCodeMode = deadCodeMode === "off" ? (userConfig?.watch?.deadCode ?? "off") : deadCodeMode;
+
+  const syncRuneFiles = (manifest: ReturnType<typeof collectProjectFiles>): boolean => {
+    runeFiles.clear();
+
+    for (const file of manifest.svelteFiles) {
+      try {
+        const content = fs.readFileSync(file, "utf-8");
+        if (RUNES_PATTERN.test(content)) {
+          runeFiles.add(toPosix(path.relative(directory, file)));
+        }
+      } catch {}
+    }
+
+    return runeFiles.size > 0;
+  };
+
+  const createProjectInfo = (): ProjectInfo => {
+    const manifest = collectProjectFiles(directory);
+    const usesRunes = syncRuneFiles(manifest);
+    return discoverProject(directory, manifest, { usesRunes });
+  };
+
+  let projectInfo = createProjectInfo();
 
   if (!projectInfo.svelteVersion) {
     logger.break();
@@ -89,30 +115,19 @@ export const watch = async (
   logger.log(`  ${highlighter.bold("svelte-doctor watch")} ${highlighter.dim("[watching]")}`);
   logger.break();
 
-  const diagnosticsMap = new Map<string, Diagnostic[]>();
-  let deadCodeDiagnostics: Diagnostic[] = [];
-  const runeFiles = new Set<string>();
-  const scanCache = loadScanCache(directory);
-
   const refreshManifestAndLint = (): void => {
     diagnosticsMap.clear();
     const manifest = collectProjectFiles(directory);
+    const usesRunes = syncRuneFiles(manifest);
+    projectInfo = discoverProject(directory, manifest, { usesRunes });
     const lintResult = runLintPass(directory, manifest, projectInfo, true, scanCache);
+
     for (const file of [...manifest.svelteFiles, ...manifest.scriptFiles]) {
       const posixPath = toPosix(path.relative(directory, file));
       diagnosticsMap.set(posixPath, lintResult.cache.files[posixPath]?.diagnostics ?? []);
     }
-    saveScanCache(directory, lintResult.cache);
 
-    runeFiles.clear();
-    for (const file of manifest.svelteFiles) {
-      try {
-        const content = fs.readFileSync(file, "utf-8");
-        if (RUNES_PATTERN.test(content)) {
-          runeFiles.add(toPosix(path.relative(directory, file)));
-        }
-      } catch {}
-    }
+    saveScanCache(directory, lintResult.cache);
   };
 
   refreshManifestAndLint();
@@ -148,10 +163,14 @@ export const watch = async (
     previousScore = nextScore.score;
   };
 
-  const rescanProject = async (reason: string) => {
+  const rescanProject = async (reason: string, refreshDeadCode: boolean): Promise<void> => {
     refreshManifestAndLint();
 
-    if (effectiveDeadCodeMode === "full" || (effectiveDeadCodeMode === "lazy" && isProjectInfoFile(reason))) {
+    if (effectiveDeadCodeMode === "full") {
+      deadCodeDiagnostics = await runDeadCodeAnalysis(directory);
+    }
+
+    if (effectiveDeadCodeMode === "lazy" && refreshDeadCode) {
       deadCodeDiagnostics = await runDeadCodeAnalysis(directory);
     }
 
@@ -179,9 +198,9 @@ export const watch = async (
         const exists = fs.existsSync(fullPath);
 
         if (isProjectInfoFile(posixPath)) {
-          projectInfo = discoverProject(directory);
           userConfig = loadConfig(directory);
           effectiveDeadCodeMode = deadCodeMode === "off" ? (userConfig?.watch?.deadCode ?? "off") : deadCodeMode;
+          projectInfo = createProjectInfo();
 
           if (!projectInfo.svelteVersion) {
             logger.warn(`  ${highlighter.dim(`[${formatTime()}]`)} Svelte dependency removed from package.json. Diagnostics paused.`);
@@ -191,36 +210,33 @@ export const watch = async (
             return;
           }
 
-          await rescanProject("Project config changed.");
+          await rescanProject("Project config changed.", true);
+          return;
+        }
+
+        if (!exists || !diagnosticsMap.has(posixPath)) {
+          await rescanProject(`${safePath} structure changed.`, false);
           return;
         }
 
         if (posixPath.endsWith(".svelte")) {
-          if (!exists) {
-            runeFiles.delete(posixPath);
-          } else {
-            try {
-              const content = fs.readFileSync(fullPath, "utf-8");
-              const hasRunes = RUNES_PATTERN.test(content);
-              if (hasRunes) runeFiles.add(posixPath);
-              else runeFiles.delete(posixPath);
-            } catch {}
-          }
+          try {
+            const content = fs.readFileSync(fullPath, "utf-8");
+            const hasRunes = RUNES_PATTERN.test(content);
+            if (hasRunes) runeFiles.add(posixPath);
+            if (!hasRunes) runeFiles.delete(posixPath);
+          } catch {}
 
           const nextUsesRunes = runeFiles.size > 0;
           if (nextUsesRunes !== projectInfo.usesRunes) {
             projectInfo = { ...projectInfo, usesRunes: nextUsesRunes };
-            await rescanProject("Runes mode changed.");
+            await rescanProject("Runes mode changed.", false);
             return;
           }
         }
 
-        if (!exists) {
-          diagnosticsMap.delete(posixPath);
-        } else {
-          const fileDiags = scanSingleFile(fullPath, relativeToRoot, projectInfo);
-          diagnosticsMap.set(posixPath, fileDiags);
-        }
+        const fileDiags = scanSingleFile(fullPath, relativeToRoot, projectInfo);
+        diagnosticsMap.set(posixPath, fileDiags);
 
         if (effectiveDeadCodeMode === "full") {
           deadCodeDiagnostics = await runDeadCodeAnalysis(directory);
@@ -237,13 +253,13 @@ export const watch = async (
         if (diff > 0) {
           scoreChange = highlighter.success(`${previousScore} → ${newScore.score}`);
           statusMsg = highlighter.success(` (✓ score improved +${diff})`);
-        } else if (diff < 0) {
+        }
+        if (diff < 0) {
           scoreChange = highlighter.error(`${previousScore} → ${newScore.score}`);
           statusMsg = highlighter.error(` (⚠ ${currentFileDiags.length} issue${currentFileDiags.length === 1 ? "" : "s"})`);
         }
 
-        const action = exists ? "changed" : "deleted";
-        logger.log(`  ${highlighter.dim(`[${formatTime()}]`)} ${safePath} ${action} Score: ${scoreChange}${statusMsg}`);
+        logger.log(`  ${highlighter.dim(`[${formatTime()}]`)} ${safePath} changed Score: ${scoreChange}${statusMsg}`);
 
         for (const diag of currentFileDiags) {
           const icon = diag.severity === "error" ? highlighter.error("✗") : highlighter.warn("⚠");

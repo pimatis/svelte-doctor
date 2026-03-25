@@ -30,7 +30,7 @@ import { filterBaselineDiagnostics, loadBaseline } from "./baseline.js";
 import { collectProjectFiles } from "../fs/walker.js";
 import { toPosix } from "../fs/normalize.js";
 import { validateDirectory } from "../fs/validate.js";
-import { discoverProject, formatFrameworkName } from "../project/discover.js";
+import { detectRunesUsage, discoverProject, formatFrameworkName } from "../project/discover.js";
 import { loadConfig } from "../project/config.js";
 import { parseSvelteFile, parseScriptFile } from "../parser/svelte.js";
 import { highlighter, logger } from "../output/logger.js";
@@ -169,7 +169,9 @@ export const scan = async (
   const fullManifest = collectProjectFiles(directory);
   const selectedManifest = buildSelectedManifest(directory, fullManifest, options.targetFiles);
   const targetMode = options.targetFiles && options.targetFiles.length > 0 ? "subset" : "full";
-  const projectInfo = discoverProject(directory, fullManifest);
+  const notes: string[] = [];
+  const usesRunes = detectRunesUsage(fullManifest);
+  const projectInfo = discoverProject(directory, fullManifest, { usesRunes });
 
   if (!projectInfo.svelteVersion) {
     const emptyDiagnostics: Diagnostic[] = [];
@@ -200,6 +202,7 @@ export const scan = async (
         elapsedMs: emptyMeta.elapsedMs,
         diagnostics: [],
         warning: "No Svelte dependency found in package.json. This project does not appear to be a Svelte project.",
+        ...(notes.length > 0 ? { notes } : {}),
       }, null, 2));
     } else if (options.scoreOnly) {
       logger.log(`${emptyScore.score}`);
@@ -234,6 +237,7 @@ export const scan = async (
   }
 
   let lintDiagnostics: Diagnostic[] = [];
+  let shouldSaveCache = false;
 
   if (options.lint) {
     const lintSpinner = silent ? null : spinner("Running lint checks...").start();
@@ -242,10 +246,11 @@ export const scan = async (
       const lintResult = runLintPass(directory, selectedManifest, projectInfo, options.cache, scanCache);
       lintDiagnostics = lintResult.diagnostics;
       lintSpinner?.succeed("Running lint checks.");
-      if (options.cache) saveScanCache(directory, lintResult.cache);
+      shouldSaveCache = options.cache;
     } catch (error) {
       lintSpinner?.fail("Lint checks failed (non-fatal, skipping).");
       if (error instanceof Error) logger.error(error.message);
+      if (error instanceof Error) notes.push(`Lint checks skipped: ${error.message}`);
     }
   }
 
@@ -263,14 +268,19 @@ export const scan = async (
           diagnostics: deadCodeDiagnostics,
           sourceSignature: deadCodeSignature,
         };
-        if (options.cache) saveScanCache(directory, scanCache);
+        shouldSaveCache = options.cache;
       }
 
       deadCodeSpinner?.succeed("Detecting dead code.");
     } catch (error) {
       deadCodeSpinner?.fail("Dead code detection failed (non-fatal, skipping).");
       if (error instanceof Error) logger.error(error.message);
+      if (error instanceof Error) notes.push(`Dead code detection skipped: ${error.message}`);
     }
+  }
+
+  if (shouldSaveCache) {
+    saveScanCache(directory, scanCache);
   }
 
   const allDiagnostics = attachDiagnosticMetadata(
@@ -329,6 +339,7 @@ export const scan = async (
       categoryBreakdown: scoreResult.categoryBreakdown,
       elapsedMs: meta.elapsedMs,
       targetMode: meta.targetMode,
+      ...(notes.length > 0 ? { notes } : {}),
       diagnostics: diagnostics.map((d) => ({
         rule: d.rule,
         severity: d.severity,
