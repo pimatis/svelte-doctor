@@ -8,7 +8,7 @@ import { bundleRules } from "./bundle/index.js";
 import { accessibilityRules } from "./accessibility/index.js";
 import { reactivityRules } from "./reactivity/index.js";
 
-export const ruleRegistry = {
+const ruleRegistry = {
   Correctness: correctnessRules,
   Performance: performanceRules,
   Architecture: architectureRules,

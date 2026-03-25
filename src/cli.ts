@@ -2,22 +2,32 @@ import path from "node:path";
 import { Command } from "commander";
 import { scan } from "./core/scanner.js";
 import { watch } from "./core/watch.js";
-import { runDepsCheck } from "./core/deps.js";
+import { checkDeps, runDepsCheck } from "./core/deps.js";
 import { runFix } from "./agents/fix.js";
 import { migrate } from "./core/migrate.js";
-import { printTrend } from "./core/history.js";
+import { loadScoreHistory, printTrend } from "./core/history.js";
 import { runUpdate } from "./core/update.js";
 import { exportDiagnosticsForAi } from "./core/export.js";
+import { runApply } from "./core/apply.js";
+import { saveBaseline } from "./core/baseline.js";
+import { buildGitHubAnnotations, buildSarifReport, writeSarifReport } from "./core/reporting.js";
+import { getSelectedGitFiles } from "./core/git.js";
 import { logger, highlighter } from "./output/logger.js";
+import { printRuleExplain, printRules } from "./output/rules.js";
+import { allRules } from "./rules/index.js";
 import { DEFAULT_COPY_MAX_DIAGNOSTICS, VERSION } from "./constants.js";
+import { discoverWorkspaces, findWorkspace } from "./project/workspaces.js";
 import type {
+  ApplyOptions,
   CopyFormat,
   CopyOutput,
   DeadCodeMode,
+  Diagnostic,
+  FailOn,
   PackageManager,
-  ScanOptions,
   UpdateResult,
   VerificationLevel,
+  WorkspaceInfo,
 } from "./types.js";
 
 const parseDeadCodeMode = (value: string): DeadCodeMode => {
@@ -45,6 +55,19 @@ const parseCopyOutput = (value: string): CopyOutput => {
 const parseCopyFormat = (value: string): CopyFormat => {
   if (value === "prompt" || value === "raw") return value;
   throw new Error(`Invalid copy format "${value}". Use prompt or raw.`);
+};
+
+const parseFailOn = (value: string): FailOn => {
+  if (value === "never" || value === "error" || value === "warning") return value;
+  throw new Error(`Invalid fail-on mode "${value}". Use never, error, or warning.`);
+};
+
+const parsePositiveInt = (value: string, field: string): number => {
+  const parsed = parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`Invalid ${field} "${value}".`);
+  }
+  return parsed;
 };
 
 const printUpdateResult = (result: UpdateResult, json: boolean): void => {
@@ -80,41 +103,120 @@ const printUpdateResult = (result: UpdateResult, json: boolean): void => {
   }
 };
 
+const getWorkspaceTargets = (
+  directory: string,
+  workspace?: string,
+  allWorkspaces?: boolean,
+): WorkspaceInfo[] => {
+  if (!workspace && !allWorkspaces) return [];
+  if (workspace) {
+    const match = findWorkspace(directory, workspace);
+    if (!match) throw new Error(`Workspace "${workspace}" not found.`);
+    return [match];
+  }
+
+  const discovered = discoverWorkspaces(directory);
+  if (discovered.length === 0) {
+    throw new Error("No workspaces found in package.json.");
+  }
+  return discovered;
+};
+
+const prefixDiagnosticsForWorkspace = (
+  workspace: WorkspaceInfo,
+  diagnostics: Diagnostic[],
+): Diagnostic[] =>
+  diagnostics.map((diagnostic) => ({
+    ...diagnostic,
+    filePath: `${workspace.relativePath}/${diagnostic.filePath}`,
+    workspace: workspace.name,
+  }));
+
+const resolveGitSelection = (
+  directory: string,
+  flags: { changed?: boolean; staged?: boolean; since?: string },
+): string[] => {
+  if (!flags.changed && !flags.staged && !flags.since) return [];
+  return getSelectedGitFiles(directory, {
+    changed: flags.changed,
+    staged: flags.staged,
+    since: flags.since,
+  });
+};
+
+const filterSelectedFilesForDirectory = (directory: string, files: string[]): string[] =>
+  files.filter((file) => {
+    const relative = path.relative(directory, file);
+    return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+  });
+
+const shouldFail = (
+  diagnostics: Diagnostic[],
+  score: number,
+  failOn: FailOn,
+  minScore: number,
+): boolean => {
+  if (score < minScore) return true;
+  if (failOn === "never") return false;
+  if (failOn === "warning") return diagnostics.length > 0;
+  return diagnostics.some((diagnostic) => diagnostic.severity === "error");
+};
+
+const printWorkspaceAggregate = (
+  workspaces: WorkspaceInfo[],
+  results: Array<{ workspace: WorkspaceInfo; score: number; diagnostics: Diagnostic[] }>,
+) => {
+  logger.break();
+  logger.log(`  ${highlighter.bold("Workspace Summary")}`);
+  logger.break();
+
+  for (const entry of results) {
+    const errorCount = entry.diagnostics.filter((diagnostic) => diagnostic.severity === "error").length;
+    const warningCount = entry.diagnostics.filter((diagnostic) => diagnostic.severity === "warning").length;
+    logger.log(
+      `  ${highlighter.info(entry.workspace.name)} (${entry.workspace.relativePath})  ` +
+      `score ${entry.score}  ${highlighter.error(`${errorCount} error${errorCount === 1 ? "" : "s"}`)}  ` +
+      `${highlighter.warn(`${warningCount} warning${warningCount === 1 ? "" : "s"}`)}`,
+    );
+  }
+
+  const scores = results.map((entry) => entry.score);
+  const average = scores.length > 0 ? Math.round(scores.reduce((sum, value) => sum + value, 0) / scores.length) : 100;
+  const worst = scores.length > 0 ? Math.min(...scores) : 100;
+  logger.break();
+  logger.log(`  Workspaces: ${workspaces.length}  Average score: ${average}  Worst score: ${worst}`);
+  logger.break();
+};
+
+const maybeEmitReports = (
+  directory: string,
+  diagnostics: Diagnostic[],
+  flags: { sarif?: boolean; sarifFile?: string; githubAnnotations?: boolean },
+) => {
+  if (flags.githubAnnotations) {
+    for (const line of buildGitHubAnnotations(diagnostics)) {
+      logger.log(line);
+    }
+  }
+
+  if (!flags.sarif) return null;
+
+  const report = buildSarifReport(diagnostics, VERSION, directory);
+  if (flags.sarifFile) {
+    const writtenPath = writeSarifReport(flags.sarifFile, report);
+    logger.success(`  ✓ Wrote SARIF report to ${writtenPath}`);
+    return report;
+  }
+
+  logger.log(JSON.stringify(report, null, 2));
+  return report;
+};
+
 const program = new Command()
   .name("svelte-doctor")
   .description("Diagnose and fix your Svelte codebase")
-  .version(VERSION, "-v, --version", "display the version number")
-  .addHelpText("after", `
-Examples:
-  $ svelte-doctor check                 Scan current directory
-  $ svelte-doctor check ./my-app        Scan a specific project
-  $ svelte-doctor check --no-cache      Force a cold scan
-  $ svelte-doctor check --copy          Copy diagnostics for another AI agent
-  $ svelte-doctor check --json          Output machine-readable JSON (for AI agents)
-  $ svelte-doctor check --score         Output only the numeric score (for CI)
-  $ svelte-doctor fix                   Auto-fix issues with an AI agent
-  $ svelte-doctor fix --dry-run-prompt  Preview the secure agent prompt
-  $ svelte-doctor fix --agent cursor    Use Cursor CLI (agent)
-  $ svelte-doctor fix --agent claude    Use a specific agent
-  $ svelte-doctor update                Update the global CLI from npm
-  $ svelte-doctor update --check        Check for a newer npm release
-  $ svelte-doctor migrate               Auto-migrate Svelte 4 → Svelte 5
-  $ svelte-doctor migrate --dry-run     Preview changes without modifying
-  $ svelte-doctor watch                 Watch for changes and show live score
-  $ svelte-doctor watch --dead-code lazy  Re-run dead code lazily in watch mode
+  .version(VERSION, "-v, --version", "display the version number");
 
-Exit Codes:
-  0  No errors found
-  1  One or more errors found, or fatal failure
-
-AI Agent Integration:
-  svelte-doctor is designed to work with AI coding agents.
-  Use --json for structured output that agents can parse.
-  Use "svelte-doctor fix" to send diagnostics directly to an agent.
-  Supported agents: Cursor (agent), Amp, Claude Code, Codex (auto-detected from PATH).
-`);
-
-// -- check command --
 const checkCommand = new Command("check")
   .description("Scan your project for issues and output a health score")
   .argument("[directory]", "project directory to scan", ".")
@@ -129,18 +231,17 @@ const checkCommand = new Command("check")
   .option("--copy-max <count>", "maximum diagnostics to include in copy/export output", String(DEFAULT_COPY_MAX_DIAGNOSTICS))
   .option("--copy-errors-only", "export only error diagnostics in copy/export output")
   .option("--copy-format <format>", "copy format: prompt or raw", parseCopyFormat, "prompt")
-  .addHelpText("after", `
-Examples:
-  $ svelte-doctor check
-  $ svelte-doctor check ./my-app
-  $ svelte-doctor check --copy
-  $ svelte-doctor check --copy --copy-errors-only
-  $ svelte-doctor check --copy --copy-output stdout
-  $ svelte-doctor check --copy --copy-output file --copy-file .svelte-doctor/diagnostics.txt
-  $ svelte-doctor check --json | jq '.diagnostics[] | select(.severity == "error")'
-  $ svelte-doctor check --score
-  $ svelte-doctor check --no-dead-code
-`)
+  .option("--baseline", "suppress diagnostics that exist in .svelte-doctor/baseline.json")
+  .option("--sarif", "emit SARIF output")
+  .option("--sarif-file <path>", "write SARIF output to a file")
+  .option("--github-annotations", "emit GitHub Actions annotation commands")
+  .option("--fail-on <mode>", "exit policy: never, error, or warning", parseFailOn, "error")
+  .option("--min-score <score>", "fail when score drops below this threshold", "0")
+  .option("--changed", "scan changed files relative to HEAD")
+  .option("--staged", "scan staged files only")
+  .option("--since <ref>", "scan files changed since the given git ref")
+  .option("--all-workspaces", "scan every package.json workspace")
+  .option("--workspace <name>", "scan a specific workspace by name or relative path")
   .action(async (directory: string, flags: {
     lint: boolean;
     deadCode: boolean;
@@ -153,56 +254,119 @@ Examples:
     copyMax: string;
     copyErrorsOnly?: boolean;
     copyFormat: CopyFormat;
+    baseline?: boolean;
+    sarif?: boolean;
+    sarifFile?: string;
+    githubAnnotations?: boolean;
+    failOn: FailOn;
+    minScore: string;
+    changed?: boolean;
+    staged?: boolean;
+    since?: string;
+    allWorkspaces?: boolean;
+    workspace?: string;
   }) => {
     try {
       const resolvedDir = path.resolve(directory);
+      const minScore = parsePositiveInt(flags.minScore, "min score");
+      const selectedFiles = resolveGitSelection(resolvedDir, flags);
+      const workspaces = getWorkspaceTargets(resolvedDir, flags.workspace, flags.allWorkspaces);
+      const sarifStdoutMode = flags.sarif === true && !flags.sarifFile && !flags.json && !flags.score;
+
       if (flags.copy && (flags.json || flags.score) && flags.copyOutput !== "file") {
         throw new Error("Use --copy-output file when combining --copy with --json or --score.");
       }
 
-      if (!flags.score && !flags.json) {
+      if (workspaces.length > 0) {
+        const aggregateResults: Array<{ workspace: WorkspaceInfo; score: number; diagnostics: Diagnostic[] }> = [];
+        const prefixedDiagnostics: Diagnostic[] = [];
+
+        for (const workspace of workspaces) {
+          const workspaceTargetFiles = filterSelectedFilesForDirectory(workspace.directory, selectedFiles);
+          const result = await scan(workspace.directory, {
+            lint: flags.lint,
+            deadCode: flags.deadCode,
+            cache: flags.cache,
+            quiet: true,
+            baseline: flags.baseline ?? false,
+            targetFiles: workspaceTargetFiles,
+          });
+          aggregateResults.push({
+            workspace,
+            score: result.scoreResult.score,
+            diagnostics: result.diagnostics,
+          });
+          prefixedDiagnostics.push(...prefixDiagnosticsForWorkspace(workspace, result.diagnostics));
+        }
+
+        const worstScore = aggregateResults.length > 0 ? Math.min(...aggregateResults.map((entry) => entry.score)) : 100;
+        if (flags.json) {
+          logger.log(JSON.stringify({
+            version: VERSION,
+            workspaces: aggregateResults.map((entry) => ({
+              name: entry.workspace.name,
+              directory: entry.workspace.relativePath,
+              score: entry.score,
+              errors: entry.diagnostics.filter((diagnostic) => diagnostic.severity === "error").length,
+              warnings: entry.diagnostics.filter((diagnostic) => diagnostic.severity === "warning").length,
+            })),
+            diagnostics: prefixedDiagnostics,
+            worstScore,
+          }, null, 2));
+        } else if (flags.score) {
+          logger.log(String(worstScore));
+        } else if (!sarifStdoutMode) {
+          printWorkspaceAggregate(workspaces, aggregateResults);
+        }
+
+        if (flags.copy) {
+          await exportDiagnosticsForAi(resolvedDir, prefixedDiagnostics, {
+            enabled: true,
+            output: flags.copyOutput,
+            filePath: flags.copyFile,
+            maxDiagnostics: parsePositiveInt(flags.copyMax, "copy max"),
+            errorsOnly: flags.copyErrorsOnly ?? false,
+            format: flags.copyFormat,
+          });
+        }
+
+        maybeEmitReports(resolvedDir, prefixedDiagnostics, flags);
+        if (aggregateResults.some((entry) => shouldFail(entry.diagnostics, entry.score, flags.failOn, minScore))) {
+          process.exitCode = 1;
+        }
+        return;
+      }
+
+      if (!flags.score && !flags.json && !sarifStdoutMode) {
         logger.break();
         logger.log(`  ${highlighter.bold("svelte-doctor")} v${VERSION}`);
         logger.break();
       }
 
-      const options: ScanOptions = {
+      const result = await scan(resolvedDir, {
         lint: flags.lint,
         deadCode: flags.deadCode,
         cache: flags.cache,
         scoreOnly: flags.score,
         json: flags.json,
-      };
-
-      const result = await scan(resolvedDir, options);
-      const parsedCopyMax = parseInt(flags.copyMax, 10);
+        quiet: sarifStdoutMode,
+        baseline: flags.baseline ?? false,
+        targetFiles: filterSelectedFilesForDirectory(resolvedDir, selectedFiles),
+      });
 
       if (flags.copy) {
-        const exportResult = await exportDiagnosticsForAi(resolvedDir, result.diagnostics, {
+        await exportDiagnosticsForAi(resolvedDir, result.diagnostics, {
           enabled: true,
           output: flags.copyOutput,
           filePath: flags.copyFile,
-          maxDiagnostics: Number.isFinite(parsedCopyMax) && parsedCopyMax > 0
-            ? parsedCopyMax
-            : DEFAULT_COPY_MAX_DIAGNOSTICS,
+          maxDiagnostics: parsePositiveInt(flags.copyMax, "copy max"),
           errorsOnly: flags.copyErrorsOnly ?? false,
           format: flags.copyFormat,
         });
-
-        if (!flags.score && !flags.json) {
-          if (exportResult.output === "clipboard") {
-            logger.success(`  ✓ Copied ${exportResult.diagnosticsIncluded} diagnostic(s) to the clipboard.`);
-          } else if (exportResult.output === "stdout-fallback") {
-            logger.warn("  Clipboard unavailable. Printed AI export to stdout instead.");
-          } else if (exportResult.output === "stdout") {
-            logger.success(`  ✓ Printed ${exportResult.diagnosticsIncluded} diagnostic(s) to stdout.`);
-          } else if (exportResult.output === "file" && exportResult.filePath) {
-            logger.success(`  ✓ Wrote AI export to ${exportResult.filePath}`);
-          }
-        }
       }
 
-      if (result.diagnostics.some((d) => d.severity === "error")) {
+      maybeEmitReports(resolvedDir, result.diagnostics, flags);
+      if (shouldFail(result.diagnostics, result.scoreResult.score, flags.failOn, minScore)) {
         process.exitCode = 1;
       }
     } catch (error) {
@@ -219,7 +383,120 @@ Examples:
     }
   });
 
-// -- fix command --
+const baselineCommand = new Command("baseline")
+  .description("Generate a baseline file from current diagnostics")
+  .argument("[directory]", "project directory", ".")
+  .option("--all-workspaces", "generate baseline files for all workspaces")
+  .option("--workspace <name>", "generate a baseline for a single workspace")
+  .option("--changed", "baseline changed files relative to HEAD")
+  .option("--staged", "baseline staged files only")
+  .option("--since <ref>", "baseline files changed since the given git ref")
+  .action(async (directory: string, flags: {
+    allWorkspaces?: boolean;
+    workspace?: string;
+    changed?: boolean;
+    staged?: boolean;
+    since?: string;
+  }) => {
+    const resolvedDir = path.resolve(directory);
+    const selectedFiles = resolveGitSelection(resolvedDir, flags);
+    const workspaces = getWorkspaceTargets(resolvedDir, flags.workspace, flags.allWorkspaces);
+
+    if (workspaces.length > 0) {
+      for (const workspace of workspaces) {
+        const workspaceTargetFiles = filterSelectedFilesForDirectory(workspace.directory, selectedFiles);
+        const result = await scan(workspace.directory, {
+          quiet: true,
+          targetFiles: workspaceTargetFiles,
+        });
+        const baselinePath = saveBaseline(workspace.directory, result.diagnostics);
+        logger.success(`  ✓ Wrote baseline for ${workspace.name} to ${baselinePath}`);
+      }
+      return;
+    }
+
+    const result = await scan(resolvedDir, {
+      quiet: true,
+      targetFiles: filterSelectedFilesForDirectory(resolvedDir, selectedFiles),
+    });
+    const baselinePath = saveBaseline(resolvedDir, result.diagnostics);
+    logger.success(`  ✓ Wrote baseline to ${baselinePath}`);
+  });
+
+const applyCommand = new Command("apply")
+  .description("Apply deterministic high-confidence fixes")
+  .argument("[directory]", "project directory", ".")
+  .option("--dry-run", "preview fixes without writing files")
+  .option("--json", "output machine-readable JSON")
+  .option("--write", "write changes to disk")
+  .option("--rules <csv>", "limit deterministic fixes to a comma-separated rule list")
+  .option("--changed", "apply fixes on changed files relative to HEAD")
+  .option("--staged", "apply fixes on staged files only")
+  .option("--since <ref>", "apply fixes on files changed since the given git ref")
+  .action(async (directory: string, flags: {
+    dryRun?: boolean;
+    json?: boolean;
+    write?: boolean;
+    rules?: string;
+    changed?: boolean;
+    staged?: boolean;
+    since?: string;
+  }) => {
+    try {
+      const resolvedDir = path.resolve(directory);
+      const selectedFiles = resolveGitSelection(resolvedDir, flags);
+      const options: ApplyOptions = {
+        dryRun: flags.dryRun ?? false,
+        json: flags.json ?? false,
+        write: flags.write === true,
+        rules: flags.rules?.split(",").map((rule) => rule.trim()).filter(Boolean),
+        targetFiles: filterSelectedFilesForDirectory(resolvedDir, selectedFiles),
+      };
+      const result = await runApply(resolvedDir, options);
+      if (flags.json) {
+        logger.log(JSON.stringify(result, null, 2));
+        return;
+      }
+
+      logger.break();
+      logger.log(`  ${highlighter.bold("svelte-doctor apply")} v${VERSION}`);
+      logger.break();
+      logger.log(`  Evaluated files: ${result.evaluatedFiles}`);
+      logger.log(`  Changed files: ${result.changedFiles}`);
+      logger.log(`  Diagnostics considered: ${result.diagnosticsConsidered}`);
+      logger.log(`  Mode: ${result.write ? highlighter.success("write") : highlighter.warn("dry-run")}`);
+      if (result.appliedRules.length > 0) {
+        logger.break();
+        logger.log(`  Applied rules: ${result.appliedRules.join(", ")}`);
+      }
+      logger.break();
+    } catch (error) {
+      if (error instanceof Error) {
+        logger.error(`  Error: ${error.message}`);
+      }
+      process.exit(1);
+    }
+  });
+
+const rulesCommand = new Command("rules")
+  .description("List available diagnostics rules")
+  .action(() => {
+    printRules(allRules);
+  });
+
+const explainCommand = new Command("explain")
+  .description("Explain a rule and its safe fixes")
+  .argument("<rule>", "rule name")
+  .action((ruleName: string) => {
+    const rule = allRules.find((entry) => entry.name === ruleName);
+    if (!rule) {
+      logger.error(`  Unknown rule: ${ruleName}`);
+      process.exit(1);
+      return;
+    }
+    printRuleExplain(rule);
+  });
+
 const fixCommand = new Command("fix")
   .description("Use an AI agent (Cursor/amp/claude/codex) to auto-fix all reported issues")
   .argument("[directory]", "project directory", ".")
@@ -229,28 +506,6 @@ const fixCommand = new Command("fix")
   .option("--dry-run-prompt", "write the agent prompt to a secure temp file without spawning an agent")
   .option("--verify-level <level>", "verification depth: diagnostics, typecheck, tests, or full", parseVerifyLevel, "diagnostics")
   .option("--max-files <count>", "maximum diagnostics to include in a single agent batch", "50")
-  .addHelpText("after", `
-Examples:
-  $ svelte-doctor fix
-  $ svelte-doctor fix ./my-app
-  $ svelte-doctor fix --agent cursor
-  $ svelte-doctor fix --agent claude
-  $ svelte-doctor fix --dry-run-prompt
-  $ svelte-doctor fix --verify-level full
-  $ svelte-doctor fix --unsafe-agent-exec
-
-Supported Agents (checked in this priority order):
-  cursor   Cursor     https://cursor.com/cli (installs as 'agent')
-  amp      Amp        https://ampcode.com/
-  claude   Claude Code  https://docs.anthropic.com/en/docs/claude-code
-  codex    Codex      https://github.com/openai/codex
-
-Security:
-  Agent execution is safe-by-default.
-  Privileged agent flags are disabled unless you pass --unsafe-agent-exec.
-
-Tip: Use --errors-only to fix critical issues first and reduce cascade errors.
-`)
   .action(async (directory: string, flags: {
     agent?: string;
     errorsOnly?: boolean;
@@ -266,7 +521,7 @@ Tip: Use --errors-only to fix critical issues first and reduce cascade errors.
       logger.log(`  ${highlighter.bold("svelte-doctor fix")} v${VERSION}`);
       logger.break();
 
-      const result = await scan(resolvedDir, {});
+      const result = await scan(resolvedDir, { quiet: true });
       const diagnostics = flags.errorsOnly
         ? result.diagnostics.filter((d) => d.severity === "error")
         : result.diagnostics;
@@ -275,13 +530,13 @@ Tip: Use --errors-only to fix critical issues first and reduce cascade errors.
         return;
       }
 
-      const parsedMaxFiles = parseInt(flags.maxFiles, 10);
+      const parsedMaxFiles = parsePositiveInt(flags.maxFiles, "max files");
       const fixResult = await runFix(resolvedDir, diagnostics, {
         agentOverride: flags.agent,
         unsafeAgentExec: flags.unsafeAgentExec ?? false,
         dryRunPrompt: flags.dryRunPrompt ?? false,
         verifyLevel: flags.verifyLevel,
-        maxFiles: Number.isFinite(parsedMaxFiles) && parsedMaxFiles > 0 ? parsedMaxFiles : 50,
+        maxFiles: parsedMaxFiles > 0 ? parsedMaxFiles : 50,
       });
       if (fixResult?.errorsIncreased || fixResult?.verificationPassed === false) {
         process.exitCode = 1;
@@ -294,17 +549,10 @@ Tip: Use --errors-only to fix critical issues first and reduce cascade errors.
     }
   });
 
-// -- watch command --
 const watchCommand = new Command("watch")
   .description("Watch for file changes and show live diagnostics")
   .argument("[directory]", "project directory", ".")
   .option("--dead-code <mode>", "dead code mode: off, lazy, or full", parseDeadCodeMode, "off")
-  .addHelpText("after", `
-Examples:
-  $ svelte-doctor watch
-  $ svelte-doctor watch ./my-app
-  $ svelte-doctor watch --dead-code lazy
-`)
   .action(async (directory: string, flags: { deadCode: DeadCodeMode }) => {
     try {
       const resolvedDir = path.resolve(directory);
@@ -317,21 +565,45 @@ Examples:
     }
   });
 
-// -- deps command --
 const depsCommand = new Command("deps")
   .description("Check dependency health for Svelte ecosystem compatibility")
   .argument("[directory]", "project directory", ".")
   .option("--json", "output machine-readable JSON")
-  .addHelpText("after", `
-Examples:
-  $ svelte-doctor deps
-  $ svelte-doctor deps ./my-app
-  $ svelte-doctor deps --json
-`)
-  .action(async (directory: string, flags: { json: boolean }) => {
+  .option("--all-workspaces", "check every workspace")
+  .option("--workspace <name>", "check a specific workspace")
+  .action(async (directory: string, flags: { json: boolean; allWorkspaces?: boolean; workspace?: string }) => {
     try {
       const resolvedDir = path.resolve(directory);
-      runDepsCheck(resolvedDir, flags.json ?? false);
+      const workspaces = getWorkspaceTargets(resolvedDir, flags.workspace, flags.allWorkspaces);
+
+      if (workspaces.length === 0) {
+        runDepsCheck(resolvedDir, flags.json ?? false);
+        return;
+      }
+
+      const results = workspaces.map((workspace) => ({
+        workspace,
+        result: checkDeps(workspace.directory),
+      }));
+
+      if (flags.json) {
+        logger.log(JSON.stringify(results.map((entry) => ({
+          name: entry.workspace.name,
+          directory: entry.workspace.relativePath,
+          ...entry.result,
+        })), null, 2));
+        return;
+      }
+
+      logger.break();
+      logger.log(`  ${highlighter.bold("svelte-doctor deps")} v${VERSION}`);
+      logger.break();
+      for (const entry of results) {
+        logger.log(`  ${highlighter.info(entry.workspace.name)} (${entry.workspace.relativePath})`);
+        logger.log(`    Total deps: ${entry.result.totalDeps}`);
+        logger.log(`    Issues: ${entry.result.issues.length}`);
+      }
+      logger.break();
     } catch (error) {
       if (flags.json) {
         logger.log(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }));
@@ -346,7 +618,6 @@ Examples:
     }
   });
 
-// -- update command --
 const updateCommand = new Command("update")
   .description("Check npm for the latest svelte-doctor version and update the global CLI")
   .option("--check", "check for updates without installing")
@@ -354,13 +625,6 @@ const updateCommand = new Command("update")
   .option("--manager <name>", "override package manager (npm, pnpm, bun)", parsePackageManager)
   .option("--tag <name>", "release tag to install", "latest")
   .option("--json", "output machine-readable JSON")
-  .addHelpText("after", `
-Examples:
-  $ svelte-doctor update
-  $ svelte-doctor update --check
-  $ svelte-doctor update --dry-run
-  $ svelte-doctor update --manager npm
-`)
   .action(async (flags: {
     check?: boolean;
     dryRun?: boolean;
@@ -396,24 +660,37 @@ Examples:
     }
   });
 
-// -- trend command --
 const trendCommand = new Command("trend")
   .description("Show score history and trend over time")
   .argument("[directory]", "project directory", ".")
   .option("-n, --last <count>", "number of recent entries to show", "20")
-  .addHelpText("after", `
-Examples:
-  $ svelte-doctor trend
-  $ svelte-doctor trend ./my-app
-  $ svelte-doctor trend -n 10
-`)
-  .action((directory: string, flags: { last: string }) => {
+  .option("--all-workspaces", "show latest trend snapshots for all workspaces")
+  .option("--workspace <name>", "show trend for a single workspace")
+  .action((directory: string, flags: { last: string; allWorkspaces?: boolean; workspace?: string }) => {
     try {
       const resolvedDir = path.resolve(directory);
-      const parsed = parseInt(flags.last, 10);
-      const count = Number.isNaN(parsed) || parsed < 1 ? 20 : Math.min(500, parsed);
+      const parsed = parsePositiveInt(flags.last, "last");
+      const count = parsed < 1 ? 20 : Math.min(500, parsed);
+      const workspaces = getWorkspaceTargets(resolvedDir, flags.workspace, flags.allWorkspaces);
 
-      printTrend(resolvedDir, count);
+      if (workspaces.length === 0) {
+        printTrend(resolvedDir, count);
+        return;
+      }
+
+      logger.break();
+      logger.log(`  ${highlighter.bold("Workspace Trend Snapshot")} v${VERSION}`);
+      logger.break();
+      for (const workspace of workspaces) {
+        const history = loadScoreHistory(workspace.directory);
+        const latest = history.at(-1);
+        if (!latest) {
+          logger.log(`  ${highlighter.info(workspace.name)}: no history`);
+          continue;
+        }
+        logger.log(`  ${highlighter.info(workspace.name)} (${workspace.relativePath})  latest ${latest.score}  ${latest.label}`);
+      }
+      logger.break();
     } catch (error) {
       if (error instanceof Error) {
         logger.error(`  Error: ${error.message}`);
@@ -422,29 +699,17 @@ Examples:
     }
   });
 
-// -- migrate command --
 const migrateCommand = new Command("migrate")
   .description("Auto-migrate Svelte 4 syntax to Svelte 5")
   .argument("[directory]", "project directory", ".")
   .option("--dry-run", "show changes without modifying files")
   .option("--no-backup", "skip creating .svelte.bak backup files")
-  .addHelpText("after", `
-Examples:
-  $ svelte-doctor migrate
-  $ svelte-doctor migrate ./my-app
-  $ svelte-doctor migrate --dry-run
-  $ svelte-doctor migrate --no-backup
-`)
   .action(async (directory: string, flags: { dryRun: boolean; backup: boolean }) => {
     try {
       const resolvedDir = path.resolve(directory);
 
       await migrate(resolvedDir, {
-        // Commander sets flags.dryRun to true when --dry-run is passed and
-        // leaves it undefined otherwise — explicit false fallback is correct here
         dryRun: flags.dryRun === true,
-        // Commander sets flags.backup to false when --no-backup is passed and
-        // to true when absent (default-true option) — no ?? needed
         backup: flags.backup !== false,
       });
     } catch (error) {
@@ -455,13 +720,18 @@ Examples:
     }
   });
 
-program.addCommand(checkCommand);
-program.addCommand(fixCommand);
-program.addCommand(watchCommand);
-program.addCommand(trendCommand);
-program.addCommand(depsCommand);
-program.addCommand(updateCommand);
-program.addCommand(migrateCommand);
+program
+  .addCommand(checkCommand)
+  .addCommand(baselineCommand)
+  .addCommand(applyCommand)
+  .addCommand(rulesCommand)
+  .addCommand(explainCommand)
+  .addCommand(fixCommand)
+  .addCommand(watchCommand)
+  .addCommand(trendCommand)
+  .addCommand(depsCommand)
+  .addCommand(updateCommand)
+  .addCommand(migrateCommand);
 
 program.action(() => {
   program.help();

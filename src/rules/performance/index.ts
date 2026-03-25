@@ -1,4 +1,5 @@
 import type { Diagnostic, Rule, RuleContext } from "../../types.js";
+import { getLineAndColumn, isIdentifierNamed, ts, walkSourceFile } from "../../parser/script.js";
 
 // builds a line-index → boolean map in a single O(n) pass
 // true means the line is inside a <script> block (instance or module)
@@ -25,9 +26,17 @@ const buildStyleLineMap = (source: string): boolean[] => {
 
   for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i].trim();
-    if (/^<style[\s>]/.test(trimmed)) { inside = true; continue; }
+    if (/^<style[\s>]/.test(trimmed)) {
+      const closesOnSameLine = /<\/style>/.test(trimmed);
+      map[i] = closesOnSameLine;
+      inside = !closesOnSameLine;
+      continue;
+    }
     if (trimmed === "</style>") { inside = false; continue; }
     map[i] = inside;
+    if (inside && /<\/style>/.test(trimmed)) {
+      inside = false;
+    }
   }
 
   return map;
@@ -228,6 +237,12 @@ const noTransitionAll: Rule = {
   help: "Replace `transition: all` with explicit properties like `transition: opacity 0.2s, transform 0.2s` to reduce layout and paint cost.",
   appliesTo: ["svelte"],
   cost: "low",
+  autofixable: true,
+  docs: {
+    summary: "Flags blanket CSS transitions inside Svelte components.",
+    whyItMatters: "transition: all expands animation work to unrelated properties and increases layout/paint cost.",
+    safeFix: "Keep the original timing function and duration, but replace all with opacity, transform.",
+  },
   check: (ctx: RuleContext): Diagnostic[] => {
     const diagnostics: Diagnostic[] = [];
     const lines = ctx.source.split("\n");
@@ -337,18 +352,29 @@ const noBlockingSyncFsInHotCliPath: Rule = {
   help: "Prefer shared manifests, caching, or async APIs for repeated filesystem access on hot paths.",
   appliesTo: ["script"],
   cost: "low",
+  docs: {
+    summary: "Flags synchronous filesystem calls in hot CLI orchestration files.",
+    whyItMatters: "Repeated sync fs calls inflate latency and become visible on large repositories.",
+    safeFix: "Share manifests/cache state or move repeated reads off the hottest execution path.",
+  },
   check: (ctx: RuleContext): Diagnostic[] => {
     if (/\.(test|spec)\.(ts|js)$/.test(ctx.filePath)) return [];
     if (/(?:^|[\\/])tests?[\\/]/.test(ctx.filePath)) return [];
     if (!/(?:^|\/)(?:cli|scanner|hooks\.server|server)\.(ts|js)$/.test(ctx.filePath)) return [];
 
     const matches: Array<{ line: number; column: number }> = [];
+    const fsSyncMethods = new Set(["readFileSync", "readdirSync", "statSync", "lstatSync", "existsSync"]);
 
-    for (let i = 0; i < ctx.lines.length; i++) {
-      const line = ctx.lines[i];
-      const match = /\bfs\.(readFileSync|readdirSync|statSync|lstatSync|existsSync)\b/.exec(line);
-      if (!match) continue;
-      matches.push({ line: i + 1, column: match.index + 1 });
+    for (const block of ctx.scriptBlocks) {
+      walkSourceFile(block.sourceFile, (node) => {
+        if (!ts.isCallExpression(node)) return;
+        if (!ts.isPropertyAccessExpression(node.expression)) return;
+        if (!isIdentifierNamed(node.expression.expression, "fs")) return;
+        if (!fsSyncMethods.has(node.expression.name.text)) return;
+
+        const { line, column } = getLineAndColumn(block, node.expression.getStart(block.sourceFile));
+        matches.push({ line, column });
+      });
     }
 
     if (matches.length < 3) return [];

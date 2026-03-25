@@ -20,6 +20,24 @@ export type VerificationLevel = "diagnostics" | "typecheck" | "tests" | "full";
 export type PackageManager = "npm" | "pnpm" | "bun";
 export type CopyOutput = "clipboard" | "stdout" | "file";
 export type CopyFormat = "prompt" | "raw";
+export type FailOn = "never" | "error" | "warning";
+export type ScriptBlockKind = "instance" | "module" | "script";
+
+export interface RuleDocs {
+  summary?: string;
+  whyItMatters?: string;
+  safeFix?: string;
+}
+
+export interface ScriptAstContext {
+  filePath: string;
+  source: string;
+  startLine: number;
+  endLine: number;
+  isTypeScript: boolean;
+  kind: ScriptBlockKind;
+  sourceFile: any;
+}
 
 export interface Diagnostic {
   filePath: string;
@@ -31,6 +49,9 @@ export interface Diagnostic {
   column: number;
   category: RuleCategory;
   weight?: number;
+  fingerprint?: string;
+  fixable?: boolean;
+  workspace?: string;
 }
 
 export interface ProjectInfo {
@@ -53,11 +74,30 @@ export interface ProjectFileManifest {
 export interface ScoreResult {
   score: number;
   label: string;
+  totalPenalty: number;
+  categoryBreakdown: Partial<Record<RuleCategory, {
+    count: number;
+    errors: number;
+    warnings: number;
+    penalty: number;
+  }>>;
+}
+
+export interface ScanMeta {
+  totalDiagnostics: number;
+  suppressedCount: number;
+  fixableCount: number;
+  totalFiles: number;
+  affectedFiles: number;
+  elapsedMs: number;
+  baselineApplied: boolean;
+  targetMode: "full" | "subset";
 }
 
 export interface ScanResult {
   diagnostics: Diagnostic[];
   scoreResult: ScoreResult;
+  meta: ScanMeta;
 }
 
 export interface ScanOptions {
@@ -68,6 +108,10 @@ export interface ScanOptions {
   scoreOnly?: boolean;
   json?: boolean;
   quiet?: boolean;
+  targetFiles?: string[];
+  baseline?: boolean;
+  failOn?: FailOn;
+  minScore?: number;
 }
 
 export interface PackageJson {
@@ -106,6 +150,7 @@ export interface RuleContext {
   lines: string[];
   fileKind: FileKind;
   ast: any;
+  scriptBlocks: ScriptAstContext[];
   projectInfo: ProjectInfo;
   analysisMeta: RuleContextMeta;
 }
@@ -120,6 +165,7 @@ export interface Rule {
   requiresAst?: boolean;
   cost?: RuleCost;
   autofixable?: boolean;
+  docs?: RuleDocs;
   check: (ctx: RuleContext) => Diagnostic[];
 }
 
@@ -186,4 +232,50 @@ export interface CopyResult {
   output: CopyOutput | "stdout-fallback";
   filePath?: string;
   diagnosticsIncluded: number;
+}
+
+export interface BaselineEntry {
+  fingerprint: string;
+  rule: string;
+  severity: Severity;
+  category: RuleCategory;
+  filePath: string;
+  line: number;
+  column: number;
+  message: string;
+}
+
+export interface BaselineFile {
+  version: number;
+  generatedAt: string;
+  entries: BaselineEntry[];
+}
+
+export interface WorkspaceInfo {
+  name: string;
+  directory: string;
+  relativePath: string;
+}
+
+export interface ApplyOptions {
+  dryRun?: boolean;
+  json?: boolean;
+  rules?: string[];
+  write?: boolean;
+  targetFiles?: string[];
+}
+
+export interface ApplyFileChange {
+  filePath: string;
+  changed: boolean;
+  appliedRules: string[];
+}
+
+export interface ApplyResult {
+  changedFiles: number;
+  evaluatedFiles: number;
+  appliedRules: string[];
+  files: ApplyFileChange[];
+  diagnosticsConsidered: number;
+  write: boolean;
 }

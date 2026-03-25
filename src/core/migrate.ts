@@ -8,19 +8,19 @@ import { logger, highlighter, sanitize, stripAnsi } from "../output/logger.js";
 import { spinner } from "../output/spinner.js";
 import pc from "picocolors";
 
-export interface MigrateOptions {
+interface MigrateOptions {
   dryRun: boolean;
   backup: boolean;
 }
 
-export interface MigrateFileResult {
+interface MigrateFileResult {
   filePath: string;
   relativePath: string;
   changes: string[];
   modified: boolean;
 }
 
-export interface MigrateResult {
+interface MigrateResult {
   filesScanned: number;
   filesModified: number;
   totalChanges: number;
@@ -419,7 +419,7 @@ const transformLetDirectives = (line: string): { line: string; changed: boolean 
   return { line: result + comment, changed: true };
 };
 
-const transformFile = (source: string): { content: string; changes: string[] } => {
+export const transformMigrateSource = (source: string): { content: string; changes: string[] } => {
   const changes: string[] = [];
   let lines = source.split("\n");
 
@@ -589,7 +589,7 @@ export const migrate = async (
       continue;
     }
 
-    const { content, changes } = transformFile(source);
+    const { content, changes } = transformMigrateSource(source);
 
     if (changes.length === 0) {
       logger.dim(`  - ${sanitizedPath} no changes needed`);

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { parse } from "svelte/compiler";
 import type { RuleContext, ProjectInfo } from "../types.js";
+import { collectScriptBlocks } from "./script.js";
 
 const buildContext = (
   filePath: string,
@@ -14,6 +15,7 @@ const buildContext = (
   lines: source.split("\n"),
   fileKind,
   ast,
+  scriptBlocks: collectScriptBlocks(filePath, source),
   projectInfo,
   analysisMeta: {
     hasScript: /<script[\s>]/.test(source),

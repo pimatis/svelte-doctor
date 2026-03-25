@@ -64,6 +64,12 @@ const noLegacyReactive: Rule = {
   severity: "error",
   message: "Legacy `$:` reactive statement detected in a Svelte 5 project",
   help: "Replace `$:` blocks with `$derived()` for computed values or `$effect()` for side effects",
+  autofixable: true,
+  docs: {
+    summary: "Flags legacy reactive labels in runes mode.",
+    whyItMatters: "Legacy reactive statements obscure intent and break Svelte 5 migration goals.",
+    safeFix: "Map pure assignments to $derived() and side effects to $effect().",
+  },
   check: (ctx) => {
     if (!ctx.projectInfo.usesRunes) return [];
     if (!ctx.filePath.endsWith(".svelte")) return [];
@@ -144,6 +150,12 @@ const noExportLet: Rule = {
   severity: "error",
   message: "Legacy `export let` prop declaration detected in a Svelte 5 project",
   help: "Use `let { prop1, prop2 } = $props()` instead of `export let`",
+  autofixable: true,
+  docs: {
+    summary: "Flags legacy prop declarations in runes mode.",
+    whyItMatters: "Svelte 5 uses $props() destructuring instead of export let.",
+    safeFix: "Replace export let declarations with a single $props() destructure.",
+  },
   check: (ctx) => {
     if (!ctx.projectInfo.usesRunes) return [];
     if (!ctx.filePath.endsWith(".svelte")) return [];
@@ -221,6 +233,12 @@ const noLegacySlots: Rule = {
   severity: "error",
   message: "Legacy `<slot>` element detected in a Svelte 5 project",
   help: "Use `{@render children()}` or `{@render slotName()}` instead of `<slot>`",
+  autofixable: true,
+  docs: {
+    summary: "Flags legacy slot elements in Svelte 5 mode.",
+    whyItMatters: "Slots were replaced by snippets and render tags in the Svelte 5 API.",
+    safeFix: "Rewrite slot tags to render children() or named snippet calls.",
+  },
   check: (ctx) => {
     if (!ctx.projectInfo.usesRunes) return [];
     if (!ctx.filePath.endsWith(".svelte")) return [];
@@ -304,6 +322,12 @@ const noOnDirective: Rule = {
   severity: "warning",
   message: "Legacy `on:` event directive detected in a Svelte 5 project",
   help: "Use `onclick`, `onchange`, etc. instead of `on:click`, `on:change`",
+  autofixable: true,
+  docs: {
+    summary: "Flags legacy on:event directives.",
+    whyItMatters: "Svelte 5 encourages DOM-style event attributes and drops legacy directive syntax.",
+    safeFix: "Rewrite on:event to onevent when there are no modifiers.",
+  },
   check: (ctx) => {
     if (!ctx.projectInfo.usesRunes) return [];
     if (!ctx.filePath.endsWith(".svelte")) return [];

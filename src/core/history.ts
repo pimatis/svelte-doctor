@@ -15,7 +15,7 @@ const MAX_ENTRIES = 500;
 const CHART_HEIGHT = 10;
 const MAX_BAR_COLUMNS = 60;
 
-export interface ScoreEntry {
+interface ScoreEntry {
   timestamp: string;
   score: number;
   label: string;

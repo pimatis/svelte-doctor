@@ -1,6 +1,6 @@
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { VERSION } from "../constants.js";
+import { SCAN_CACHE_VERSION, VERSION } from "../constants.js";
 import { allRules, getRuleCount } from "../rules/index.js";
 import type {
   Diagnostic,
@@ -25,6 +25,8 @@ import {
   pruneCacheToManifest,
   saveScanCache,
 } from "./cache.js";
+import { attachDiagnosticMetadata, countFixableDiagnostics } from "./diagnostics.js";
+import { filterBaselineDiagnostics, loadBaseline } from "./baseline.js";
 import { collectProjectFiles } from "../fs/walker.js";
 import { toPosix } from "../fs/normalize.js";
 import { validateDirectory } from "../fs/validate.js";
@@ -32,7 +34,7 @@ import { discoverProject, formatFrameworkName } from "../project/discover.js";
 import { loadConfig } from "../project/config.js";
 import { parseSvelteFile, parseScriptFile } from "../parser/svelte.js";
 import { highlighter, logger } from "../output/logger.js";
-import { printDiagnostics, printSummary } from "../output/summary.js";
+import { printCategoryBreakdown, printDiagnostics, printSummary } from "../output/summary.js";
 import { spinner } from "../output/spinner.js";
 
 const completeStep = (message: string) => {
@@ -42,6 +44,26 @@ const completeStep = (message: string) => {
 const shouldRunRule = (rule: Rule, fileKind: "svelte" | "script"): boolean => {
   const appliesTo = rule.appliesTo ?? ["all"];
   return appliesTo.includes("all") || appliesTo.includes(fileKind);
+};
+
+const buildSelectedManifest = (
+  directory: string,
+  manifest: ProjectFileManifest,
+  targetFiles: string[] | undefined,
+): ProjectFileManifest => {
+  if (!targetFiles || targetFiles.length === 0) {
+    return manifest;
+  }
+
+  const selected = new Set(targetFiles.map((file) => path.resolve(file)));
+  const svelteFiles = manifest.svelteFiles.filter((file) => selected.has(path.resolve(file)));
+  const scriptFiles = manifest.scriptFiles.filter((file) => selected.has(path.resolve(file)));
+
+  return {
+    svelteFiles,
+    scriptFiles,
+    sourceFileCount: svelteFiles.length + scriptFiles.length,
+  };
 };
 
 export const scanSingleFile = (
@@ -63,7 +85,12 @@ export const scanSingleFile = (
   for (const rule of allRules) {
     if (!shouldRunRule(rule, fileKind)) continue;
     if (rule.requiresAst && !ctx.ast) continue;
-    diagnostics.push(...rule.check(ctx));
+
+    const ruleDiagnostics = rule.check(ctx).map((diagnostic) => ({
+      ...diagnostic,
+      fixable: diagnostic.fixable ?? rule.autofixable ?? false,
+    }));
+    diagnostics.push(...ruleDiagnostics);
   }
 
   return diagnostics;
@@ -81,7 +108,7 @@ export const runLintPass = (
   useCache: boolean,
   existingCache?: ScanCacheData,
 ): LintPassResult => {
-  const cache = existingCache ?? { version: 1, files: {} };
+  const cache = existingCache ?? { version: SCAN_CACHE_VERSION, files: {} };
   const diagnostics: Diagnostic[] = [];
   const files = [...manifest.svelteFiles, ...manifest.scriptFiles];
 
@@ -115,7 +142,7 @@ export const runLintPass = (
 const getEffectiveOptions = (
   inputOptions: ScanOptions,
   userConfig: SvelteDoctorConfig | null,
-): Required<ScanOptions> => ({
+): Required<Omit<ScanOptions, "targetFiles">> & Pick<ScanOptions, "targetFiles"> => ({
   lint: inputOptions.lint ?? userConfig?.lint ?? true,
   deadCode: inputOptions.deadCode ?? userConfig?.deadCode ?? true,
   deadCodeMode: inputOptions.deadCodeMode ?? userConfig?.watch?.deadCode ?? "full",
@@ -123,6 +150,10 @@ const getEffectiveOptions = (
   scoreOnly: inputOptions.scoreOnly ?? false,
   json: inputOptions.json ?? false,
   quiet: inputOptions.quiet ?? false,
+  targetFiles: inputOptions.targetFiles,
+  baseline: inputOptions.baseline ?? false,
+  failOn: inputOptions.failOn ?? "error",
+  minScore: inputOptions.minScore ?? 0,
 });
 
 export const scan = async (
@@ -132,14 +163,27 @@ export const scan = async (
   validateDirectory(directory);
 
   const startTime = performance.now();
-  const projectInfo = discoverProject(directory);
   const userConfig = loadConfig(directory);
   const options = getEffectiveOptions(inputOptions, userConfig);
   const silent = options.scoreOnly || options.json || options.quiet;
+  const fullManifest = collectProjectFiles(directory);
+  const selectedManifest = buildSelectedManifest(directory, fullManifest, options.targetFiles);
+  const targetMode = options.targetFiles && options.targetFiles.length > 0 ? "subset" : "full";
+  const projectInfo = discoverProject(directory, fullManifest);
 
   if (!projectInfo.svelteVersion) {
     const emptyDiagnostics: Diagnostic[] = [];
     const emptyScore = calculateScore(emptyDiagnostics);
+    const emptyMeta = {
+      totalDiagnostics: 0,
+      suppressedCount: 0,
+      fixableCount: 0,
+      totalFiles: 0,
+      affectedFiles: 0,
+      elapsedMs: Math.round(performance.now() - startTime),
+      baselineApplied: false,
+      targetMode,
+    } as const;
 
     if (options.json) {
       logger.log(JSON.stringify({
@@ -150,7 +194,10 @@ export const scan = async (
         affectedFiles: 0,
         errors: 0,
         warnings: 0,
-        elapsedMs: Math.round(performance.now() - startTime),
+        suppressedCount: 0,
+        fixableCount: 0,
+        categoryBreakdown: emptyScore.categoryBreakdown,
+        elapsedMs: emptyMeta.elapsedMs,
         diagnostics: [],
         warning: "No Svelte dependency found in package.json. This project does not appear to be a Svelte project.",
       }, null, 2));
@@ -165,11 +212,10 @@ export const scan = async (
       logger.break();
     }
 
-    return { diagnostics: emptyDiagnostics, scoreResult: emptyScore };
+    return { diagnostics: emptyDiagnostics, scoreResult: emptyScore, meta: emptyMeta };
   }
 
-  const manifest = collectProjectFiles(directory);
-  const scanCache = options.cache ? loadScanCache(directory) : { version: 1, files: {} };
+  const scanCache = options.cache ? loadScanCache(directory) : { version: SCAN_CACHE_VERSION, files: {} };
 
   if (!silent) {
     const frameworkLabel = formatFrameworkName(projectInfo.framework);
@@ -179,10 +225,11 @@ export const scan = async (
     completeStep(`Detecting language. Found ${highlighter.info(langLabel)}.`);
     completeStep(`Runes mode: ${projectInfo.usesRunes ? highlighter.info("Yes") : "Not detected"}.`);
     completeStep(`Preprocess: ${projectInfo.hasPreprocess ? highlighter.info("Enabled") : "Not detected"}.`);
-    completeStep(`Found ${highlighter.info(String(manifest.sourceFileCount))} source files.`);
+    completeStep(`Found ${highlighter.info(String(selectedManifest.sourceFileCount))} source files.`);
     completeStep(`Loaded ${highlighter.info(String(getRuleCount()))} rules.`);
     if (userConfig) completeStep(`Loaded ${highlighter.info("svelte-doctor config")}.`);
     if (options.cache) completeStep(`Scan cache: ${highlighter.info("Enabled")}.`);
+    if (targetMode === "subset") completeStep(`Target mode: ${highlighter.info("Changed files only")}.`);
     logger.break();
   }
 
@@ -192,7 +239,7 @@ export const scan = async (
     const lintSpinner = silent ? null : spinner("Running lint checks...").start();
 
     try {
-      const lintResult = runLintPass(directory, manifest, projectInfo, options.cache, scanCache);
+      const lintResult = runLintPass(directory, selectedManifest, projectInfo, options.cache, scanCache);
       lintDiagnostics = lintResult.diagnostics;
       lintSpinner?.succeed("Running lint checks.");
       if (options.cache) saveScanCache(directory, lintResult.cache);
@@ -204,10 +251,10 @@ export const scan = async (
 
   let deadCodeDiagnostics: Diagnostic[] = [];
 
-  if (options.deadCode && options.deadCodeMode !== "off") {
+  if (targetMode === "full" && options.deadCode && options.deadCodeMode !== "off") {
     const deadCodeSpinner = silent ? null : spinner("Detecting dead code...").start();
     try {
-      const deadCodeSignature = buildDeadCodeSignature(directory, manifest);
+      const deadCodeSignature = buildDeadCodeSignature(directory, fullManifest);
       if (options.cache && scanCache.deadCode?.sourceSignature === deadCodeSignature) {
         deadCodeDiagnostics = scanCache.deadCode.diagnostics;
       } else {
@@ -226,28 +273,45 @@ export const scan = async (
     }
   }
 
-  const allDiagnostics = [...lintDiagnostics, ...deadCodeDiagnostics];
-  const diagnostics = userConfig ? filterIgnored(allDiagnostics, userConfig) : allDiagnostics;
+  const allDiagnostics = attachDiagnosticMetadata(
+    userConfig ? filterIgnored([...lintDiagnostics, ...deadCodeDiagnostics], userConfig) : [...lintDiagnostics, ...deadCodeDiagnostics],
+  );
+  const baselineResult = options.baseline ? filterBaselineDiagnostics(allDiagnostics, loadBaseline(directory)) : {
+    diagnostics: allDiagnostics,
+    suppressedCount: 0,
+  };
+  const diagnostics = baselineResult.diagnostics;
   const elapsedMs = performance.now() - startTime;
   const scoreResult = calculateScore(diagnostics);
   const errorCount = diagnostics.filter((d) => d.severity === "error").length;
   const warningCount = diagnostics.filter((d) => d.severity === "warning").length;
   const affectedFileSet = new Set(diagnostics.map((d) => d.filePath));
+  const fixableCount = countFixableDiagnostics(diagnostics);
+  const meta = {
+    totalDiagnostics: diagnostics.length,
+    suppressedCount: baselineResult.suppressedCount,
+    fixableCount,
+    totalFiles: selectedManifest.sourceFileCount,
+    affectedFiles: affectedFileSet.size,
+    elapsedMs: Math.round(elapsedMs),
+    baselineApplied: options.baseline,
+    targetMode,
+  } as const;
 
-  if (!options.quiet) {
+  if (!options.quiet && targetMode === "full") {
     saveScoreHistory(directory, {
       timestamp: new Date().toISOString(),
       score: scoreResult.score,
       label: scoreResult.label,
       errors: errorCount,
       warnings: warningCount,
-      filesScanned: manifest.sourceFileCount,
+      filesScanned: selectedManifest.sourceFileCount,
       filesAffected: affectedFileSet.size,
     });
   }
 
   if (options.quiet) {
-    return { diagnostics, scoreResult };
+    return { diagnostics, scoreResult, meta };
   }
 
   if (options.json) {
@@ -255,11 +319,16 @@ export const scan = async (
       version: VERSION,
       score: scoreResult.score,
       label: scoreResult.label,
-      totalFiles: manifest.sourceFileCount,
+      totalPenalty: scoreResult.totalPenalty,
+      totalFiles: selectedManifest.sourceFileCount,
       affectedFiles: affectedFileSet.size,
       errors: errorCount,
       warnings: warningCount,
-      elapsedMs: Math.round(elapsedMs),
+      suppressedCount: meta.suppressedCount,
+      fixableCount: meta.fixableCount,
+      categoryBreakdown: scoreResult.categoryBreakdown,
+      elapsedMs: meta.elapsedMs,
+      targetMode: meta.targetMode,
       diagnostics: diagnostics.map((d) => ({
         rule: d.rule,
         severity: d.severity,
@@ -269,14 +338,16 @@ export const scan = async (
         file: d.filePath,
         line: d.line,
         column: d.column,
+        fingerprint: d.fingerprint,
+        fixable: d.fixable ?? false,
       })),
     }, null, 2));
-    return { diagnostics, scoreResult };
+    return { diagnostics, scoreResult, meta };
   }
 
   if (options.scoreOnly) {
     logger.log(`${scoreResult.score}`);
-    return { diagnostics, scoreResult };
+    return { diagnostics, scoreResult, meta };
   }
 
   logger.break();
@@ -284,14 +355,15 @@ export const scan = async (
   if (diagnostics.length === 0) {
     logger.success("  ✓ No issues found! Your codebase is clean.");
     logger.break();
-    printSummary(diagnostics, elapsedMs, scoreResult, manifest.sourceFileCount);
-    return { diagnostics, scoreResult };
+    printSummary(diagnostics, elapsedMs, scoreResult, selectedManifest.sourceFileCount, meta);
+    return { diagnostics, scoreResult, meta };
   }
 
   printDiagnostics(diagnostics);
-  printSummary(diagnostics, elapsedMs, scoreResult, manifest.sourceFileCount);
+  printSummary(diagnostics, elapsedMs, scoreResult, selectedManifest.sourceFileCount, meta);
+  printCategoryBreakdown(scoreResult.categoryBreakdown);
   logger.break();
   logger.dim(`  Run ${highlighter.info("svelte-doctor fix")} to auto-fix issues with an AI agent.`);
 
-  return { diagnostics, scoreResult };
+  return { diagnostics, scoreResult, meta };
 };

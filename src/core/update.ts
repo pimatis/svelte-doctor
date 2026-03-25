@@ -5,7 +5,7 @@ import type { PackageManager, UpdateOptions, UpdateResult } from "../types.js";
 const isPackageManager = (value: string): value is PackageManager =>
   value === "npm" || value === "pnpm" || value === "bun";
 
-export const fetchLatestVersion = async (): Promise<string> => {
+const fetchLatestVersion = async (): Promise<string> => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), UPDATE_CHECK_TIMEOUT_MS);
 
@@ -47,14 +47,14 @@ export const fetchLatestVersion = async (): Promise<string> => {
   }
 };
 
-export const detectPackageManager = (): PackageManager => {
+const detectPackageManager = (): PackageManager => {
   const userAgent = process.env.npm_config_user_agent ?? "";
   if (userAgent.startsWith("pnpm/")) return "pnpm";
   if (userAgent.startsWith("bun/")) return "bun";
   return "npm";
 };
 
-export const buildInstallCommand = (
+const buildInstallCommand = (
   manager: PackageManager,
   tag: "latest" = "latest",
 ): string[] => {

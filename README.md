@@ -51,6 +51,11 @@ Run a single command to scan your entire codebase and receive a **0–100 health
 ### Key Features
 
 - **45 Diagnostic Rules** covering correctness, performance, security, architecture, and SvelteKit reliability
+- **TypeScript AST-backed script analysis** for lower false-positive rates on security-sensitive checks
+- **Deterministic Safe Apply** via `apply` for high-confidence fixes before using an AI agent
+- **Baseline Suppression** to keep legacy issues out of new CI failures
+- **SARIF + GitHub Annotations** for code scanning and CI integration
+- **Diff-Aware and Workspace-Aware Scans** for staged files, changed files, and monorepos
 - **Safe-by-default AI Fix** flow with secure temp prompts, opt-in unsafe execution, and post-fix verification
 - **AI-Friendly Copy Export** via `check --copy` with clipboard-first fallback behavior
 - **Svelte 4→5 Auto-Migration** with deterministic codemods
@@ -150,6 +155,18 @@ svelte-doctor check --copy
 # Just the score (useful for CI)
 svelte-doctor check --score
 
+# Scan only changed files
+svelte-doctor check --changed
+
+# Scan all workspaces in a monorepo
+svelte-doctor check --all-workspaces
+
+# Generate a baseline from current issues
+svelte-doctor baseline
+
+# Apply safe deterministic fixes
+svelte-doctor apply --write
+
 # Auto-fix issues with an AI agent
 svelte-doctor fix
 
@@ -174,6 +191,10 @@ svelte-doctor trend
 # Check dependency health
 svelte-doctor deps
 
+# List rules or explain one in detail
+svelte-doctor rules
+svelte-doctor explain no-unsafe-shell
+
 ```
 
 ---
@@ -197,6 +218,17 @@ Scan your project for issues and output a health score. Every run saves the scor
 | `--copy-max <count>` | Limit how many diagnostics are included in the export |
 | `--copy-errors-only` | Export only error-level diagnostics |
 | `--copy-format <prompt\|raw>` | Export as a structured prompt or raw text |
+| `--baseline` | Suppress diagnostics present in `.svelte-doctor/baseline.json` |
+| `--sarif` | Emit SARIF output |
+| `--sarif-file <path>` | Write SARIF output to a file |
+| `--github-annotations` | Emit GitHub Actions annotation commands |
+| `--fail-on <never\|error\|warning>` | Control exit behavior |
+| `--min-score <score>` | Fail if score is below the threshold |
+| `--changed` | Scan files changed relative to `HEAD` |
+| `--staged` | Scan staged files only |
+| `--since <ref>` | Scan files changed since a git ref |
+| `--all-workspaces` | Scan all package.json workspaces |
+| `--workspace <name>` | Scan one workspace by name or relative path |
 
 `--copy` is designed for cases where you want to paste diagnostics into a different AI agent instead of using `svelte-doctor fix`. The default mode tries the system clipboard first, then falls back to stdout if no clipboard integration is available. If you need deterministic output for scripts, use `--copy-output file`.
 
@@ -207,6 +239,43 @@ svelte-doctor check --copy
 svelte-doctor check --copy --copy-errors-only
 svelte-doctor check --copy --copy-output stdout
 svelte-doctor check --copy --copy-output file --copy-file .svelte-doctor/diagnostics.txt
+svelte-doctor check --changed
+svelte-doctor check --sarif --sarif-file .svelte-doctor/report.sarif
+svelte-doctor check --all-workspaces
+```
+
+### `svelte-doctor baseline [directory]`
+
+Create `.svelte-doctor/baseline.json` from the current diagnostics so future checks can suppress already-known issues with `check --baseline`.
+
+Examples:
+
+```bash
+svelte-doctor baseline
+svelte-doctor baseline --changed
+svelte-doctor baseline --all-workspaces
+```
+
+### `svelte-doctor apply [directory] [options]`
+
+Apply deterministic, high-confidence fixes without launching an AI agent. This command is intentionally conservative and only rewrites patterns the tool can fix safely.
+
+| Option | Description |
+|--------|-------------|
+| `--dry-run` | Preview changes without writing files |
+| `--write` | Write changes to disk |
+| `--json` | Output machine-readable JSON |
+| `--rules <csv>` | Restrict fixes to specific rule names |
+| `--changed` | Apply fixes only on files changed relative to `HEAD` |
+| `--staged` | Apply fixes only on staged files |
+| `--since <ref>` | Apply fixes only on files changed since a git ref |
+
+Examples:
+
+```bash
+svelte-doctor apply --write
+svelte-doctor apply --dry-run
+svelte-doctor apply --write --rules no-transition-all,no-full-lodash
 ```
 
 ### `svelte-doctor fix [directory] [options]`
@@ -257,6 +326,16 @@ Watch for file changes and show live diagnostics. Runs an initial cached scan, t
 ### `svelte-doctor trend [directory] [options]`
 
 Show score history and trend over time. Every `check` run automatically saves the score to `.svelte-doctor/history.json`. The `trend` command visualizes this data as a terminal bar chart.
+
+Monorepos can also query the latest trend snapshot per workspace with `--all-workspaces` or `--workspace <name>`.
+
+### `svelte-doctor rules`
+
+List every built-in rule with its category and whether it supports deterministic autofix.
+
+### `svelte-doctor explain <rule>`
+
+Explain what a rule checks, why it matters, and what the safest remediation looks like.
 
 | Option | Description |
 |--------|-------------|

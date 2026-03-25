@@ -7,7 +7,7 @@ import { copyToClipboard } from "../output/clipboard.js";
 import {
   formatDiagnosticsAsRawText,
   formatDiagnosticsForPrompt,
-} from "./diagnostics-prompt.js";
+} from "./prompt.js";
 
 const selectDiagnostics = (diagnostics: Diagnostic[], options: CopyOptions): Diagnostic[] => {
   const filtered = options.errorsOnly

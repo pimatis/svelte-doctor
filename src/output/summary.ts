@@ -6,7 +6,7 @@ import {
   SCORE_BAR_WIDTH,
   MILLISECONDS_PER_SECOND,
 } from "../constants.js";
-import type { Diagnostic, ScoreResult } from "../types.js";
+import type { Diagnostic, ScanMeta, ScoreResult } from "../types.js";
 import { logger, highlighter, stripAnsi, sanitize } from "./logger.js";
 
 const colorizeByScore = (score: number): string => {
@@ -108,6 +108,7 @@ export const printSummary = (
   elapsedMs: number,
   scoreResult: ScoreResult,
   sourceFileCount: number,
+  meta?: Pick<ScanMeta, "suppressedCount" | "fixableCount" | "targetMode">,
 ) => {
   const errorCount = diagnostics.filter((d) => d.severity === "error").length;
   const warningCount = diagnostics.filter((d) => d.severity === "warning").length;
@@ -129,10 +130,35 @@ export const printSummary = (
   if (errorCount > 0) parts.push(highlighter.error(`✗ ${errorCount} error${errorCount === 1 ? "" : "s"}`));
   if (warningCount > 0) parts.push(highlighter.warn(`⚠ ${warningCount} warning${warningCount === 1 ? "" : "s"}`));
   parts.push(pc.dim(`${affectedFiles}/${sourceFileCount} files`));
+  if (meta && meta.suppressedCount > 0) parts.push(pc.dim(`${meta.suppressedCount} suppressed`));
+  if (meta && meta.fixableCount > 0) parts.push(pc.dim(`${meta.fixableCount} fixable`));
+  if (meta?.targetMode === "subset") parts.push(pc.dim("subset scan"));
   parts.push(pc.dim(formatElapsed(elapsedMs)));
 
   const statsLine = `  ${parts.join("  ")}`;
   const pad2 = Math.max(0, 49 - stripAnsi(statsLine).length);
   logger.log(pc.bold("  │") + statsLine + " ".repeat(pad2) + pc.bold("│"));
   logger.log(pc.bold("  └─────────────────────────────────────────────────┘"));
+};
+
+export const printCategoryBreakdown = (
+  categoryBreakdown: ScoreResult["categoryBreakdown"],
+) => {
+  const categories = Object.entries(categoryBreakdown)
+    .sort(([, a], [, b]) => (b?.penalty ?? 0) - (a?.penalty ?? 0))
+    .slice(0, 5);
+
+  if (categories.length === 0) return;
+
+  logger.break();
+  logger.dim("  Category breakdown:");
+  for (const [category, stats] of categories) {
+    if (!stats) continue;
+
+    const parts: string[] = [];
+    if (stats.errors > 0) parts.push(highlighter.error(`${stats.errors} error${stats.errors === 1 ? "" : "s"}`));
+    if (stats.warnings > 0) parts.push(highlighter.warn(`${stats.warnings} warning${stats.warnings === 1 ? "" : "s"}`));
+    parts.push(pc.dim(`penalty ${stats.penalty.toFixed(1)}`));
+    logger.dim(`    ${sanitize(category)}: ${parts.join("  ")}`);
+  }
 };

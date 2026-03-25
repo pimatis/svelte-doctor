@@ -26,15 +26,17 @@ export const SCORE_BAR_WIDTH = 40;
 
 export const MILLISECONDS_PER_SECOND = 1000;
 export const CACHE_DIR = ".svelte-doctor";
-export const HISTORY_FILE = "history.json";
 export const CACHE_FILE = "cache.json";
-export const SCAN_CACHE_VERSION = 1;
+export const BASELINE_FILE = "baseline.json";
+export const SCAN_CACHE_VERSION = 2;
+export const BASELINE_VERSION = 1;
 export const DEFAULT_FIX_MAX_FILES = 50;
 export const DEFAULT_COPY_MAX_DIAGNOSTICS = 100;
 export const GITIGNORE_SVELTE_DOCTOR_ENTRY = ".svelte-doctor";
 export const PACKAGE_NAME = "svelte-doctor";
 export const NPM_REGISTRY_PACKAGE_URL = "https://registry.npmjs.org/svelte-doctor";
 export const UPDATE_CHECK_TIMEOUT_MS = 8_000;
+export const SARIF_SCHEMA_URL = "https://json.schemastore.org/sarif-2.1.0.json";
 
 // dirs that should never be scanned standard build/dependency outputs
 export const IGNORED_DIRS = new Set([

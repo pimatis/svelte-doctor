@@ -56,14 +56,14 @@ const CATEGORY_ORDER = [
   "Dead Code",
 ] as const;
 
-export interface PromptFormatOptions {
+interface PromptFormatOptions {
   includeHeader?: boolean;
   directory?: string;
   unsafeAgentExec?: boolean;
   maxDiagnostics?: number;
 }
 
-export const redactSecrets = (value: string): string => {
+const redactSecrets = (value: string): string => {
   let next = sanitize(value);
   for (const pattern of SECRET_REDACTION_PATTERNS) {
     next = next.replace(pattern, "[REDACTED]");
@@ -91,8 +91,6 @@ const groupDiagnostics = (diagnostics: Diagnostic[]): Map<string, Diagnostic[]> 
   return groups;
 };
 
-// The prompt formatter is shared by `fix` and `check --copy` so both commands
-// stay consistent when diagnostics, redaction rules, or ordering evolve.
 export const formatDiagnosticsForPrompt = (
   diagnostics: Diagnostic[],
   options: PromptFormatOptions = {},

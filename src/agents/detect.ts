@@ -87,7 +87,7 @@ export const detectAgents = (): AgentInfo[] => [
   },
 ];
 
-export const getAvailableAgents = (): AgentInfo[] =>
+const getAvailableAgents = (): AgentInfo[] =>
   detectAgents().filter((a) => a.available);
 
 // Pick the best available agent: Cursor (agent) then amp then claude then codex.

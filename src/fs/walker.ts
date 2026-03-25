@@ -40,38 +40,6 @@ export const collectFiles = (dir: string, pattern: RegExp): string[] => {
   return files;
 };
 
-// counts source files without collecting them (lighter for project info)
-export const countFiles = (dir: string, pattern: RegExp): number => {
-  let count = 0;
-
-  const walk = (currentDir: string) => {
-    let entries: fs.Dirent[];
-
-    try {
-      entries = fs.readdirSync(currentDir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-
-    for (const entry of entries) {
-      if (IGNORED_DIRS.has(entry.name)) continue;
-      if (entry.isSymbolicLink()) continue;
-
-      const fullPath = path.join(currentDir, entry.name);
-
-      if (entry.isDirectory()) {
-        walk(fullPath);
-        continue;
-      }
-
-      if (pattern.test(entry.name)) count++;
-    }
-  };
-
-  walk(dir);
-  return count;
-};
-
 export const collectProjectFiles = (dir: string): ProjectFileManifest => {
   const manifest: ProjectFileManifest = {
     svelteFiles: [],

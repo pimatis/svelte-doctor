@@ -3,7 +3,7 @@ import path from "node:path";
 
 const ensuredRoots = new Set<string>();
 
-export interface GitignoreEnsureResult {
+interface GitignoreEnsureResult {
   updated: boolean;
   created: boolean;
 }
@@ -55,4 +55,3 @@ export const ensureProjectGitignoreEntry = (
     return { updated: false, created: false };
   }
 };
-

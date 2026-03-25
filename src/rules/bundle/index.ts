@@ -56,6 +56,12 @@ const noFullLodashImport: Rule = {
   severity: "warning",
   message: "Full lodash import detected — import specific functions instead",
   help: "Import the specific function: `import debounce from 'lodash/debounce'` or use `lodash-es` for tree-shaking. A full `lodash` import adds ~70kb to your bundle.",
+  autofixable: true,
+  docs: {
+    summary: "Flags full-package lodash imports.",
+    whyItMatters: "Top-level lodash imports defeat tree-shaking and bloat client bundles.",
+    safeFix: "Rewrite named imports to per-function paths and keep the same local aliases.",
+  },
   check: (ctx) => {
     const diagnostics: Diagnostic[] = [];
     const lines = ctx.source.split("\n");
@@ -93,6 +99,12 @@ const noMoment: Rule = {
   severity: "warning",
   message: "`moment.js` is heavy (~300kb) and unmaintained — use `date-fns` or `dayjs` instead",
   help: "Replace with `import { format } from 'date-fns'` (tree-shakeable, ~13kb per function) or `import dayjs from 'dayjs'` (2kb). Both are actively maintained.",
+  autofixable: true,
+  docs: {
+    summary: "Flags moment.js imports in favor of smaller, maintained alternatives.",
+    whyItMatters: "moment.js increases bundle size substantially and is no longer the preferred ecosystem choice.",
+    safeFix: "Rewrite the import to dayjs and let callers update API usage incrementally if needed.",
+  },
   check: (ctx) => {
     const diagnostics: Diagnostic[] = [];
     const lines = ctx.source.split("\n");
@@ -128,6 +140,12 @@ const noFullIconImport: Rule = {
   severity: "warning",
   message: "Top-level icon package import detected — import individual icons instead",
   help: "Replace `import * as Icons from 'phosphor-svelte'` with individual named imports: `import { House, User } from 'phosphor-svelte'`. Wildcard imports prevent tree-shaking and bundle every icon in the set.",
+  autofixable: true,
+  docs: {
+    summary: "Flags namespace imports from icon packages.",
+    whyItMatters: "Wildcard icon imports retain far more module code than most apps need.",
+    safeFix: "Rewrite to named imports for the specific icons that are referenced in the file.",
+  },
   check: (ctx) => {
     const diagnostics: Diagnostic[] = [];
     const lines = ctx.source.split("\n");

@@ -79,7 +79,10 @@ const detectRunesUsage = (manifest: ProjectFileManifest): boolean => {
   return false;
 };
 
-export const discoverProject = (dir: string): ProjectInfo => {
+export const discoverProject = (
+  dir: string,
+  manifest: ProjectFileManifest = collectProjectFiles(dir),
+): ProjectInfo => {
   const pkg = readPackageJson(dir);
 
   if (!pkg) {
@@ -95,8 +98,6 @@ export const discoverProject = (dir: string): ProjectInfo => {
       return false;
     }
   })();
-
-  const manifest = collectProjectFiles(dir);
 
   return {
     rootDirectory: dir,

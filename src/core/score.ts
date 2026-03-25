@@ -31,20 +31,44 @@ const getLabel = (score: number): string => {
 // uses exponential decay so first issues hurt more (diminishing returns)
 export const calculateScore = (diagnostics: Diagnostic[]): ScoreResult => {
   if (diagnostics.length === 0) {
-    return { score: PERFECT_SCORE, label: "Perfect" };
+    return {
+      score: PERFECT_SCORE,
+      label: "Perfect",
+      totalPenalty: 0,
+      categoryBreakdown: {},
+    };
   }
 
   let totalPenalty = 0;
+  const categoryBreakdown: ScoreResult["categoryBreakdown"] = {};
 
   for (const diag of diagnostics) {
     const severityWeight = SEVERITY_WEIGHTS[diag.severity] ?? 1;
     const categoryMultiplier = CATEGORY_MULTIPLIERS[diag.category] ?? 1;
     const ruleWeight = diag.weight ?? 1;
-    totalPenalty += severityWeight * categoryMultiplier * ruleWeight;
+    const penalty = severityWeight * categoryMultiplier * ruleWeight;
+    totalPenalty += penalty;
+
+    const entry = categoryBreakdown[diag.category] ?? {
+      count: 0,
+      errors: 0,
+      warnings: 0,
+      penalty: 0,
+    };
+    entry.count++;
+    entry.penalty += penalty;
+    if (diag.severity === "error") entry.errors++;
+    if (diag.severity === "warning") entry.warnings++;
+    categoryBreakdown[diag.category] = entry;
   }
 
   const rawScore = PERFECT_SCORE * Math.exp(-totalPenalty / 80);
   const score = Math.max(0, Math.min(PERFECT_SCORE, Math.round(rawScore)));
 
-  return { score, label: getLabel(score) };
+  return {
+    score,
+    label: getLabel(score),
+    totalPenalty,
+    categoryBreakdown,
+  };
 };

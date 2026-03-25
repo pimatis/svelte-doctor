@@ -1,4 +1,5 @@
 import type { Rule, Diagnostic, RuleContext } from "../../types.js";
+import { getLineAndColumn, isIdentifierNamed, ts, walkSourceFile } from "../../parser/script.js";
 
 // builds a line-index → boolean map in a single O(n) pass
 // true means the line is inside a <script> block (instance or module)
@@ -48,6 +49,27 @@ const scanLines = (
   }
 
   return diagnostics;
+};
+
+const pushScriptDiagnostic = (
+  diagnostics: Diagnostic[],
+  ctx: RuleContext,
+  rule: Rule,
+  block: RuleContext["scriptBlocks"][number],
+  position: number,
+  message = rule.message,
+) => {
+  const { line, column } = getLineAndColumn(block, position);
+  diagnostics.push({
+    filePath: ctx.filePath,
+    rule: rule.name,
+    severity: rule.severity,
+    message,
+    help: rule.help,
+    line,
+    column,
+    category: rule.category,
+  });
 };
 
 const noUnsafeHtml: Rule = {
@@ -187,50 +209,22 @@ const noEval: Rule = {
   help: "Remove `eval()` and use safer alternatives like `JSON.parse()` for data, or structured alternatives for dynamic logic. `eval` is a common code injection vector.",
   appliesTo: ["all"],
   cost: "low",
+  docs: {
+    summary: "Flags direct runtime evaluation via eval().",
+    whyItMatters: "eval() turns data into executable code and dramatically increases RCE risk.",
+    safeFix: "Replace eval() with structured parsing or explicit dispatch.",
+  },
   check: (ctx) => {
-    // skip test files where eval may legitimately be tested or asserted against
     if (/\.(test|spec)\.(ts|js|svelte)$/.test(ctx.filePath)) return [];
+    if (/(?:^|[\\/])tests?[\\/]/.test(ctx.filePath)) return [];
 
     const diagnostics: Diagnostic[] = [];
-    const lines = ctx.source.split("\n");
 
-    // \beval\s*( — word boundary prevents matching "evaluate(", "medieval(", etc.
-    // also skip lines that call node:vm methods like vm.runInContext which are
-    // intentional sandboxed evaluation patterns
-    const pattern = /\beval\s*\(/;
-
-    for (let i = 0; i < lines.length; i++) {
-      const trimmed = lines[i].trimStart();
-      if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
-
-      // node:vm and similar sandboxed eval patterns are intentional — skip them
-      if (/\bvm\s*\.\s*(?:runInContext|runInNewContext|runInThisContext|Script)\b/.test(lines[i])) continue;
-
-      const match = pattern.exec(lines[i]);
-      if (!match) continue;
-
-      // skip when the match falls inside a string literal — this prevents false
-      // positives from regex source strings, JSDoc examples, and documentation
-      // that contain the text eval( as a string value rather than a real call
-      const beforeMatch = lines[i].slice(0, match.index);
-      const singleQuotes = (beforeMatch.match(/'/g) ?? []).length;
-      const doubleQuotes = (beforeMatch.match(/"/g) ?? []).length;
-      const backticks = (beforeMatch.match(/`/g) ?? []).length;
-      const insideString =
-        singleQuotes % 2 !== 0 ||
-        doubleQuotes % 2 !== 0 ||
-        backticks % 2 !== 0;
-      if (insideString) continue;
-
-      diagnostics.push({
-        filePath: ctx.filePath,
-        rule: noEval.name,
-        severity: noEval.severity,
-        message: noEval.message,
-        help: noEval.help,
-        line: i + 1,
-        column: match.index + 1,
-        category: noEval.category,
+    for (const block of ctx.scriptBlocks) {
+      walkSourceFile(block.sourceFile, (node) => {
+        if (!ts.isCallExpression(node)) return;
+        if (!isIdentifierNamed(node.expression, "eval")) return;
+        pushScriptDiagnostic(diagnostics, ctx, noEval, block, node.expression.getStart(block.sourceFile));
       });
     }
 
@@ -239,7 +233,6 @@ const noEval: Rule = {
 };
 
 // sensitive env var name segments that should never be exposed via public $env modules
-const publicEnvModulePattern = /from\s+['"](?:\$env\/static\/public|\$env\/dynamic\/public)['"]/;
 const sensitiveVarPattern = /(?:SECRET|TOKEN|KEY|PASSWORD|AUTH|CREDENTIAL|PRIVATE)/i;
 
 const noPublicEnvSecrets: Rule = {
@@ -250,44 +243,32 @@ const noPublicEnvSecrets: Rule = {
   help: "Use `$env/static/private` or `$env/dynamic/private` for secrets. Public env vars are bundled into the client and visible to anyone who inspects the page.",
   appliesTo: ["all"],
   cost: "low",
+  docs: {
+    summary: "Blocks sensitive vars imported from public SvelteKit env modules.",
+    whyItMatters: "Public env imports are bundled client-side and expose secrets immediately.",
+    safeFix: "Move secrets to $env/static/private or $env/dynamic/private.",
+  },
   check: (ctx) => {
     if (ctx.projectInfo.framework !== "sveltekit") return [];
 
     const diagnostics: Diagnostic[] = [];
-    const lines = ctx.source.split("\n");
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
+    for (const block of ctx.scriptBlocks) {
+      walkSourceFile(block.sourceFile, (node) => {
+        if (!ts.isImportDeclaration(node)) return;
+        if (!ts.isStringLiteral(node.moduleSpecifier)) return;
 
-      // the from-clause must reference a public $env module
-      if (!publicEnvModulePattern.test(line)) continue;
+        const moduleName = node.moduleSpecifier.text;
+        if (!/^\$env\/(?:static|dynamic)\/public$/.test(moduleName)) return;
+        if (!node.importClause?.namedBindings || !ts.isNamedImports(node.importClause.namedBindings)) return;
 
-      // collect the full import statement — it may span multiple lines:
-      //   import {
-      //     SECRET_KEY
-      //   } from '$env/static/public'
-      // walk backwards from the from-clause line to find "import {"
-      let importStart = i;
-      for (let j = i; j >= Math.max(0, i - 10); j--) {
-        if (/\bimport\s*\{/.test(lines[j])) {
-          importStart = j;
-          break;
-        }
-      }
+        const hasSensitiveImport = node.importClause.namedBindings.elements.some((element) => {
+          const imported = element.propertyName?.text ?? element.name.text;
+          return sensitiveVarPattern.test(imported);
+        });
+        if (!hasSensitiveImport) return;
 
-      const importBlock = lines.slice(importStart, i + 1).join(" ");
-
-      if (!sensitiveVarPattern.test(importBlock)) continue;
-
-      diagnostics.push({
-        filePath: ctx.filePath,
-        rule: noPublicEnvSecrets.name,
-        severity: noPublicEnvSecrets.severity,
-        message: noPublicEnvSecrets.message,
-        help: noPublicEnvSecrets.help,
-        line: importStart + 1,
-        column: 1,
-        category: noPublicEnvSecrets.category,
+        pushScriptDiagnostic(diagnostics, ctx, noPublicEnvSecrets, block, node.getStart(block.sourceFile));
       });
     }
 
@@ -467,31 +448,40 @@ const noUnsafeShell: Rule = {
   help: "Prefer direct argv-based process spawning. Avoid `exec`, `execSync`, or `spawn(..., { shell: true })` with untrusted input.",
   appliesTo: ["script"],
   cost: "low",
+  docs: {
+    summary: "Flags direct shell execution or child_process spawn with shell:true.",
+    whyItMatters: "String-based shell execution expands attacker-controlled input into full command injection.",
+    safeFix: "Use argv-based execFile/spawn without shell:true and validate command sources.",
+  },
   check: (ctx) => {
     if (/\.(test|spec)\.(ts|js|svelte)$/.test(ctx.filePath)) return [];
     if (/(?:^|[\\/])tests?[\\/]/.test(ctx.filePath)) return [];
 
     const diagnostics: Diagnostic[] = [];
 
-    for (let i = 0; i < ctx.lines.length; i++) {
-      const line = ctx.lines[i];
-      const trimmed = line.trimStart();
-      if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
-      if (trimmed.startsWith("message:") || trimmed.startsWith("help:")) continue;
-      if (/(?:const|let|var)\s+\w+\s*=\s*\/.*(?:exec|spawn|shell).*\/[dgimsuy]*/.test(line)) continue;
-      if (/:\s*\/.*(?:exec|spawn|shell).*\/[dgimsuy]*/.test(line)) continue;
-      const match = /(?<!\.)\b(exec|execSync)\s*\(|(?<!\.)\bspawn\s*\([^)]*\{[^}]*shell\s*:\s*true/.exec(line);
-      if (!match) continue;
+    for (const block of ctx.scriptBlocks) {
+      walkSourceFile(block.sourceFile, (node) => {
+        if (!ts.isCallExpression(node)) return;
 
-      diagnostics.push({
-        filePath: ctx.filePath,
-        rule: noUnsafeShell.name,
-        severity: noUnsafeShell.severity,
-        message: noUnsafeShell.message,
-        help: noUnsafeShell.help,
-        line: i + 1,
-        column: match.index + 1,
-        category: noUnsafeShell.category,
+        if (isIdentifierNamed(node.expression, "exec") || isIdentifierNamed(node.expression, "execSync")) {
+          pushScriptDiagnostic(diagnostics, ctx, noUnsafeShell, block, node.expression.getStart(block.sourceFile));
+          return;
+        }
+
+        if (!isIdentifierNamed(node.expression, "spawn")) return;
+        if (node.arguments.length < 2) return;
+
+        const optionsArg = node.arguments.find((argument) => ts.isObjectLiteralExpression(argument));
+        if (!optionsArg || !ts.isObjectLiteralExpression(optionsArg)) return;
+
+        const hasShellTrue = optionsArg.properties.some((property) => {
+          if (!ts.isPropertyAssignment(property)) return false;
+          const key = ts.isIdentifier(property.name) ? property.name.text : ts.isStringLiteral(property.name) ? property.name.text : "";
+          return key === "shell" && property.initializer.kind === ts.SyntaxKind.TrueKeyword;
+        });
+
+        if (!hasShellTrue) return;
+        pushScriptDiagnostic(diagnostics, ctx, noUnsafeShell, block, node.expression.getStart(block.sourceFile));
       });
     }
 

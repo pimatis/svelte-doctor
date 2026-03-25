@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Rule, Diagnostic, RuleContext } from "../../types.js";
+import { getLineAndColumn, ts, walkSourceFile } from "../../parser/script.js";
 
 // builds a line-index → boolean map in a single O(n) pass
 // true means the line is inside a <script> block (instance or module)
@@ -114,6 +115,11 @@ const loadMissingType: Rule = {
   help: "Add a type annotation like `export const load: PageLoad = ...` or use `satisfies PageLoad` for full type inference.",
   appliesTo: ["script"],
   cost: "low",
+  docs: {
+    summary: "Requires explicit typing for exported load handlers.",
+    whyItMatters: "Typed load functions catch server/client contract drift before runtime.",
+    safeFix: "Add a direct annotation or wrap the initializer with satisfies PageLoad/LayoutLoad.",
+  },
   check: (ctx: RuleContext): Diagnostic[] => {
     // only applies to SvelteKit route files
     if (!/\+(page|layout)\.(ts|server\.ts|js|server\.js)$/.test(ctx.filePath)) return [];
@@ -125,32 +131,49 @@ const loadMissingType: Rule = {
     if (ctx.filePath.endsWith(".js")) return [];
 
     const diagnostics: Diagnostic[] = [];
-    const lines = ctx.source.split("\n");
 
-    // catches load declarations without a colon (type annotation) or satisfies keyword
-    const loadDeclaration = /export\s+(const|function)\s+load\b/;
+    for (const block of ctx.scriptBlocks) {
+      walkSourceFile(block.sourceFile, (node) => {
+        if (ts.isVariableStatement(node)) {
+          const isExported = node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
+          if (!isExported) return;
 
-    for (let i = 0; i < lines.length; i++) {
-      const declarationMatch = loadDeclaration.exec(lines[i]);
-      if (!declarationMatch) continue;
+          for (const declaration of node.declarationList.declarations) {
+            if (!ts.isIdentifier(declaration.name) || declaration.name.text !== "load") continue;
+            if (declaration.type) continue;
+            if (declaration.initializer && declaration.initializer.kind === ts.SyntaxKind.SatisfiesExpression) continue;
 
-      // check for ": TypeName" strictly after the "load" keyword, not inside
-      // an unrelated identifier that contains "load"
-      const afterLoad = lines[i].slice(declarationMatch.index + declarationMatch[0].length);
-      if (/:\s*\w+/.test(afterLoad)) continue;
+            const { line, column } = getLineAndColumn(block, declaration.name.getStart(block.sourceFile));
+            diagnostics.push({
+              filePath: ctx.filePath,
+              rule: loadMissingType.name,
+              severity: loadMissingType.severity,
+              message: loadMissingType.message,
+              help: loadMissingType.help,
+              line,
+              column,
+              category: loadMissingType.category,
+            });
+          }
+          return;
+        }
 
-      // satisfies keyword is also acceptable
-      if (/satisfies/.test(lines[i])) continue;
+        if (!ts.isFunctionDeclaration(node)) return;
+        if (!node.name || node.name.text !== "load") return;
+        const isExported = node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
+        if (!isExported || node.type) return;
 
-      diagnostics.push({
-        filePath: ctx.filePath,
-        rule: "load-missing-type",
-        severity: "warning",
-        message: loadMissingType.message,
-        help: loadMissingType.help,
-        line: i + 1,
-        column: lines[i].indexOf("load") + 1,
-        category: "SvelteKit",
+        const { line, column } = getLineAndColumn(block, node.name.getStart(block.sourceFile));
+        diagnostics.push({
+          filePath: ctx.filePath,
+          rule: loadMissingType.name,
+          severity: loadMissingType.severity,
+          message: loadMissingType.message,
+          help: loadMissingType.help,
+          line,
+          column,
+          category: loadMissingType.category,
+        });
       });
     }
 

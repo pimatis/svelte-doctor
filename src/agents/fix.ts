@@ -5,7 +5,7 @@ import path from "node:path";
 import { DEFAULT_FIX_MAX_FILES } from "../constants.js";
 import type { AgentInfo, Diagnostic, VerificationLevel } from "../types.js";
 import { highlighter, logger } from "../output/logger.js";
-import { formatDiagnosticsForPrompt } from "../core/diagnostics-prompt.js";
+import { formatDiagnosticsForPrompt } from "../core/prompt.js";
 import { detectAgents, getPreferredAgent } from "./detect.js";
 import { scan } from "../core/scanner.js";
 
@@ -120,7 +120,7 @@ const verifyScripts = async (directory: string, level: VerificationLevel): Promi
   return true;
 };
 
-export type FixResult = {
+type FixResult = {
   agentExitedSuccess: boolean;
   beforeErrors: number;
   beforeWarnings: number;
@@ -130,7 +130,7 @@ export type FixResult = {
   verificationPassed?: boolean;
 };
 
-export type FixOptions = {
+type FixOptions = {
   agentOverride?: string;
   unsafeAgentExec?: boolean;
   dryRunPrompt?: boolean;
