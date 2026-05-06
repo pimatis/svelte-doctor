@@ -13,8 +13,10 @@ import { ensureProjectGitignoreEntry } from "../project/gitignore.js";
 const getBaselinePath = (directory: string): string =>
   path.join(directory, CACHE_DIR, BASELINE_FILE);
 
-const ensureBaselineDir = (directory: string): void => {
-  ensureProjectGitignoreEntry(directory, GITIGNORE_SVELTE_DOCTOR_ENTRY);
+const ensureBaselineDir = (directory: string, noGitignore: boolean): void => {
+  if (!noGitignore) {
+    ensureProjectGitignoreEntry(directory, GITIGNORE_SVELTE_DOCTOR_ENTRY);
+  }
   fs.mkdirSync(path.join(directory, CACHE_DIR), { recursive: true });
 };
 
@@ -45,8 +47,12 @@ export const loadBaseline = (directory: string): BaselineFile | null => {
   }
 };
 
-export const saveBaseline = (directory: string, diagnostics: Diagnostic[]): string => {
-  ensureBaselineDir(directory);
+export const saveBaseline = (
+  directory: string,
+  diagnostics: Diagnostic[],
+  noGitignore: boolean = false,
+): string => {
+  ensureBaselineDir(directory, noGitignore);
 
   const baseline: BaselineFile = {
     version: BASELINE_VERSION,

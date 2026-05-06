@@ -391,12 +391,14 @@ const baselineCommand = new Command("baseline")
   .option("--changed", "baseline changed files relative to HEAD")
   .option("--staged", "baseline staged files only")
   .option("--since <ref>", "baseline files changed since the given git ref")
+  .option("--no-gitignore", "do not modify .gitignore")
   .action(async (directory: string, flags: {
     allWorkspaces?: boolean;
     workspace?: string;
     changed?: boolean;
     staged?: boolean;
     since?: string;
+    noGitignore?: boolean;
   }) => {
     const resolvedDir = path.resolve(directory);
     const selectedFiles = resolveGitSelection(resolvedDir, flags);
@@ -409,7 +411,7 @@ const baselineCommand = new Command("baseline")
           quiet: true,
           targetFiles: workspaceTargetFiles,
         });
-        const baselinePath = saveBaseline(workspace.directory, result.diagnostics);
+        const baselinePath = saveBaseline(workspace.directory, result.diagnostics, flags.noGitignore);
         logger.success(`  ✓ Wrote baseline for ${workspace.name} to ${baselinePath}`);
       }
       return;
@@ -419,7 +421,7 @@ const baselineCommand = new Command("baseline")
       quiet: true,
       targetFiles: filterSelectedFilesForDirectory(resolvedDir, selectedFiles),
     });
-    const baselinePath = saveBaseline(resolvedDir, result.diagnostics);
+    const baselinePath = saveBaseline(resolvedDir, result.diagnostics, flags.noGitignore);
     logger.success(`  ✓ Wrote baseline to ${baselinePath}`);
   });
 
@@ -733,13 +735,20 @@ program
   .addCommand(updateCommand)
   .addCommand(migrateCommand);
 
-program.action(() => {
-  program.help();
-});
-
 const main = async () => {
+  const args = process.argv.slice(2);
+  const hasGlobalFlag = args.some((arg) => arg === "--help" || arg === "-h" || arg === "--version" || arg === "-v");
+  const subcommands = program.commands.map((cmd) => cmd.name());
+  const firstArg = args.find((arg) => !arg.startsWith("-"));
+  const hasSubcommand = firstArg && subcommands.includes(firstArg);
+
   try {
-    await program.parseAsync();
+    if (hasGlobalFlag || hasSubcommand) {
+      await program.parseAsync();
+      return;
+    }
+
+    await checkCommand.parseAsync(args, { from: "user" });
   } catch (error) {
     if (error instanceof Error) {
       logger.error(`  Error: ${error.message}`);

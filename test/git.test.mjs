@@ -5,6 +5,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { createProject } from "./helpers.mjs";
 import { getSelectedGitFiles, validateGitRef } from "../src/core/git.ts";
+import { ensureProjectGitignoreEntry } from "../src/project/gitignore.ts";
 
 const createGitProject = () => {
   const project = createProject({
@@ -57,4 +58,62 @@ test("getSelectedGitFiles rejects invalid refs before diffing", () => {
     () => getSelectedGitFiles(project, { since: "missing-ref" }),
     /invalid or not found/,
   );
+});
+
+test("ensureProjectGitignoreEntry appends wildcard entry when missing", () => {
+  const project = createProject({
+    "package.json": JSON.stringify({ name: "gitignore-fixture", type: "module" }, null, 2),
+  });
+
+  const result = ensureProjectGitignoreEntry(project, ".svelte-doctor/*");
+  assert.equal(result.updated, true);
+  assert.equal(result.created, true);
+
+  const content = fs.readFileSync(path.join(project, ".gitignore"), "utf-8");
+  assert.ok(content.includes(".svelte-doctor/*"));
+});
+
+test("ensureProjectGitignoreEntry does not duplicate existing wildcard entry", () => {
+  const project = createProject({
+    "package.json": JSON.stringify({ name: "gitignore-fixture", type: "module" }, null, 2),
+    ".gitignore": ".svelte-doctor/*\n",
+  });
+
+  const result = ensureProjectGitignoreEntry(project, ".svelte-doctor/*");
+  assert.equal(result.updated, false);
+  assert.equal(result.created, false);
+
+  const content = fs.readFileSync(path.join(project, ".gitignore"), "utf-8");
+  const matches = content.match(/\.svelte-doctor\/\*/g);
+  assert.equal(matches?.length, 1);
+});
+
+test("ensureProjectGitignoreEntry replaces directory-only ignore with wildcard form", () => {
+  const project = createProject({
+    "package.json": JSON.stringify({ name: "gitignore-fixture", type: "module" }, null, 2),
+    ".gitignore": ".svelte-doctor\n!.svelte-doctor/baseline.json\n",
+  });
+
+  const result = ensureProjectGitignoreEntry(project, ".svelte-doctor/*");
+  assert.equal(result.updated, true);
+  assert.equal(result.created, false);
+
+  const content = fs.readFileSync(path.join(project, ".gitignore"), "utf-8");
+  assert.ok(content.includes(".svelte-doctor/*"));
+  assert.ok(!content.includes(".svelte-doctor\n"));
+  assert.ok(content.includes("!.svelte-doctor/baseline.json"));
+});
+
+test("ensureProjectGitignoreEntry respects negation patterns and does not append bare directory", () => {
+  const project = createProject({
+    "package.json": JSON.stringify({ name: "gitignore-fixture", type: "module" }, null, 2),
+    ".gitignore": ".svelte-doctor/*\n!.svelte-doctor/baseline.json\n",
+  });
+
+  const result = ensureProjectGitignoreEntry(project, ".svelte-doctor/*");
+  assert.equal(result.updated, false);
+  assert.equal(result.created, false);
+
+  const content = fs.readFileSync(path.join(project, ".gitignore"), "utf-8");
+  assert.ok(!content.includes(".svelte-doctor\n"));
 });

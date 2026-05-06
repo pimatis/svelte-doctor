@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 const workspaceRoot = path.resolve(process.cwd());
 const cliPath = path.join(workspaceRoot, "dist", "cli.mjs");
@@ -53,6 +53,28 @@ test("baseline suppresses existing diagnostics", () => {
   const suppressed = JSON.parse(runCli(project, ["check", ".", "--json", "--baseline"]));
   assert.equal(suppressed.diagnostics.length, 0);
   assert.equal(suppressed.suppressedCount > 0, true);
+  assert.equal(fs.readFileSync(path.join(project, ".gitignore"), "utf-8"), ".svelte-doctor/*\n");
+});
+
+test("baseline preserves gitignore negation for tracked baseline files", () => {
+  const project = createBasicProject();
+  fs.writeFileSync(
+    path.join(project, ".gitignore"),
+    ".svelte-doctor/*\n!.svelte-doctor/baseline.json\n",
+    "utf-8",
+  );
+  execFileSync("git", ["init"], { cwd: project, stdio: "ignore" });
+
+  runCli(project, ["baseline", "."]);
+
+  const gitignore = fs.readFileSync(path.join(project, ".gitignore"), "utf-8");
+  assert.equal(gitignore, ".svelte-doctor/*\n!.svelte-doctor/baseline.json\n");
+
+  const ignored = spawnSync("git", ["check-ignore", ".svelte-doctor/baseline.json"], {
+    cwd: project,
+    encoding: "utf-8",
+  });
+  assert.equal(ignored.status, 1);
 });
 
 test("apply writes deterministic fixes for transition all", () => {

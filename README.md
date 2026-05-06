@@ -60,7 +60,7 @@ Run a single command to scan your entire codebase and receive a **0–100 health
 - **AI-Friendly Copy Export** via `check --copy` with clipboard-first fallback behavior
 - **Svelte 4→5 Auto-Migration** with deterministic codemods
 - **Cached Scans + Incremental Watch** for faster repeat checks and tighter feedback loops
-- **Automatic `.gitignore` Sync** for the generated `.svelte-doctor/` cache/history directory
+- **Automatic `.gitignore` Sync** for generated `.svelte-doctor/*` cache/history files while preserving tracked baseline negations
 - **Dependency Health Checks** for ecosystem compatibility
 - **Zero Configuration** works out of the box
 
@@ -203,7 +203,7 @@ svelte-doctor explain no-unsafe-shell
 
 ### `svelte-doctor check [directory] [options]`
 
-Scan your project for issues and output a health score. Every run saves the score to `.svelte-doctor/history.json`, including `--json` and `--score` modes, so your CI pipeline contributes to the trend graph. When `svelte-doctor` first creates its local `.svelte-doctor/` directory, it also ensures the scanned project's `.gitignore` contains a `.svelte-doctor` entry.
+Scan your project for issues and output a health score. Every run saves the score to `.svelte-doctor/history.json`, including `--json` and `--score` modes, so your CI pipeline contributes to the trend graph. When `svelte-doctor` first creates its local `.svelte-doctor/` directory, it also ensures the scanned project's `.gitignore` contains a `.svelte-doctor/*` entry unless an equivalent `.svelte-doctor` or `.svelte-doctor/*` pattern already exists.
 
 | Option | Description |
 |--------|-------------|
