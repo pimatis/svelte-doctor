@@ -1,4 +1,4 @@
-import type { Diagnostic, Rule, RuleContext } from "../../types.js";
+import type { Diagnostic, Rule, RuleContext, ScriptAstContext } from "../../types.js";
 import { getLineAndColumn, isIdentifierNamed, ts, walkSourceFile } from "../../parser/script.js";
 
 // builds a line-index → boolean map in a single O(n) pass
@@ -42,6 +42,281 @@ const buildStyleLineMap = (source: string): boolean[] => {
   return map;
 };
 
+const getPosition = (source: string, index: number): { line: number; column: number } => {
+  const preceding = source.slice(0, index);
+  const line = preceding.split("\n").length;
+  const lastNewline = preceding.lastIndexOf("\n");
+
+  return {
+    line,
+    column: lastNewline === -1 ? index + 1 : index - lastNewline,
+  };
+};
+
+const createPerformanceDiagnostic = (
+  ctx: RuleContext,
+  rule: Rule,
+  line: number,
+  column: number,
+): Diagnostic => ({
+  filePath: ctx.filePath,
+  rule: rule.name,
+  severity: rule.severity,
+  message: rule.message,
+  help: rule.help,
+  line,
+  column,
+  category: rule.category,
+});
+
+const extractStyleBlocks = (source: string): Array<{ content: string; startLine: number; global: boolean }> => {
+  const blocks: Array<{ content: string; startLine: number; global: boolean }> = [];
+  const pattern = /<style\b([^>]*)>([\s\S]*?)<\/style>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(source)) !== null) {
+    blocks.push({
+      content: match[2] ?? "",
+      startLine: source.slice(0, match.index).split("\n").length,
+      global: /\bglobal\b/i.test(match[1] ?? ""),
+    });
+  }
+
+  return blocks;
+};
+
+const splitSelectorList = (selectorList: string): string[] => {
+  const selectors: string[] = [];
+  let buffer = "";
+  let quote: string | null = null;
+  let parenDepth = 0;
+  let bracketDepth = 0;
+
+  for (let i = 0; i < selectorList.length; i++) {
+    const char = selectorList[i];
+    const previous = selectorList[i - 1];
+
+    if (quote) {
+      buffer += char;
+      if (char === quote && previous !== "\\") quote = null;
+      continue;
+    }
+
+    if (char === "'" || char === '"') {
+      quote = char;
+      buffer += char;
+      continue;
+    }
+
+    if (char === "(") parenDepth++;
+    if (char === ")") parenDepth = Math.max(0, parenDepth - 1);
+    if (char === "[") bracketDepth++;
+    if (char === "]") bracketDepth = Math.max(0, bracketDepth - 1);
+
+    if (char === "," && parenDepth === 0 && bracketDepth === 0) {
+      const selector = buffer.trim();
+      if (selector) selectors.push(selector);
+      buffer = "";
+      continue;
+    }
+
+    buffer += char;
+  }
+
+  const selector = buffer.trim();
+  if (selector) selectors.push(selector);
+
+  return selectors;
+};
+
+const stripCssNoise = (selector: string): string => {
+  let output = selector.replace(/\.svelte-[a-z0-9]+/gi, "");
+
+  while (output.includes(":global(")) {
+    const start = output.indexOf(":global(");
+    let depth = 1;
+    let cursor = start + 8;
+
+    while (cursor < output.length && depth > 0) {
+      const char = output[cursor];
+      if (char === "(") depth++;
+      if (char === ")") depth--;
+      cursor++;
+    }
+
+    if (depth !== 0) break;
+
+    const inner = output.slice(start + 8, cursor - 1);
+    output = `${output.slice(0, start)}${inner}${output.slice(cursor)}`;
+  }
+
+  return output;
+};
+
+const calculateSpecificityScore = (selector: string): number => {
+  const cleanSelector = stripCssNoise(selector);
+  const idCount = (cleanSelector.match(/#[\w-]+/g) ?? []).length;
+  const classCount = (cleanSelector.match(/(?:\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+(?:\([^)]*\))?)/g) ?? []).length;
+  const typeCount = (cleanSelector.match(/(?:^|[\s>+~])(?:[a-zA-Z][\w-]*|::[\w-]+)/g) ?? []).length;
+
+  return idCount * 100 + classCount * 10 + typeCount;
+};
+
+const selectorDepth = (selector: string): number =>
+  stripCssNoise(selector).trim().split(/\s+|\s*[>+~]\s*/).filter(Boolean).length;
+
+const extractSelectors = (css: string): Array<{ selector: string; index: number }> => {
+  const selectors: Array<{ selector: string; index: number }> = [];
+  let buffer = "";
+  let quote: string | null = null;
+  let comment = false;
+  let blockDepth = 0;
+  let selectorStart = 0;
+
+  for (let i = 0; i < css.length; i++) {
+    const char = css[i];
+    const next = css[i + 1];
+    const previous = css[i - 1];
+
+    if (comment) {
+      if (char === "*" && next === "/") {
+        comment = false;
+        i++;
+      }
+      continue;
+    }
+
+    if (char === "/" && next === "*") {
+      comment = true;
+      i++;
+      continue;
+    }
+
+    if (quote) {
+      buffer += char;
+      if (char === quote && previous !== "\\") quote = null;
+      continue;
+    }
+
+    if (char === "'" || char === '"') {
+      quote = char;
+      buffer += char;
+      continue;
+    }
+
+    if (char === "{") {
+      const selectorList = buffer.trim();
+      const isRuleSelector = blockDepth === 0 && selectorList && !selectorList.startsWith("@") && !selectorList.includes(";");
+      if (isRuleSelector) {
+        for (const selector of splitSelectorList(selectorList)) {
+          selectors.push({ selector, index: selectorStart });
+        }
+      }
+
+      blockDepth++;
+      buffer = "";
+      selectorStart = i + 1;
+      continue;
+    }
+
+    if (char === "}") {
+      blockDepth = Math.max(0, blockDepth - 1);
+      buffer = "";
+      selectorStart = i + 1;
+      continue;
+    }
+
+    if (blockDepth === 0 && buffer.length === 0 && !/\s/.test(char)) selectorStart = i;
+    if (blockDepth === 0) buffer += char;
+  }
+
+  return selectors;
+};
+
+const stripCssComments = (css: string): string =>
+  css.replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, " "));
+
+const isRuneCall = (node: ts.CallExpression, runeName: "$effect" | "$derived"): boolean => {
+  if (ts.isIdentifier(node.expression) && node.expression.text === runeName) return true;
+
+  if (runeName === "$derived" && ts.isPropertyAccessExpression(node.expression)) {
+    if (!isIdentifierNamed(node.expression.expression, "$derived")) return false;
+    return node.expression.name.text === "by";
+  }
+
+  return false;
+};
+
+const getFunctionBody = (node: ts.Node | undefined): ts.ConciseBody | ts.Block | undefined => {
+  if (!node) return undefined;
+  if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) return node.body;
+  return undefined;
+};
+
+const hasReturnStatement = (node: ts.Node): boolean => {
+  let found = false;
+
+  const visit = (candidate: ts.Node) => {
+    if (found) return;
+
+    if (candidate !== node && (ts.isArrowFunction(candidate) || ts.isFunctionExpression(candidate) || ts.isFunctionDeclaration(candidate))) {
+      return;
+    }
+
+    if (ts.isReturnStatement(candidate)) found = true;
+    ts.forEachChild(candidate, visit);
+  };
+
+  visit(node);
+
+  return found;
+};
+
+const containsCallName = (node: ts.Node, names: Set<string>): boolean => {
+  let found = false;
+
+  const visit = (candidate: ts.Node) => {
+    if (found) return;
+    if (ts.isCallExpression(candidate)) {
+      if (ts.isIdentifier(candidate.expression) && names.has(candidate.expression.text)) found = true;
+      if (ts.isPropertyAccessExpression(candidate.expression) && names.has(candidate.expression.name.text)) found = true;
+    }
+
+    ts.forEachChild(candidate, visit);
+  };
+
+  visit(node);
+  return found;
+};
+
+const containsObjectName = (node: ts.Node, names: Set<string>): boolean => {
+  let found = false;
+
+  const visit = (candidate: ts.Node) => {
+    if (found) return;
+    if (ts.isIdentifier(candidate) && names.has(candidate.text)) found = true;
+    ts.forEachChild(candidate, visit);
+  };
+
+  visit(node);
+  return found;
+};
+
+const forEachRuneCall = (
+  ctx: RuleContext,
+  runeName: "$effect" | "$derived",
+  visitor: (call: ts.CallExpression, block: ScriptAstContext) => void,
+): void => {
+  for (const block of ctx.scriptBlocks) {
+    walkSourceFile(block.sourceFile, (node) => {
+      if (!ts.isCallExpression(node)) return;
+      if (!isRuneCall(node, runeName)) return;
+
+      visitor(node, block);
+    });
+  }
+};
+
 // detects $effect(() => { singleVar = expr }) that should be $derived
 // only flags when the entire body is a single assignment with no side effects
 const noEffectForDerived: Rule = {
@@ -56,72 +331,24 @@ const noEffectForDerived: Rule = {
     if (!ctx.filePath.endsWith(".svelte")) return [];
 
     const diagnostics: Diagnostic[] = [];
-    const source = ctx.source;
 
-    // locate every $effect( call and extract its body via paren-depth tracking
-    const effectStart = /\$effect\s*\(/g;
-    let match: RegExpExecArray | null;
+    forEachRuneCall(ctx, "$effect", (call, block) => {
+      const body = getFunctionBody(call.arguments[0]);
+      if (!body) return;
+      if (!ts.isBlock(body)) return;
+      if (body.statements.length !== 1) return;
 
-    while ((match = effectStart.exec(source)) !== null) {
-      const openParen = source.indexOf("(", match.index);
-      if (openParen === -1) continue;
+      const statement = body.statements[0];
+      if (!ts.isExpressionStatement(statement)) return;
+      if (!ts.isBinaryExpression(statement.expression)) return;
+      if (statement.expression.operatorToken.kind !== ts.SyntaxKind.EqualsToken) return;
+      if (!ts.isIdentifier(statement.expression.left)) return;
+      if (containsCallName(statement.expression.right, new Set(["fetch"]))) return;
+      if (containsObjectName(statement.expression.right, new Set(["window", "document", "localStorage", "sessionStorage", "console"]))) return;
 
-      let depth = 1;
-      let cursor = openParen + 1;
-
-      while (cursor < source.length && depth > 0) {
-        const ch = source[cursor];
-        if (ch === "(") depth++;
-        if (ch === ")") depth--;
-        cursor++;
-      }
-
-      const body = source.slice(openParen + 1, cursor - 1).trim();
-
-      // body must be an arrow function with no params: () => { ... } or () => expr
-      const arrowMatch = /^\(\s*\)\s*=>/.exec(body);
-      if (!arrowMatch) continue;
-
-      const afterArrow = body.slice(arrowMatch[0].length).trim();
-
-      // unwrap braces for block-body arrows: () => { stmt }
-      let innerBody = afterArrow;
-      if (innerBody.startsWith("{") && innerBody.endsWith("}")) {
-        innerBody = innerBody.slice(1, -1).trim();
-      }
-
-      // strip trailing semicolon for comparison
-      const stmt = innerBody.replace(/;\s*$/, "").trim();
-
-      // must be exactly one assignment: identifier = expression
-      // compound assignments (+=, -=) and equality checks (==, ===) are excluded
-      const singleAssign = /^\w+\s*=[^=]/.test(stmt);
-      if (!singleAssign) continue;
-
-      // the right-hand side must not contain side-effecting calls
-      const rhs = stmt.replace(/^\w+\s*=\s*/, "");
-      const hasSideEffect = /\bconsole\.\w+\s*\(|\bfetch\s*\(|\blocalStorage\.\w+|\bsessionStorage\.\w+|\bdocument\.\w+|\bwindow\.\w+/.test(rhs);
-      if (hasSideEffect) continue;
-
-      // must not contain multiple statements (no semicolons inside)
-      if (stmt.includes(";")) continue;
-
-      const precedingSource = source.slice(0, match.index);
-      const startLine = precedingSource.split("\n").length;
-      const lastNewline = precedingSource.lastIndexOf("\n");
-      const column = lastNewline === -1 ? match.index + 1 : match.index - lastNewline;
-
-      diagnostics.push({
-        filePath: ctx.filePath,
-        rule: "no-effect-for-derived",
-        severity: "warning",
-        message: noEffectForDerived.message,
-        help: noEffectForDerived.help,
-        line: startLine,
-        column,
-        category: "Performance",
-      });
-    }
+      const position = getLineAndColumn(block, call.getStart(block.sourceFile));
+      diagnostics.push(createPerformanceDiagnostic(ctx, noEffectForDerived, position.line, position.column));
+    });
 
     return diagnostics;
   },
@@ -319,26 +546,26 @@ const noRepeatedDerivedAllocation: Rule = {
   check: (ctx: RuleContext): Diagnostic[] => {
     const diagnostics: Diagnostic[] = [];
 
-    for (let i = 0; i < ctx.lines.length; i++) {
-      const line = ctx.lines[i];
-      if (!/\$derived\s*\(/.test(line)) continue;
+    forEachRuneCall(ctx, "$derived", (call, block) => {
+      const target = getFunctionBody(call.arguments[0]) ?? call.arguments[0];
+      if (!target) return;
+      if (!containsCallName(target, new Set(["map", "filter", "reduce"]))) {
+        let allocatesCollection = false;
 
-      const window = ctx.lines.slice(i, Math.min(ctx.lines.length, i + 5)).join(" ");
-      if (!/(new\s+Map|new\s+Set|new\s+Array|\.map\(|\.filter\(|\.reduce\(|\[[^\]]+\]|\{[^}]+\})/.test(window)) {
-        continue;
+        const visit = (node: ts.Node) => {
+          if (allocatesCollection) return;
+          if (ts.isArrayLiteralExpression(node) || ts.isObjectLiteralExpression(node)) allocatesCollection = true;
+          if (ts.isNewExpression(node) && ts.isIdentifier(node.expression) && ["Map", "Set", "Array"].includes(node.expression.text)) allocatesCollection = true;
+          ts.forEachChild(node, visit);
+        };
+
+        visit(target);
+        if (!allocatesCollection) return;
       }
 
-      diagnostics.push({
-        filePath: ctx.filePath,
-        rule: noRepeatedDerivedAllocation.name,
-        severity: noRepeatedDerivedAllocation.severity,
-        message: noRepeatedDerivedAllocation.message,
-        help: noRepeatedDerivedAllocation.help,
-        line: i + 1,
-        column: Math.max(1, line.indexOf("$derived") + 1),
-        category: noRepeatedDerivedAllocation.category,
-      });
-    }
+      const position = getLineAndColumn(block, call.getStart(block.sourceFile));
+      diagnostics.push(createPerformanceDiagnostic(ctx, noRepeatedDerivedAllocation, position.line, position.column));
+    });
 
     return diagnostics;
   },
@@ -417,6 +644,332 @@ const preferLazyDeadcodePhase: Rule = {
   },
 };
 
+const tooManyEffects: Rule = {
+  name: "too-many-effects",
+  category: "Performance",
+  severity: "warning",
+  message: "Component compiles to many reactive effects",
+  help: "Review `$effect` usage and collapse derivable state into `$derived` so the component creates fewer subscriptions.",
+  appliesTo: ["svelte"],
+  cost: "medium",
+  check: (ctx: RuleContext): Diagnostic[] => {
+    const compiled = ctx.compiledSource;
+    if (!compiled) return [];
+
+    const count = (compiled.match(/\$\.effect\s*\(/g) ?? []).length;
+    if (count <= 5) return [];
+
+    return [createPerformanceDiagnostic(ctx, tooManyEffects, 1, 1)];
+  },
+};
+
+const effectWithoutCleanup: Rule = {
+  name: "effect-without-cleanup",
+  category: "Performance",
+  severity: "warning",
+  message: "Effect registers a listener or subscription without cleanup",
+  help: "Return a cleanup function from `$effect` so event listeners and subscriptions are released on teardown.",
+  appliesTo: ["svelte"],
+  cost: "medium",
+  check: (ctx: RuleContext): Diagnostic[] => {
+    const diagnostics: Diagnostic[] = [];
+
+    forEachRuneCall(ctx, "$effect", (call, block) => {
+      const body = getFunctionBody(call.arguments[0]);
+      if (!body) return;
+      if (!containsCallName(body, new Set(["addEventListener", "subscribe", "setInterval", "setTimeout"]))) return;
+      if (hasReturnStatement(body)) return;
+
+      const position = getLineAndColumn(block, call.getStart(block.sourceFile));
+      diagnostics.push(createPerformanceDiagnostic(ctx, effectWithoutCleanup, position.line, position.column));
+    });
+
+    return diagnostics;
+  },
+};
+
+const derivedWithSideEffect: Rule = {
+  name: "derived-with-side-effect",
+  category: "Performance",
+  severity: "warning",
+  message: "Derived expression contains side effects",
+  help: "Keep `$derived` pure. Move DOM mutation, storage writes, timers, and network calls into explicit effects with cleanup.",
+  appliesTo: ["svelte"],
+  cost: "medium",
+  check: (ctx: RuleContext): Diagnostic[] => {
+    const diagnostics: Diagnostic[] = [];
+
+    forEachRuneCall(ctx, "$derived", (call, block) => {
+      const target = getFunctionBody(call.arguments[0]) ?? call.arguments[0];
+      if (!target) return;
+
+      const hasSideEffectCall = containsCallName(target, new Set(["fetch", "appendChild", "remove", "setItem", "removeItem"]));
+      const hasSideEffectObject = containsObjectName(target, new Set(["document", "window", "localStorage", "sessionStorage"]));
+      if (!hasSideEffectCall && !hasSideEffectObject) return;
+
+      const position = getLineAndColumn(block, call.getStart(block.sourceFile));
+      diagnostics.push(createPerformanceDiagnostic(ctx, derivedWithSideEffect, position.line, position.column));
+    });
+
+    return diagnostics;
+  },
+};
+
+const deepTemplateTree: Rule = {
+  name: "deep-template-tree",
+  category: "Performance",
+  severity: "warning",
+  message: "Compiled template has deeply nested child nodes",
+  help: "Flatten markup or split deep sections into components to reduce mount and hydration work.",
+  appliesTo: ["svelte"],
+  cost: "medium",
+  check: (ctx: RuleContext): Diagnostic[] => {
+    const template = ctx.compiledSource?.match(/template\([`"']([\s\S]*?)[`"']/)?.[1] ?? "";
+    let depth = 0;
+    let maxDepth = 0;
+    const tagPattern = /<\/?([a-zA-Z][\w:-]*)\b[^>]*>/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = tagPattern.exec(template)) !== null) {
+      const token = match[0];
+      if (/^<\//.test(token)) {
+        depth = Math.max(0, depth - 1);
+        continue;
+      }
+
+      depth++;
+      maxDepth = Math.max(maxDepth, depth);
+      if (/\/>$/.test(token)) depth = Math.max(0, depth - 1);
+    }
+
+    if (maxDepth <= 10) return [];
+    return [createPerformanceDiagnostic(ctx, deepTemplateTree, 1, 1)];
+  },
+};
+
+const noHydrationMismatchTemplateValues: Rule = {
+  name: "no-hydration-mismatch-template-values",
+  category: "Performance",
+  severity: "warning",
+  message: "Template uses browser-only or non-deterministic value",
+  help: "Move browser APIs and random/time-based values behind `onMount` or stable server-provided state to avoid hydration mismatch.",
+  appliesTo: ["svelte"],
+  cost: "low",
+  check: (ctx: RuleContext): Diagnostic[] => {
+    const diagnostics: Diagnostic[] = [];
+    const scriptMap = buildScriptLineMap(ctx.source);
+    const styleMap = buildStyleLineMap(ctx.source);
+    const pattern = /\{[^}\n]*(?:\bwindow\b|\bdocument\b|\blocalStorage\b|\bnavigator\b|Math\.random\s*\(|Date\.now\s*\(|crypto\.randomUUID\s*\(|typeof\s+window)[^}\n]*\}/;
+
+    for (let i = 0; i < ctx.lines.length; i++) {
+      if (scriptMap[i] || styleMap[i]) continue;
+
+      const match = pattern.exec(ctx.lines[i]);
+      if (!match) continue;
+
+      diagnostics.push(createPerformanceDiagnostic(ctx, noHydrationMismatchTemplateValues, i + 1, match.index + 1));
+    }
+
+    return diagnostics;
+  },
+};
+
+const noInlineEventHandler: Rule = {
+  name: "no-inline-event-handler",
+  category: "Performance",
+  severity: "warning",
+  message: "Inline event handler allocates a new function reference",
+  help: "Pass a stable handler reference like `onclick={handleClick}` when no inline closure is required.",
+  appliesTo: ["svelte"],
+  cost: "low",
+  check: (ctx: RuleContext): Diagnostic[] => {
+    const diagnostics: Diagnostic[] = [];
+    const scriptMap = buildScriptLineMap(ctx.source);
+    const styleMap = buildStyleLineMap(ctx.source);
+    const pattern = /\bon\w+\s*=\s*\{\s*(?:\([^)]*\)|\w+)\s*=>/;
+
+    for (let i = 0; i < ctx.lines.length; i++) {
+      if (scriptMap[i] || styleMap[i]) continue;
+
+      const match = pattern.exec(ctx.lines[i]);
+      if (!match) continue;
+
+      diagnostics.push(createPerformanceDiagnostic(ctx, noInlineEventHandler, i + 1, match.index + 1));
+    }
+
+    return diagnostics;
+  },
+};
+
+const noExpensiveDerived: Rule = {
+  name: "no-expensive-derived",
+  category: "Performance",
+  severity: "warning",
+  message: "Expensive work inside `$derived` can re-run frequently",
+  help: "Precompute heavy parsing, sorting, regex construction, or long transform chains outside reactive derivations when possible.",
+  appliesTo: ["svelte"],
+  cost: "medium",
+  check: (ctx: RuleContext): Diagnostic[] => {
+    const diagnostics: Diagnostic[] = [];
+
+    forEachRuneCall(ctx, "$derived", (call, block) => {
+      const target = getFunctionBody(call.arguments[0]) ?? call.arguments[0];
+      if (!target) return;
+
+      let filterCount = 0;
+      let expensive = false;
+
+      const visit = (node: ts.Node) => {
+        if (expensive) return;
+        if (ts.isCallExpression(node)) {
+          if (ts.isPropertyAccessExpression(node.expression)) {
+            const method = node.expression.name.text;
+            if (method === "parse" && ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "JSON") expensive = true;
+            if (method === "sort") expensive = true;
+            if (method === "filter") filterCount++;
+          }
+        }
+
+        if (ts.isNewExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "RegExp") expensive = true;
+        if (filterCount >= 2) expensive = true;
+
+        ts.forEachChild(node, visit);
+      };
+
+      visit(target);
+      if (!expensive) return;
+
+      const position = getLineAndColumn(block, call.getStart(block.sourceFile));
+      diagnostics.push(createPerformanceDiagnostic(ctx, noExpensiveDerived, position.line, position.column));
+    });
+
+    return diagnostics;
+  },
+};
+
+const noHighSpecificity: Rule = {
+  name: "no-high-specificity",
+  category: "Performance",
+  severity: "warning",
+  message: "CSS selector specificity is too high",
+  help: "Reduce IDs, attributes, and long compound selectors so component styles remain cheap to override and maintain.",
+  appliesTo: ["svelte"],
+  cost: "low",
+  check: (ctx: RuleContext): Diagnostic[] => {
+    const diagnostics: Diagnostic[] = [];
+
+    for (const block of extractStyleBlocks(ctx.source)) {
+      for (const item of extractSelectors(block.content)) {
+        if (calculateSpecificityScore(item.selector) <= 130) continue;
+
+        const position = getPosition(block.content, item.index);
+        diagnostics.push(createPerformanceDiagnostic(ctx, noHighSpecificity, block.startLine + position.line - 1, position.column));
+      }
+    }
+
+    return diagnostics;
+  },
+};
+
+const noDeepCssNesting: Rule = {
+  name: "no-deep-css-nesting",
+  category: "Performance",
+  severity: "warning",
+  message: "CSS selector nesting is too deep",
+  help: "Keep selectors within component boundaries. Deep descendant selectors cost more to match and are hard to maintain.",
+  appliesTo: ["svelte"],
+  cost: "low",
+  check: (ctx: RuleContext): Diagnostic[] => {
+    const diagnostics: Diagnostic[] = [];
+
+    for (const block of extractStyleBlocks(ctx.source)) {
+      for (const item of extractSelectors(block.content)) {
+        if (selectorDepth(item.selector) < 5) continue;
+
+        const position = getPosition(block.content, item.index);
+        diagnostics.push(createPerformanceDiagnostic(ctx, noDeepCssNesting, block.startLine + position.line - 1, position.column));
+      }
+    }
+
+    return diagnostics;
+  },
+};
+
+const noIdSelector: Rule = {
+  name: "no-id-selector",
+  category: "Performance",
+  severity: "warning",
+  message: "ID selector creates high CSS specificity",
+  help: "Use classes for reusable component styling instead of ID selectors.",
+  appliesTo: ["svelte"],
+  cost: "low",
+  check: (ctx: RuleContext): Diagnostic[] => {
+    const diagnostics: Diagnostic[] = [];
+
+    for (const block of extractStyleBlocks(ctx.source)) {
+      for (const item of extractSelectors(block.content)) {
+        if (!/#[\w-]+/.test(stripCssNoise(item.selector))) continue;
+
+        const position = getPosition(block.content, item.index);
+        diagnostics.push(createPerformanceDiagnostic(ctx, noIdSelector, block.startLine + position.line - 1, position.column));
+      }
+    }
+
+    return diagnostics;
+  },
+};
+
+const noImportantOverride: Rule = {
+  name: "no-important-override",
+  category: "Performance",
+  severity: "warning",
+  message: "CSS uses `!important` override",
+  help: "Remove `!important` and fix cascade ownership so styles remain predictable.",
+  appliesTo: ["svelte"],
+  cost: "low",
+  check: (ctx: RuleContext): Diagnostic[] => {
+    const diagnostics: Diagnostic[] = [];
+
+    for (const block of extractStyleBlocks(ctx.source)) {
+      const lines = stripCssComments(block.content).split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        const column = lines[i].indexOf("!important");
+        if (column === -1) continue;
+
+        diagnostics.push(createPerformanceDiagnostic(ctx, noImportantOverride, block.startLine + i, column + 1));
+      }
+    }
+
+    return diagnostics;
+  },
+};
+
+const noStyleTagProps: Rule = {
+  name: "no-style-tag-props",
+  category: "Performance",
+  severity: "warning",
+  message: "Inline style attribute found in template",
+  help: "Prefer class bindings or CSS variables from controlled stylesheets to reduce CSP friction and improve maintainability.",
+  appliesTo: ["svelte"],
+  cost: "low",
+  check: (ctx: RuleContext): Diagnostic[] => {
+    const diagnostics: Diagnostic[] = [];
+    const scriptMap = buildScriptLineMap(ctx.source);
+    const styleMap = buildStyleLineMap(ctx.source);
+
+    for (let i = 0; i < ctx.lines.length; i++) {
+      if (scriptMap[i] || styleMap[i]) continue;
+
+      const column = ctx.lines[i].indexOf("style=");
+      if (column === -1) continue;
+
+      diagnostics.push(createPerformanceDiagnostic(ctx, noStyleTagProps, i + 1, column + 1));
+    }
+
+    return diagnostics;
+  },
+};
+
 export const performanceRules: Rule[] = [
   noEffectForDerived,
   eachMissingKey,
@@ -426,4 +979,16 @@ export const performanceRules: Rule[] = [
   noRepeatedDerivedAllocation,
   noBlockingSyncFsInHotCliPath,
   preferLazyDeadcodePhase,
+  tooManyEffects,
+  effectWithoutCleanup,
+  derivedWithSideEffect,
+  deepTemplateTree,
+  noHydrationMismatchTemplateValues,
+  noInlineEventHandler,
+  noExpensiveDerived,
+  noHighSpecificity,
+  noDeepCssNesting,
+  noIdSelector,
+  noImportantOverride,
+  noStyleTagProps,
 ];

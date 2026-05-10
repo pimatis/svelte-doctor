@@ -7,6 +7,7 @@ import {
   VERSION,
 } from "../constants.js";
 import { ensureProjectGitignoreEntry } from "../project/gitignore.js";
+import type { ScoreHistoryEntry } from "../types.js";
 
 const HISTORY_DIR = ".svelte-doctor";
 const HISTORY_FILE = "history.json";
@@ -15,15 +16,7 @@ const MAX_ENTRIES = 500;
 const CHART_HEIGHT = 10;
 const MAX_BAR_COLUMNS = 60;
 
-interface ScoreEntry {
-  timestamp: string;
-  score: number;
-  label: string;
-  errors: number;
-  warnings: number;
-  filesScanned: number;
-  filesAffected: number;
-}
+type ScoreEntry = ScoreHistoryEntry;
 
 const getHistoryDir = (directory: string): string =>
   path.join(directory, HISTORY_DIR);

@@ -1,5 +1,6 @@
 import fs from "node:fs";
-import { parse } from "svelte/compiler";
+import path from "node:path";
+import { compile, parse } from "svelte/compiler";
 import type { RuleContext, ProjectInfo } from "../types.js";
 import { collectScriptBlocks } from "./script.js";
 
@@ -9,9 +10,12 @@ const buildContext = (
   ast: any,
   projectInfo: ProjectInfo,
   fileKind: "svelte" | "script",
+  compiledSource?: string,
 ): RuleContext => ({
   filePath,
+  projectRoot: projectInfo.rootDirectory,
   source,
+  compiledSource,
   lines: source.split("\n"),
   fileKind,
   ast,
@@ -41,7 +45,18 @@ export const parseSvelteFile = (
 
   try {
     const ast = parse(source, { modern: true });
-    return buildContext(filePath, source, ast, projectInfo, "svelte");
+    let compiledSource: string | undefined;
+
+    try {
+      const compiled = compile(source, {
+        filename: path.relative(projectInfo.rootDirectory, filePath),
+        generate: "client",
+        dev: false,
+      });
+      compiledSource = compiled.js.code;
+    } catch {}
+
+    return buildContext(filePath, source, ast, projectInfo, "svelte", compiledSource);
   } catch {
     // AST parse failed but we still have the source text
     return buildContext(filePath, source, null, projectInfo, "svelte");

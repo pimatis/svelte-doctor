@@ -10,13 +10,16 @@ import { runUpdate } from "./core/update.js";
 import { exportDiagnosticsForAi } from "./core/export.js";
 import { runApply } from "./core/apply.js";
 import { saveBaseline } from "./core/baseline.js";
-import { buildGitHubAnnotations, buildSarifReport, writeSarifReport } from "./core/reporting.js";
+import { buildGitHubAnnotations, buildHtmlReport, buildJunitReport, buildMarkdownReport, buildSarifReport, writeReport, writeSarifReport } from "./core/reporting.js";
 import { getSelectedGitFiles } from "./core/git.js";
 import { logger, highlighter } from "./output/logger.js";
 import { printRuleExplain, printRules } from "./output/rules.js";
 import { allRules } from "./rules/index.js";
 import { DEFAULT_COPY_MAX_DIAGNOSTICS, VERSION } from "./constants.js";
+import { loadConfig } from "./project/config.js";
+import { discoverProject } from "./project/discover.js";
 import { discoverWorkspaces, findWorkspace } from "./project/workspaces.js";
+import { calculateScore } from "./core/score.js";
 import type {
   ApplyOptions,
   CopyFormat,
@@ -25,6 +28,9 @@ import type {
   Diagnostic,
   FailOn,
   PackageManager,
+  ProjectInfo,
+  ScanMeta,
+  ScoreResult,
   UpdateResult,
   VerificationLevel,
   WorkspaceInfo,
@@ -162,6 +168,41 @@ const shouldFail = (
   return diagnostics.some((diagnostic) => diagnostic.severity === "error");
 };
 
+const buildWorkspaceReportContext = (
+  directory: string,
+  workspaces: WorkspaceInfo[],
+  results: Array<{ workspace: WorkspaceInfo; score: number; diagnostics: Diagnostic[]; meta: ScanMeta }>,
+  diagnostics: Diagnostic[],
+): { meta: ScanMeta; project: ProjectInfo; score: ScoreResult } => {
+  const score = calculateScore(diagnostics);
+  const affectedFiles = new Set(diagnostics.map((diagnostic) => diagnostic.filePath)).size;
+  const sourceFileCount = results.reduce((sum, entry) => sum + entry.meta.totalFiles, 0);
+
+  return {
+    meta: {
+      totalDiagnostics: diagnostics.length,
+      suppressedCount: results.reduce((sum, entry) => sum + entry.meta.suppressedCount, 0),
+      fixableCount: diagnostics.filter((diagnostic) => diagnostic.fixable === true).length,
+      totalFiles: sourceFileCount,
+      affectedFiles,
+      elapsedMs: results.reduce((sum, entry) => sum + entry.meta.elapsedMs, 0),
+      baselineApplied: results.some((entry) => entry.meta.baselineApplied),
+      targetMode: results.some((entry) => entry.meta.targetMode === "subset") ? "subset" : "full",
+    },
+    project: {
+      rootDirectory: directory,
+      projectName: `${path.basename(directory)} (${workspaces.length} workspaces)`,
+      svelteVersion: null,
+      framework: "unknown",
+      hasTypeScript: results.length > 0,
+      hasPreprocess: false,
+      sourceFileCount,
+      usesRunes: false,
+    },
+    score,
+  };
+};
+
 const printWorkspaceAggregate = (
   workspaces: WorkspaceInfo[],
   results: Array<{ workspace: WorkspaceInfo; score: number; diagnostics: Diagnostic[] }>,
@@ -191,7 +232,17 @@ const printWorkspaceAggregate = (
 const maybeEmitReports = (
   directory: string,
   diagnostics: Diagnostic[],
-  flags: { sarif?: boolean; sarifFile?: string; githubAnnotations?: boolean },
+  flags: {
+    sarif?: boolean;
+    sarifFile?: string;
+    githubAnnotations?: boolean;
+    html?: boolean;
+    htmlFile?: string;
+    junit?: boolean;
+    junitFile?: string;
+    markdown?: boolean;
+    markdownFile?: string;
+  },
 ) => {
   if (flags.githubAnnotations) {
     for (const line of buildGitHubAnnotations(diagnostics)) {
@@ -203,7 +254,7 @@ const maybeEmitReports = (
 
   const report = buildSarifReport(diagnostics, VERSION, directory);
   if (flags.sarifFile) {
-    const writtenPath = writeSarifReport(flags.sarifFile, report);
+    const writtenPath = writeSarifReport(flags.sarifFile, report, directory);
     logger.success(`  ✓ Wrote SARIF report to ${writtenPath}`);
     return report;
   }
@@ -212,13 +263,54 @@ const maybeEmitReports = (
   return report;
 };
 
+const maybeEmitRichReports = (
+  directory: string,
+  diagnostics: Diagnostic[],
+  flags: {
+    json?: boolean;
+    score?: boolean;
+    html?: boolean;
+    htmlFile?: string;
+    junit?: boolean;
+    junitFile?: string;
+    markdown?: boolean;
+    markdownFile?: string;
+  },
+  context: { meta: ScanMeta; project: ProjectInfo; score: ScoreResult },
+) => {
+  const silent = flags.json === true || flags.score === true;
+  const config = loadConfig(directory);
+  const history = loadScoreHistory(directory).slice(-20);
+  const htmlTarget = flags.htmlFile ?? config?.reports?.html ?? (flags.html ? ".svelte-doctor/report.html" : undefined);
+  const junitTarget = flags.junitFile ?? config?.reports?.junit ?? (flags.junit ? ".svelte-doctor/junit.xml" : undefined);
+  const markdownTarget = flags.markdownFile ?? config?.reports?.markdown ?? (flags.markdown ? ".svelte-doctor/report.md" : undefined);
+
+  if (htmlTarget) {
+    const content = buildHtmlReport(diagnostics, context.meta, context.project, context.score, history);
+    const writtenPath = writeReport(htmlTarget, content, directory);
+    if (!silent) logger.success(`  ✓ Wrote HTML report to ${writtenPath}`);
+  }
+
+  if (junitTarget) {
+    const content = buildJunitReport(diagnostics, context.meta, context.project);
+    const writtenPath = writeReport(junitTarget, content, directory);
+    if (!silent) logger.success(`  ✓ Wrote JUnit report to ${writtenPath}`);
+  }
+
+  if (markdownTarget) {
+    const content = buildMarkdownReport(diagnostics, context.meta, context.project, context.score, history);
+    const writtenPath = writeReport(markdownTarget, content, directory);
+    if (!silent) logger.success(`  ✓ Wrote Markdown report to ${writtenPath}`);
+  }
+};
+
 const program = new Command()
   .name("svelte-doctor")
   .description("Diagnose and fix your Svelte codebase")
   .version(VERSION, "-v, --version", "display the version number");
 
 const checkCommand = new Command("check")
-  .description("Scan your project for issues and output a health score")
+  .description("Scan source, Svelte compiler output, and build artifacts for issues and output a health score")
   .argument("[directory]", "project directory to scan", ".")
   .option("--no-lint", "skip lint rules")
   .option("--no-dead-code", "skip dead code detection")
@@ -234,6 +326,12 @@ const checkCommand = new Command("check")
   .option("--baseline", "suppress diagnostics that exist in .svelte-doctor/baseline.json")
   .option("--sarif", "emit SARIF output")
   .option("--sarif-file <path>", "write SARIF output to a file")
+  .option("--html", "write an interactive HTML report")
+  .option("--html-file <path>", "write HTML report to a file")
+  .option("--junit", "write a JUnit XML report")
+  .option("--junit-file <path>", "write JUnit XML report to a file")
+  .option("--markdown", "write a Markdown report")
+  .option("--markdown-file <path>", "write Markdown report to a file")
   .option("--github-annotations", "emit GitHub Actions annotation commands")
   .option("--fail-on <mode>", "exit policy: never, error, or warning", parseFailOn, "error")
   .option("--min-score <score>", "fail when score drops below this threshold", "0")
@@ -257,6 +355,12 @@ const checkCommand = new Command("check")
     baseline?: boolean;
     sarif?: boolean;
     sarifFile?: string;
+    html?: boolean;
+    htmlFile?: string;
+    junit?: boolean;
+    junitFile?: string;
+    markdown?: boolean;
+    markdownFile?: string;
     githubAnnotations?: boolean;
     failOn: FailOn;
     minScore: string;
@@ -278,7 +382,7 @@ const checkCommand = new Command("check")
       }
 
       if (workspaces.length > 0) {
-        const aggregateResults: Array<{ workspace: WorkspaceInfo; score: number; diagnostics: Diagnostic[] }> = [];
+        const aggregateResults: Array<{ workspace: WorkspaceInfo; score: number; diagnostics: Diagnostic[]; meta: ScanMeta }> = [];
         const prefixedDiagnostics: Diagnostic[] = [];
 
         for (const workspace of workspaces) {
@@ -295,6 +399,7 @@ const checkCommand = new Command("check")
             workspace,
             score: result.scoreResult.score,
             diagnostics: result.diagnostics,
+            meta: result.meta,
           });
           prefixedDiagnostics.push(...prefixDiagnosticsForWorkspace(workspace, result.diagnostics));
         }
@@ -331,6 +436,12 @@ const checkCommand = new Command("check")
         }
 
         maybeEmitReports(resolvedDir, prefixedDiagnostics, flags);
+        maybeEmitRichReports(
+          resolvedDir,
+          prefixedDiagnostics,
+          flags,
+          buildWorkspaceReportContext(resolvedDir, workspaces, aggregateResults, prefixedDiagnostics),
+        );
         if (aggregateResults.some((entry) => shouldFail(entry.diagnostics, entry.score, flags.failOn, minScore))) {
           process.exitCode = 1;
         }
@@ -365,7 +476,13 @@ const checkCommand = new Command("check")
         });
       }
 
+      const project = discoverProject(resolvedDir);
       maybeEmitReports(resolvedDir, result.diagnostics, flags);
+      maybeEmitRichReports(resolvedDir, result.diagnostics, flags, {
+        meta: result.meta,
+        project,
+        score: result.scoreResult,
+      });
       if (shouldFail(result.diagnostics, result.scoreResult.score, flags.failOn, minScore)) {
         process.exitCode = 1;
       }

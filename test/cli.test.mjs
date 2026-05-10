@@ -161,3 +161,42 @@ test("check aggregates workspace results", () => {
   assert.equal(result.diagnostics.some((diagnostic) => diagnostic.filePath === "packages/a/src/App.svelte"), true);
   assert.equal(result.worstScore < 100, true);
 });
+
+test("check writes rich reports for workspace aggregates", () => {
+  const project = createProject({
+    "package.json": JSON.stringify({
+      name: "workspace-root",
+      private: true,
+      workspaces: ["packages/*"],
+      "svelte-doctor": {
+        reports: {
+          html: ".svelte-doctor/workspaces.html",
+          junit: ".svelte-doctor/workspaces.xml",
+          markdown: ".svelte-doctor/workspaces.md",
+        },
+      },
+    }, null, 2),
+    "packages/a/package.json": JSON.stringify({
+      name: "workspace-a",
+      type: "module",
+      dependencies: { svelte: "^5.0.0" },
+    }, null, 2),
+    "packages/a/src/App.svelte": `<style>.button { transition: all 0.2s ease; }</style>\n<button>hello</button>\n`,
+    "packages/b/package.json": JSON.stringify({
+      name: "workspace-b",
+      type: "module",
+      dependencies: { svelte: "^5.0.0" },
+    }, null, 2),
+    "packages/b/src/App.svelte": `<button>clean</button>\n`,
+  });
+
+  runCli(project, ["check", ".", "--all-workspaces", "--fail-on", "never"]);
+
+  const html = fs.readFileSync(path.join(project, ".svelte-doctor", "workspaces.html"), "utf-8");
+  const junit = fs.readFileSync(path.join(project, ".svelte-doctor", "workspaces.xml"), "utf-8");
+  const markdown = fs.readFileSync(path.join(project, ".svelte-doctor", "workspaces.md"), "utf-8");
+
+  assert.match(html, /packages\/a\/src\/App\.svelte/);
+  assert.match(junit, /packages\/a\/src\/App\.svelte/);
+  assert.match(markdown, /packages\/a\/src\/App\.svelte/);
+});

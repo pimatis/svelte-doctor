@@ -27,6 +27,7 @@ import {
 } from "./cache.js";
 import { attachDiagnosticMetadata, countFixableDiagnostics } from "./diagnostics.js";
 import { filterBaselineDiagnostics, loadBaseline } from "./baseline.js";
+import { analyzeBuildArtifacts } from "./artifacts.js";
 import { collectProjectFiles } from "../fs/walker.js";
 import { toPosix } from "../fs/normalize.js";
 import { validateDirectory } from "../fs/validate.js";
@@ -283,8 +284,12 @@ export const scan = async (
     saveScanCache(directory, scanCache);
   }
 
+  const artifactDiagnostics = targetMode === "full" && options.lint
+    ? analyzeBuildArtifacts(directory)
+    : [];
+
   const allDiagnostics = attachDiagnosticMetadata(
-    userConfig ? filterIgnored([...lintDiagnostics, ...deadCodeDiagnostics], userConfig) : [...lintDiagnostics, ...deadCodeDiagnostics],
+    userConfig ? filterIgnored([...lintDiagnostics, ...deadCodeDiagnostics, ...artifactDiagnostics], userConfig) : [...lintDiagnostics, ...deadCodeDiagnostics, ...artifactDiagnostics],
   );
   const baselineResult = options.baseline ? filterBaselineDiagnostics(allDiagnostics, loadBaseline(directory)) : {
     diagnostics: allDiagnostics,

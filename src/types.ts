@@ -138,6 +138,21 @@ export interface SvelteDoctorConfig {
     verifyLevel?: VerificationLevel;
     maxFiles?: number;
   };
+  reports?: {
+    html?: string;
+    junit?: string;
+    markdown?: string;
+  };
+}
+
+export interface ScoreHistoryEntry {
+  timestamp: string;
+  score: number;
+  label: string;
+  errors: number;
+  warnings: number;
+  filesScanned: number;
+  filesAffected: number;
 }
 
 export interface RuleContextMeta {
@@ -147,7 +162,9 @@ export interface RuleContextMeta {
 
 export interface RuleContext {
   filePath: string;
+  projectRoot: string;
   source: string;
+  compiledSource?: string;
   lines: string[];
   fileKind: FileKind;
   ast: any;

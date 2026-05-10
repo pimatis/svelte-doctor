@@ -39,6 +39,15 @@ const sanitizeConfig = (raw: unknown): SvelteDoctorConfig | null => {
     if (Object.keys(nextFix).length > 0) result.fix = nextFix;
   }
 
+  if (typeof obj.reports === "object" && obj.reports !== null) {
+    const reports = obj.reports as Record<string, unknown>;
+    const nextReports: NonNullable<SvelteDoctorConfig["reports"]> = {};
+    if (typeof reports.html === "string" && reports.html.length > 0) nextReports.html = reports.html;
+    if (typeof reports.junit === "string" && reports.junit.length > 0) nextReports.junit = reports.junit;
+    if (typeof reports.markdown === "string" && reports.markdown.length > 0) nextReports.markdown = reports.markdown;
+    if (Object.keys(nextReports).length > 0) result.reports = nextReports;
+  }
+
   if (typeof obj.ignore === "object" && obj.ignore !== null) {
     const ignore = obj.ignore as Record<string, unknown>;
     const rules = Array.isArray(ignore.rules)

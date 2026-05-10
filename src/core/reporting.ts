@@ -2,6 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { SARIF_SCHEMA_URL } from "../constants.js";
 import type { Diagnostic } from "../types.js";
+export { buildHtmlReport } from "../output/html.js";
+export { buildJunitReport } from "../output/junit.js";
+export { buildMarkdownReport } from "../output/markdown.js";
 
 const severityToSarifLevel = (severity: Diagnostic["severity"]): "error" | "warning" =>
   severity === "error" ? "error" : "warning";
@@ -67,10 +70,46 @@ export const buildSarifReport = (
 export const writeSarifReport = (
   targetPath: string,
   report: Record<string, unknown>,
+  rootDirectory?: string,
 ): string => {
-  const resolved = path.resolve(targetPath);
-  fs.mkdirSync(path.dirname(resolved), { recursive: true });
-  fs.writeFileSync(resolved, JSON.stringify(report, null, 2), "utf-8");
+  return writeReport(targetPath, JSON.stringify(report, null, 2), rootDirectory);
+};
+
+export const writeReport = (targetPath: string, content: string, rootDirectory?: string): string => {
+  const resolved = rootDirectory
+    ? path.resolve(rootDirectory, targetPath)
+    : path.resolve(targetPath);
+  const parent = path.dirname(resolved);
+
+  fs.mkdirSync(parent, { recursive: true });
+
+  const parentStat = fs.lstatSync(parent);
+  if (parentStat.isSymbolicLink()) {
+    throw new Error(`Refusing to write report through symlinked directory: ${parent}`);
+  }
+
+  try {
+    const targetStat = fs.lstatSync(resolved);
+    if (targetStat.isSymbolicLink()) {
+      throw new Error(`Refusing to write report through symlinked file: ${resolved}`);
+    }
+  } catch (error) {
+    if (!(error instanceof Error)) throw error;
+    if (!("code" in error)) throw error;
+    if (error.code !== "ENOENT") throw error;
+  }
+
+  if (rootDirectory) {
+    const rootReal = fs.realpathSync.native(path.resolve(rootDirectory));
+    const parentReal = fs.realpathSync.native(parent);
+    const realTarget = path.join(parentReal, path.basename(resolved));
+    const relative = path.relative(rootReal, realTarget);
+    if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
+      throw new Error(`Report path must stay inside project root: ${targetPath}`);
+    }
+  }
+
+  fs.writeFileSync(resolved, content, "utf-8");
   return resolved;
 };
 

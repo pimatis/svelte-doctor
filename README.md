@@ -50,7 +50,8 @@ Run a single command to scan your entire codebase and receive a **0–100 health
 
 ### Key Features
 
-- **45 Diagnostic Rules** covering correctness, performance, security, architecture, and SvelteKit reliability
+- **57 Source Diagnostic Rules** covering correctness, performance, security, architecture, SvelteKit reliability, runtime performance, hydration safety, and CSS specificity
+- **Build Artifact Diagnostics** for SvelteKit output chunks, duplicate libraries, oversized bundles, and inline base64 assets
 - **TypeScript AST-backed script analysis** for lower false-positive rates on security-sensitive checks
 - **Deterministic Safe Apply** via `apply` for high-confidence fixes before using an AI agent
 - **Baseline Suppression** to keep legacy issues out of new CI failures
@@ -203,7 +204,7 @@ svelte-doctor explain no-unsafe-shell
 
 ### `svelte-doctor check [directory] [options]`
 
-Scan your project for issues and output a health score. Every run saves the score to `.svelte-doctor/history.json`, including `--json` and `--score` modes, so your CI pipeline contributes to the trend graph. When `svelte-doctor` first creates its local `.svelte-doctor/` directory, it also ensures the scanned project's `.gitignore` contains a `.svelte-doctor/*` entry unless an equivalent `.svelte-doctor` or `.svelte-doctor/*` pattern already exists.
+Scan your project for issues and output a health score. The scanner analyzes source files, Svelte compiler output, and existing SvelteKit build artifacts under `.svelte-kit/output/` when that directory exists. Every run saves the score to `.svelte-doctor/history.json`, including `--json` and `--score` modes, so your CI pipeline contributes to the trend graph. When `svelte-doctor` first creates its local `.svelte-doctor/` directory, it also ensures the scanned project's `.gitignore` contains a `.svelte-doctor/*` entry unless an equivalent `.svelte-doctor` or `.svelte-doctor/*` pattern already exists.
 
 | Option | Description |
 |--------|-------------|
@@ -221,6 +222,12 @@ Scan your project for issues and output a health score. Every run saves the scor
 | `--baseline` | Suppress diagnostics present in `.svelte-doctor/baseline.json` |
 | `--sarif` | Emit SARIF output |
 | `--sarif-file <path>` | Write SARIF output to a file |
+| `--html` | Write an interactive HTML report to `.svelte-doctor/report.html` |
+| `--html-file <path>` | Write HTML report to a custom file |
+| `--junit` | Write a JUnit XML report to `.svelte-doctor/junit.xml` |
+| `--junit-file <path>` | Write JUnit XML report to a custom file |
+| `--markdown` | Write a Markdown report to `.svelte-doctor/report.md` |
+| `--markdown-file <path>` | Write Markdown report to a custom file |
 | `--github-annotations` | Emit GitHub Actions annotation commands |
 | `--fail-on <never\|error\|warning>` | Control exit behavior |
 | `--min-score <score>` | Fail if score is below the threshold |
@@ -232,6 +239,8 @@ Scan your project for issues and output a health score. Every run saves the scor
 
 `--copy` is designed for cases where you want to paste diagnostics into a different AI agent instead of using `svelte-doctor fix`. The default mode tries the system clipboard first, then falls back to stdout if no clipboard integration is available. If you need deterministic output for scripts, use `--copy-output file`.
 
+Rich reports also work with `--all-workspaces` and `--workspace`. Workspace reports aggregate diagnostics into one file and prefix paths with the workspace directory, such as `packages/app/src/App.svelte`.
+
 Examples:
 
 ```bash
@@ -241,7 +250,10 @@ svelte-doctor check --copy --copy-output stdout
 svelte-doctor check --copy --copy-output file --copy-file .svelte-doctor/diagnostics.txt
 svelte-doctor check --changed
 svelte-doctor check --sarif --sarif-file .svelte-doctor/report.sarif
-svelte-doctor check --all-workspaces
+svelte-doctor check --html --html-file .svelte-doctor/report.html
+svelte-doctor check --junit --junit-file .svelte-doctor/junit.xml
+svelte-doctor check --markdown --markdown-file .svelte-doctor/report.md
+svelte-doctor check --all-workspaces --html --junit --markdown
 ```
 
 ### `svelte-doctor baseline [directory]`
@@ -383,7 +395,7 @@ Checks the official npm registry for the latest `svelte-doctor` version and upda
 
 ---
 
-## Rules (45)
+## Rules (57 source rules + 3 build artifact diagnostics)
 
 ### Correctness (7)
 
@@ -399,7 +411,7 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `no-let-directive` | error | `let:` directive → snippet props |
 | `no-on-directive` | warning | `on:event` → `onevent` attributes |
 
-### Performance (8)
+### Performance (20)
 
 | Rule | Severity | Description |
 |------|----------|-------------|
@@ -411,6 +423,18 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `no-repeated-derived-allocation` | warning | Repeated allocations inside `$derived()` |
 | `no-blocking-sync-fs-in-hot-cli-path` | warning | Sync fs calls in hot scan paths |
 | `prefer-lazy-deadcode-phase` | warning | Full dead-code scans configured in fast feedback paths |
+| `too-many-effects` | warning | Compiler output contains many reactive effects in one component |
+| `effect-without-cleanup` | warning | `$effect` registers listeners, timers, or subscriptions without cleanup |
+| `derived-with-side-effect` | warning | `$derived` contains DOM, storage, timer, or network side effects |
+| `deep-template-tree` | warning | Compiled template is deeply nested and may mount/hydrate slowly |
+| `no-hydration-mismatch-template-values` | warning | Template uses browser-only, random, or time-based values that can mismatch SSR |
+| `no-inline-event-handler` | warning | Inline event handler creates a new function reference |
+| `no-expensive-derived` | warning | `$derived` performs heavy parsing, sorting, regex, or repeated filtering |
+| `no-high-specificity` | warning | CSS selector specificity is too high |
+| `no-deep-css-nesting` | warning | CSS selector nesting is too deep |
+| `no-id-selector` | warning | ID selector creates high specificity in component styles |
+| `no-important-override` | warning | CSS uses `!important` override |
+| `no-style-tag-props` | warning | Inline style attribute can conflict with CSP and maintainability |
 
 ### Architecture (4)
 
@@ -447,13 +471,18 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `server-load-missing-error-guard` | warning | Server load uses remote fetch without obvious error handling |
 | `form-action-missing-auth-check` | warning | Form actions mutate without an obvious auth/session check |
 
-### Bundle Size (3)
+### Bundle Size (4 source rules + 3 build artifact diagnostics)
 
 | Rule | Severity | Description |
 |------|----------|-------------|
 | `no-barrel-import` | warning | Barrel imports prevent tree-shaking |
 | `no-full-lodash` | warning | Full `lodash` import (~70kb) |
 | `no-moment` | warning | `moment.js` is heavy (~300kb) |
+| `no-full-icon-import` | warning | Wildcard icon imports prevent tree-shaking |
+| `chunk-size-limit` | warning | Build output chunk exceeds recommended size limit |
+| `no-duplicate-lib-in-chunks` | warning | Same package appears across multiple generated chunks |
+| `prefer-dynamic-import` | warning | Large dependency appears in an eagerly loaded build chunk |
+| `no-base64-inline-asset` | warning | Build output contains inline base64 image data |
 
 ### Accessibility (3)
 
@@ -506,9 +535,16 @@ Create `svelte-doctor.config.json` in your project root:
   "fix": {
     "verifyLevel": "diagnostics",
     "maxFiles": 50
+  },
+  "reports": {
+    "html": ".svelte-doctor/report.html",
+    "junit": ".svelte-doctor/junit.xml",
+    "markdown": ".svelte-doctor/report.md"
   }
 }
 ```
+
+The `reports` block writes reports on every `check` run, even without `--html`, `--junit`, or `--markdown` flags. This also applies to workspace scans, where reports are written at the root project and include all prefixed workspace diagnostics. Report writes are symlink-hardened and create parent directories when needed.
 
 Or add a `"svelte-doctor"` key in `package.json`:
 
@@ -525,17 +561,6 @@ Or add a `"svelte-doctor"` key in `package.json`:
 ---
 
 ## License
-
-## Production Use
-
-`svelte-doctor` should be considered production-ready only after:
-
-- `bun run typecheck` passes
-- `bun run build` passes
-- `npm pack --dry-run` includes `dist/`
-- `node ./dist/cli.mjs --version` works
-
-The built-in `fix` flow is safe-by-default, but `--unsafe-agent-exec` is intentionally an opt-in escape hatch and should be treated as a high-trust mode.
 
 This project has been developed under the [Apache License 2.0](./LICENSE).
 
