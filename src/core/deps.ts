@@ -19,7 +19,7 @@ interface DepCheckResult {
   issues: DepIssue[];
 }
 
-const DEPRECATED_PACKAGES: Record<string, string> = {
+export const DEPRECATED_PACKAGES: Record<string, string> = {
   "svelte-routing": "Use SvelteKit's built-in routing or @sveltejs/kit",
   "svelte-spa-router": "Use SvelteKit's built-in routing",
   "svelte-navigator": "Use SvelteKit's built-in routing",
@@ -31,7 +31,7 @@ const DEPRECATED_PACKAGES: Record<string, string> = {
   "svelte-hmr": "HMR is now built into @sveltejs/vite-plugin-svelte",
 };
 
-const SVELTE5_INCOMPATIBLE: Record<string, string> = {
+export const SVELTE5_INCOMPATIBLE: Record<string, string> = {
   "svelte-forms-lib": "Not updated for Svelte 5 runes so use superforms or custom solution",
   "svelte-simple-modal": "Uses legacy slot API so find a Svelte 5 compatible modal or build one",
   "svelte-materialify": "Abandoned so use Skeleton UI or shadcn-svelte",
@@ -42,7 +42,7 @@ const SVELTE5_INCOMPATIBLE: Record<string, string> = {
   "@smui/button": "Check SMUI for Svelte 5 compatible version",
 };
 
-const BETTER_ALTERNATIVES: Record<string, string> = {
+export const BETTER_ALTERNATIVES: Record<string, string> = {
   "axios": "Use native fetch() since it is built into all modern runtimes",
   "node-fetch": "Use native fetch() since it is built into Node 18+ and Bun",
   "moment": "Use date-fns or dayjs since moment is 300kb+ and deprecated",

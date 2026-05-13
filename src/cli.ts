@@ -9,6 +9,9 @@ import { loadScoreHistory, printTrend } from "./core/history.js";
 import { runUpdate } from "./core/update.js";
 import { exportDiagnosticsForAi } from "./core/export.js";
 import { runApply } from "./core/apply.js";
+import { runInit } from "./core/init.js";
+import { runPrCheck } from "./core/pr-check.js";
+import { runUpgrade } from "./core/upgrade.js";
 import { saveBaseline } from "./core/baseline.js";
 import { buildGitHubAnnotations, buildHtmlReport, buildJunitReport, buildMarkdownReport, buildSarifReport, writeReport, writeSarifReport } from "./core/reporting.js";
 import { getSelectedGitFiles } from "./core/git.js";
@@ -35,6 +38,9 @@ import type {
   VerificationLevel,
   WorkspaceInfo,
 } from "./types.js";
+
+type CliCiPlatform = "github-actions" | "gitlab-ci" | "circle-ci";
+type CliPrPlatform = "github" | "gitlab" | "bitbucket" | "auto";
 
 const parseDeadCodeMode = (value: string): DeadCodeMode => {
   if (value === "off" || value === "lazy" || value === "full") return value;
@@ -66,6 +72,16 @@ const parseCopyFormat = (value: string): CopyFormat => {
 const parseFailOn = (value: string): FailOn => {
   if (value === "never" || value === "error" || value === "warning") return value;
   throw new Error(`Invalid fail-on mode "${value}". Use never, error, or warning.`);
+};
+
+const parseCiPlatform = (value: string): CliCiPlatform => {
+  if (value === "github-actions" || value === "gitlab-ci" || value === "circle-ci") return value;
+  throw new Error(`Invalid CI platform "${value}". Use github-actions, gitlab-ci, or circle-ci.`);
+};
+
+const parsePrPlatform = (value: string): CliPrPlatform => {
+  if (value === "github" || value === "gitlab" || value === "bitbucket" || value === "auto") return value;
+  throw new Error(`Invalid PR platform "${value}". Use github, gitlab, bitbucket, or auto.`);
 };
 
 const parsePositiveInt = (value: string, field: string): number => {
@@ -737,6 +753,102 @@ const depsCommand = new Command("deps")
     }
   });
 
+const initCommand = new Command("init")
+  .description("Bootstrap svelte-doctor config, scripts, CI, gitignore, and baseline")
+  .argument("[directory]", "project directory", ".")
+  .option("--ci <platform>", "CI platform: github-actions, gitlab-ci, or circle-ci", parseCiPlatform)
+  .option("--force", "overwrite existing svelte-doctor config and generated CI file")
+  .option("-y, --yes", "accept defaults without prompts")
+  .action(async (directory: string, flags: { ci?: CliCiPlatform; force?: boolean; yes?: boolean }) => {
+    try {
+      await runInit(directory, {
+        ci: flags.ci,
+        force: flags.force ?? false,
+        yes: flags.yes ?? false,
+      });
+    } catch (error) {
+      if (error instanceof Error) {
+        logger.error(`  Error: ${error.message}`);
+      }
+      process.exit(1);
+    }
+  });
+
+const upgradeCommand = new Command("upgrade")
+  .description("Check npm registry and upgrade project dependencies")
+  .argument("[directory]", "project directory", ".")
+  .option("--dry-run", "report upgrades without writing package.json or lockfile")
+  .option("--interactive", "reserved for interactive per-package approval")
+  .option("--major", "allow major upgrades")
+  .option("--json", "output machine-readable JSON")
+  .option("--all-workspaces", "upgrade every package.json workspace")
+  .option("--workspace <name>", "upgrade a specific workspace")
+  .action(async (directory: string, flags: {
+    dryRun?: boolean;
+    interactive?: boolean;
+    major?: boolean;
+    json?: boolean;
+    allWorkspaces?: boolean;
+    workspace?: string;
+  }) => {
+    try {
+      await runUpgrade(directory, flags);
+    } catch (error) {
+      if (flags.json) {
+        logger.log(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }));
+        process.exit(1);
+        return;
+      }
+      if (error instanceof Error) {
+        logger.error(`  Error: ${error.message}`);
+      }
+      process.exit(1);
+    }
+  });
+
+const prCheckCommand = new Command("pr-check")
+  .description("Analyze changed files for a PR or local branch diff")
+  .argument("[directory]", "project directory", ".")
+  .option("--pr <number>", "pull request number")
+  .option("--base <branch>", "base branch", "main")
+  .option("--head <branch>", "head branch", "HEAD")
+  .option("--comment", "post summary comment via GitHub CLI")
+  .option("--inline", "reserved for inline review comments")
+  .option("--fail-on <mode>", "exit policy: never, error, or warning", parseFailOn, "error")
+  .option("--min-score <score>", "fail when PR score drops below this threshold", "0")
+  .option("--json", "output machine-readable JSON")
+  .option("--platform <type>", "github, gitlab, bitbucket, or auto", parsePrPlatform, "auto")
+  .option("--token <env-var>", "token environment variable name", "GITHUB_TOKEN")
+  .action(async (directory: string, flags: {
+    pr?: string;
+    base: string;
+    head: string;
+    comment?: boolean;
+    inline?: boolean;
+    failOn: FailOn;
+    minScore: string;
+    json?: boolean;
+    platform: CliPrPlatform;
+    token: string;
+  }) => {
+    try {
+      await runPrCheck(directory, {
+        ...flags,
+        minScore: parsePositiveInt(flags.minScore, "min score"),
+      });
+    } catch (error) {
+      if (flags.json) {
+        logger.log(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }));
+        process.exit(1);
+        return;
+      }
+      if (error instanceof Error) {
+        logger.error(`  Error: ${error.message}`);
+      }
+      process.exit(1);
+    }
+  });
+
 const updateCommand = new Command("update")
   .description("Check npm for the latest svelte-doctor version and update the global CLI")
   .option("--check", "check for updates without installing")
@@ -840,6 +952,7 @@ const migrateCommand = new Command("migrate")
   });
 
 program
+  .addCommand(initCommand)
   .addCommand(checkCommand)
   .addCommand(baselineCommand)
   .addCommand(applyCommand)
@@ -849,6 +962,8 @@ program
   .addCommand(watchCommand)
   .addCommand(trendCommand)
   .addCommand(depsCommand)
+  .addCommand(upgradeCommand)
+  .addCommand(prCheckCommand)
   .addCommand(updateCommand)
   .addCommand(migrateCommand);
 

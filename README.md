@@ -55,14 +55,16 @@ Run a single command to scan your entire codebase and receive a **0–100 health
 - **TypeScript AST-backed script analysis** for lower false-positive rates on security-sensitive checks
 - **Deterministic Safe Apply** via `apply` for high-confidence fixes before using an AI agent
 - **Baseline Suppression** to keep legacy issues out of new CI failures
+- **Interactive Project Bootstrap** via `init` for config, CI, scripts, baseline, and `.gitignore` setup
 - **SARIF + GitHub Annotations** for code scanning and CI integration
+- **PR Check Workflow** for branch diff analysis and GitHub PR summary comments
 - **Diff-Aware and Workspace-Aware Scans** for staged files, changed files, and monorepos
 - **Safe-by-default AI Fix** flow with secure temp prompts, opt-in unsafe execution, and post-fix verification
 - **AI-Friendly Copy Export** via `check --copy` with clipboard-first fallback behavior
 - **Svelte 4→5 Auto-Migration** with deterministic codemods
 - **Cached Scans + Incremental Watch** for faster repeat checks and tighter feedback loops
 - **Automatic `.gitignore` Sync** for generated `.svelte-doctor/*` cache/history files while preserving tracked baseline negations
-- **Dependency Health Checks** for ecosystem compatibility
+- **Dependency Health Checks and Upgrade Planning** for ecosystem compatibility and npm registry updates
 - **Zero Configuration** works out of the box
 
 ---
@@ -147,6 +149,12 @@ bunx svelte-doctor
 # Scan your project
 svelte-doctor check
 
+# Bootstrap config, scripts, CI, gitignore, and baseline
+svelte-doctor init
+
+# Non-interactive bootstrap with GitHub Actions
+svelte-doctor init --yes --ci github-actions
+
 # Force a cold scan without cache
 svelte-doctor check --no-cache
 
@@ -192,6 +200,12 @@ svelte-doctor trend
 # Check dependency health
 svelte-doctor deps
 
+# Check npm registry for dependency upgrades without writing files
+svelte-doctor upgrade --dry-run
+
+# Analyze current branch against main for PR/CI feedback
+svelte-doctor pr-check --base main --head HEAD
+
 # List rules or explain one in detail
 svelte-doctor rules
 svelte-doctor explain no-unsafe-shell
@@ -201,6 +215,34 @@ svelte-doctor explain no-unsafe-shell
 ---
 
 ## Commands
+
+### `svelte-doctor init [directory] [options]`
+
+Bootstrap an existing Svelte project for `svelte-doctor`. The command probes the project with the same discovery path used by scans, writes `svelte-doctor.config.json`, syncs `.gitignore`, injects package scripts, optionally creates a CI workflow, and can create an initial diagnostic baseline.
+
+Generated defaults:
+
+- `svelte-doctor.config.json`
+- `.svelte-doctor/*` entry in `.gitignore`
+- `package.json` scripts: `doctor` and `doctor:fix`
+- optional CI file for GitHub Actions, GitLab CI, or CircleCI
+- optional `.svelte-doctor/baseline.json`
+- optional direct `.git/hooks/pre-commit` hook
+
+| Option | Description |
+|--------|-------------|
+| `--ci <github-actions\|gitlab-ci\|circle-ci>` | Generate CI config for the selected platform |
+| `--force` | Overwrite existing `svelte-doctor.config.json` and generated CI file |
+| `-y, --yes` | Accept defaults without prompts |
+
+Examples:
+
+```bash
+svelte-doctor init
+svelte-doctor init --yes
+svelte-doctor init --yes --ci github-actions
+svelte-doctor init packages/app --ci gitlab-ci
+```
 
 ### `svelte-doctor check [directory] [options]`
 
@@ -380,6 +422,56 @@ Check dependency health for Svelte ecosystem compatibility. Fully offline — no
 | Option | Description |
 |--------|-------------|
 | `--json` | Output machine-readable JSON |
+
+### `svelte-doctor upgrade [directory] [options]`
+
+Check project dependencies against the npm registry and prepare safe upgrade suggestions. By default, major upgrades are excluded. Use `--dry-run` to report without touching `package.json`; without `--dry-run`, accepted suggestions are written atomically and the detected package manager runs install.
+
+The upgrade plan includes current version, lockfile-resolved version when available, latest version, wanted range, dependency block, major/minor/patch classification, deprecation signal, replacement alternative when known, breaking-change flag, changelog/repository URL when available, and risk score.
+
+| Option | Description |
+|--------|-------------|
+| `--dry-run` | Report upgrades without writing `package.json` or lockfile |
+| `--interactive` | Ask before applying each package upgrade (`y`, `n`, `a`, `q`) |
+| `--major` | Include major-version upgrades |
+| `--json` | Output machine-readable JSON |
+| `--all-workspaces` | Check every package.json workspace |
+| `--workspace <name>` | Check one workspace by name or relative path |
+
+Examples:
+
+```bash
+svelte-doctor upgrade --dry-run
+svelte-doctor upgrade --dry-run --major
+svelte-doctor upgrade --json
+svelte-doctor upgrade --all-workspaces --dry-run
+```
+
+### `svelte-doctor pr-check [directory] [options]`
+
+Analyze a branch diff for PR or CI feedback. The command lists files changed between `--base` and `--head`, scans isolated git worktrees for both refs, builds a Markdown PR summary, and can post that summary or review to GitHub with the `gh` CLI. When posting to GitHub, it also writes a `svelte-doctor` commit status for required-check workflows.
+
+| Option | Description |
+|--------|-------------|
+| `--pr <number>` | Pull request number for comment posting |
+| `--base <branch>` | Base branch or ref (default: `main`) |
+| `--head <branch>` | Head branch or ref (default: `HEAD`) |
+| `--comment` | Post a summary comment via GitHub CLI |
+| `--inline` | Submit a GitHub PR review with the generated summary |
+| `--fail-on <never\|error\|warning>` | Control exit behavior for new issues |
+| `--min-score <score>` | Fail if PR score is below the threshold |
+| `--json` | Output machine-readable JSON |
+| `--platform <github\|gitlab\|bitbucket\|auto>` | Select PR platform adapter mode |
+| `--token <env-var>` | Token environment variable name (default: `GITHUB_TOKEN`) |
+
+Examples:
+
+```bash
+svelte-doctor pr-check --base main --head HEAD
+svelte-doctor pr-check --base origin/main --head HEAD --min-score 80
+svelte-doctor pr-check --pr 42 --comment --platform github
+svelte-doctor pr-check --json
+```
 
 ### `svelte-doctor update [options]`
 
