@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { buildHtmlReport, buildJunitReport, buildMarkdownReport, writeReport } from "../src/core/reporting.ts";
 import { calculateScore } from "../src/core/score.ts";
+import { saveBaseline } from "../src/core/baseline.ts";
 import { loadConfig } from "../src/project/config.ts";
 import { createProject } from "./helpers.mjs";
 
@@ -106,6 +107,36 @@ test("writeReport keeps report paths inside project root", () => {
   const outside = path.join(root, "..", `outside-${Date.now()}.md`);
 
   assert.throws(() => writeReport(outside, "report", root), /must stay inside project root/);
+});
+
+test("writeReport validates containment before creating parent directories", () => {
+  const root = createProject({});
+  const outsideDir = path.join(root, "..", `outside-report-${Date.now()}`);
+  const outsideReport = path.join(outsideDir, "report.md");
+
+  assert.throws(() => writeReport(outsideReport, "report", root), /must stay inside project root/);
+  assert.equal(fs.existsSync(outsideDir), false);
+});
+
+test("writeReport rejects symlinked ancestor directories without writing through them", () => {
+  const root = createProject({});
+  const outside = fs.mkdtempSync(path.join(path.dirname(root), "outside-report-"));
+  fs.symlinkSync(outside, path.join(root, ".svelte-doctor"), "dir");
+
+  assert.throws(
+    () => writeReport(".svelte-doctor/reports/report.md", "report", root),
+    /symlinked directory/,
+  );
+  assert.equal(fs.existsSync(path.join(outside, "reports")), false);
+});
+
+test("saveBaseline refuses symlinked output directories", () => {
+  const root = createProject({});
+  const outside = fs.mkdtempSync(path.join(path.dirname(root), "outside-baseline-"));
+  fs.symlinkSync(outside, path.join(root, ".svelte-doctor"), "dir");
+
+  assert.throws(() => saveBaseline(root, [], true), /symlinked directory/);
+  assert.equal(fs.existsSync(path.join(outside, "baseline.json")), false);
 });
 
 test("loadConfig accepts reports allowlist", () => {

@@ -5,6 +5,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { saveBaseline } from "./baseline.js";
 import { scan } from "./scanner.js";
 import { resolvePackageManager } from "./runtime.js";
+import { writeFileAtomicSafe } from "../fs/safe-write.js";
 import { GITIGNORE_SVELTE_DOCTOR_ENTRY } from "../constants.js";
 import { logger, highlighter } from "../output/logger.js";
 import { ensureProjectGitignoreEntry } from "../project/gitignore.js";
@@ -21,17 +22,22 @@ export interface InitOptions {
 
 const defaultCategories: RuleCategory[] = ["Correctness", "Performance", "Architecture", "Security", "Accessibility", "State & Reactivity"];
 
-const writeJsonAtomic = (filePath: string, value: unknown): void => {
-  const tmpPath = `${filePath}.${process.pid}.tmp`;
-  fs.writeFileSync(tmpPath, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf-8", mode: 0o600 });
-  fs.renameSync(tmpPath, filePath);
+const writeJsonAtomic = (rootDirectory: string, filePath: string, value: unknown): void => {
+  writeFileAtomicSafe(rootDirectory, filePath, `${JSON.stringify(value, null, 2)}\n`, {
+    mode: 0o600,
+    pathMessage: "JSON output path must stay inside project root.",
+    symlinkFileMessage: "Refusing to write JSON output through symlinked file.",
+    symlinkDirectoryMessage: "Refusing to write JSON output through symlinked directory.",
+  });
 };
 
-const writeTextAtomic = (filePath: string, content: string): void => {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const tmpPath = `${filePath}.${process.pid}.tmp`;
-  fs.writeFileSync(tmpPath, content, { encoding: "utf-8", mode: 0o644 });
-  fs.renameSync(tmpPath, filePath);
+const writeTextAtomic = (rootDirectory: string, filePath: string, content: string, mode: number = 0o644): void => {
+  writeFileAtomicSafe(rootDirectory, filePath, content, {
+    mode,
+    pathMessage: "Text output path must stay inside project root.",
+    symlinkFileMessage: "Refusing to write text output through symlinked file.",
+    symlinkDirectoryMessage: "Refusing to write text output through symlinked directory.",
+  });
 };
 
 const readPackageJson = (directory: string): PackageJson =>
@@ -61,7 +67,7 @@ const mergeScripts = (directory: string): boolean => {
   }
   if (!changed) return false;
 
-  writeJsonAtomic(packagePath, { ...pkg, scripts });
+  writeJsonAtomic(directory, packagePath, { ...pkg, scripts });
   return true;
 };
 
@@ -74,7 +80,7 @@ const setupPreCommitHook = (directory: string): boolean => {
   fs.mkdirSync(hooksDir, { recursive: true });
   if (fs.existsSync(hookPath)) return false;
 
-  fs.writeFileSync(hookPath, "#!/bin/sh\nbunx svelte-doctor check --changed --fail-on error\n", { encoding: "utf-8", mode: 0o755 });
+  writeTextAtomic(directory, hookPath, "#!/bin/sh\nbunx svelte-doctor check --changed --fail-on error\n", 0o755);
   return true;
 };
 
@@ -108,14 +114,14 @@ export const runInit = async (directory: string, options: InitOptions): Promise<
     failOn: "error" as FailOn,
     minScore: 80,
   });
-  writeJsonAtomic(configPath, config);
+  writeJsonAtomic(resolvedDir, configPath, config);
   ensureProjectGitignoreEntry(resolvedDir, GITIGNORE_SVELTE_DOCTOR_ENTRY);
   const scriptsChanged = mergeScripts(resolvedDir);
 
   if (ciPlatform) {
     const template = getCiTemplate(ciPlatform, 80);
     const targetPath = path.join(resolvedDir, template.path);
-    if (!fs.existsSync(targetPath) || options.force) writeTextAtomic(targetPath, template.content);
+    if (!fs.existsSync(targetPath) || options.force) writeTextAtomic(resolvedDir, targetPath, template.content);
   }
 
   let baselinePath: string | null = null;

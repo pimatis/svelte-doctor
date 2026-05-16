@@ -4,6 +4,7 @@ import { SVELTE_FILE_PATTERN, VERSION } from "../constants.js";
 import { collectFiles } from "../fs/walker.js";
 import { validateDirectory } from "../fs/validate.js";
 import { toPosix } from "../fs/normalize.js";
+import { writeFileAtomicSafe } from "../fs/safe-write.js";
 import { logger, highlighter, sanitize, stripAnsi } from "../output/logger.js";
 import { spinner } from "../output/spinner.js";
 import pc from "picocolors";
@@ -501,9 +502,14 @@ export const transformMigrateSource = (source: string): { content: string; chang
   return { content: lines.join("\n"), changes };
 };
 
-const createBackup = (filePath: string): boolean => {
+const createBackup = (directory: string, filePath: string, source: string): boolean => {
   try {
-    fs.copyFileSync(filePath, `${filePath}.bak`);
+    writeFileAtomicSafe(directory, `${filePath}.bak`, source, {
+      mode: 0o600,
+      pathMessage: "Backup path must stay inside project root.",
+      symlinkFileMessage: "Refusing to write backup through symlinked file.",
+      symlinkDirectoryMessage: "Refusing to write backup through symlinked directory.",
+    });
     return true;
   } catch {
     return false;
@@ -599,13 +605,18 @@ export const migrate = async (
 
     if (!options.dryRun) {
       if (options.backup) {
-        if (createBackup(filePath)) {
+        if (createBackup(directory, filePath, source)) {
           backupsCreated++;
         }
       }
 
       try {
-        fs.writeFileSync(filePath, content, "utf-8");
+        writeFileAtomicSafe(directory, filePath, content, {
+          mode: 0o644,
+          pathMessage: "Migrated file path must stay inside project root.",
+          symlinkFileMessage: "Refusing to write migrated source through symlinked file.",
+          symlinkDirectoryMessage: "Refusing to write migrated source through symlinked directory.",
+        });
       } catch {
         logger.error(`  ✗ Failed to write ${sanitizedPath}`);
         continue;

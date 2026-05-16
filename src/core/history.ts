@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import pc from "picocolors";
+import { writeFileAtomicSafe } from "../fs/safe-write.js";
 import { logger, highlighter, sanitize } from "../output/logger.js";
 import {
   GITIGNORE_SVELTE_DOCTOR_ENTRY,
@@ -11,7 +12,6 @@ import type { ScoreHistoryEntry } from "../types.js";
 
 const HISTORY_DIR = ".svelte-doctor";
 const HISTORY_FILE = "history.json";
-const HISTORY_TMP = "history.json.tmp";
 const MAX_ENTRIES = 500;
 const CHART_HEIGHT = 10;
 const MAX_BAR_COLUMNS = 60;
@@ -23,9 +23,6 @@ const getHistoryDir = (directory: string): string =>
 
 const getHistoryPath = (directory: string): string =>
   path.join(directory, HISTORY_DIR, HISTORY_FILE);
-
-const getTmpPath = (directory: string): string =>
-  path.join(directory, HISTORY_DIR, HISTORY_TMP);
 
 const isValidEntry = (entry: unknown): entry is ScoreEntry => {
   if (typeof entry !== "object" || entry === null) return false;
@@ -96,11 +93,14 @@ export const saveScoreHistory = (directory: string, entry: ScoreEntry): void => 
       ? history.slice(history.length - MAX_ENTRIES)
       : history;
 
-    const tmpPath = getTmpPath(directory);
     const finalPath = getHistoryPath(directory);
 
-    fs.writeFileSync(tmpPath, JSON.stringify(trimmed, null, 2), "utf-8");
-    fs.renameSync(tmpPath, finalPath);
+    writeFileAtomicSafe(directory, finalPath, JSON.stringify(trimmed, null, 2), {
+      mode: 0o600,
+      pathMessage: "History path must stay inside project root.",
+      symlinkFileMessage: "Refusing to write history through symlinked file.",
+      symlinkDirectoryMessage: "Refusing to write history through symlinked directory.",
+    });
   } catch {}
 };
 

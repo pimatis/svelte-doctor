@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { SARIF_SCHEMA_URL } from "../constants.js";
+import { writeFileAtomicSafe } from "../fs/safe-write.js";
 import type { Diagnostic } from "../types.js";
 export { buildHtmlReport } from "../output/html.js";
 export { buildJunitReport } from "../output/junit.js";
@@ -76,13 +77,19 @@ export const writeSarifReport = (
 };
 
 export const writeReport = (targetPath: string, content: string, rootDirectory?: string): string => {
-  const resolved = rootDirectory
-    ? path.resolve(rootDirectory, targetPath)
-    : path.resolve(targetPath);
+  if (rootDirectory) {
+    return writeFileAtomicSafe(rootDirectory, targetPath, content, {
+      mode: 0o600,
+      pathMessage: `Report path must stay inside project root: ${targetPath}`,
+      symlinkFileMessage: `Refusing to write report through symlinked file: ${path.resolve(rootDirectory, targetPath)}`,
+      symlinkDirectoryMessage: `Refusing to write report through symlinked directory: ${path.dirname(path.resolve(rootDirectory, targetPath))}`,
+    });
+  }
+
+  const resolved = path.resolve(targetPath);
   const parent = path.dirname(resolved);
 
   fs.mkdirSync(parent, { recursive: true });
-
   const parentStat = fs.lstatSync(parent);
   if (parentStat.isSymbolicLink()) {
     throw new Error(`Refusing to write report through symlinked directory: ${parent}`);
@@ -94,18 +101,8 @@ export const writeReport = (targetPath: string, content: string, rootDirectory?:
       throw new Error(`Refusing to write report through symlinked file: ${resolved}`);
     }
   } catch (error) {
-    if (!(error instanceof Error)) throw error;
-    if (!("code" in error)) throw error;
-    if (error.code !== "ENOENT") throw error;
-  }
-
-  if (rootDirectory) {
-    const rootReal = fs.realpathSync.native(path.resolve(rootDirectory));
-    const parentReal = fs.realpathSync.native(parent);
-    const realTarget = path.join(parentReal, path.basename(resolved));
-    const relative = path.relative(rootReal, realTarget);
-    if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
-      throw new Error(`Report path must stay inside project root: ${targetPath}`);
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
     }
   }
 

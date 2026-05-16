@@ -6,6 +6,7 @@ import {
   GITIGNORE_SVELTE_DOCTOR_ENTRY,
   SCAN_CACHE_VERSION,
 } from "../constants.js";
+import { writeFileAtomicSafe } from "../fs/safe-write.js";
 import type { ProjectFileManifest, ScanCacheData, ScanCacheEntry } from "../types.js";
 import { ensureProjectGitignoreEntry } from "../project/gitignore.js";
 
@@ -72,16 +73,15 @@ export const saveScanCache = (directory: string, cache: ScanCacheData): void => 
   if (!ensureCacheDir(directory)) return;
 
   const cachePath = getCachePath(directory);
-  const tmpPath = `${cachePath}.tmp`;
 
   try {
-    fs.writeFileSync(tmpPath, JSON.stringify(cache, null, 2), { encoding: "utf-8", mode: 0o600 });
-    fs.renameSync(tmpPath, cachePath);
-  } catch {
-    try {
-      fs.unlinkSync(tmpPath);
-    } catch {}
-  }
+    writeFileAtomicSafe(directory, cachePath, JSON.stringify(cache, null, 2), {
+      mode: 0o600,
+      pathMessage: "Cache path must stay inside project root.",
+      symlinkFileMessage: "Refusing to write cache through symlinked file.",
+      symlinkDirectoryMessage: "Refusing to write cache through symlinked directory.",
+    });
+  } catch {}
 };
 
 // We use file size + mtime as a cheap signature. It is not cryptographic and

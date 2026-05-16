@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { writeFileAtomicSafe } from "../fs/safe-write.js";
 import type { ApplyFileChange, ApplyOptions, ApplyResult, Diagnostic } from "../types.js";
 import { scan } from "./scanner.js";
 import { transformMigrateSource } from "./migrate.js";
@@ -160,7 +161,12 @@ export const runApply = async (
     const changed = result.content !== source;
 
     if (changed && options.write) {
-      fs.writeFileSync(absolutePath, result.content, "utf-8");
+      writeFileAtomicSafe(directory, absolutePath, result.content, {
+        mode: 0o644,
+        pathMessage: "Apply target path must stay inside project root.",
+        symlinkFileMessage: "Refusing to write apply target through symlinked file.",
+        symlinkDirectoryMessage: "Refusing to write apply target through symlinked directory.",
+      });
     }
 
     for (const rule of result.appliedRules) appliedRules.add(rule);

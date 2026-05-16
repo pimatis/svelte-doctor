@@ -6,6 +6,7 @@ import {
   CACHE_DIR,
   GITIGNORE_SVELTE_DOCTOR_ENTRY,
 } from "../constants.js";
+import { writeFileAtomicSafe } from "../fs/safe-write.js";
 import type { BaselineEntry, BaselineFile, Diagnostic } from "../types.js";
 import { createDiagnosticFingerprint } from "./diagnostics.js";
 import { ensureProjectGitignoreEntry } from "../project/gitignore.js";
@@ -13,11 +14,10 @@ import { ensureProjectGitignoreEntry } from "../project/gitignore.js";
 const getBaselinePath = (directory: string): string =>
   path.join(directory, CACHE_DIR, BASELINE_FILE);
 
-const ensureBaselineDir = (directory: string, noGitignore: boolean): void => {
+const ensureBaselineGitignore = (directory: string, noGitignore: boolean): void => {
   if (!noGitignore) {
     ensureProjectGitignoreEntry(directory, GITIGNORE_SVELTE_DOCTOR_ENTRY);
   }
-  fs.mkdirSync(path.join(directory, CACHE_DIR), { recursive: true });
 };
 
 const listBaselineEntries = (diagnostics: Diagnostic[]): BaselineEntry[] =>
@@ -52,7 +52,7 @@ export const saveBaseline = (
   diagnostics: Diagnostic[],
   noGitignore: boolean = false,
 ): string => {
-  ensureBaselineDir(directory, noGitignore);
+  ensureBaselineGitignore(directory, noGitignore);
 
   const baseline: BaselineFile = {
     version: BASELINE_VERSION,
@@ -61,10 +61,12 @@ export const saveBaseline = (
   };
 
   const baselinePath = getBaselinePath(directory);
-  const tmpPath = `${baselinePath}.tmp`;
-  fs.writeFileSync(tmpPath, JSON.stringify(baseline, null, 2), { encoding: "utf-8", mode: 0o600 });
-  fs.renameSync(tmpPath, baselinePath);
-  return baselinePath;
+  return writeFileAtomicSafe(directory, baselinePath, JSON.stringify(baseline, null, 2), {
+    mode: 0o600,
+    pathMessage: "Baseline path must stay inside project root.",
+    symlinkFileMessage: "Refusing to write baseline through symlinked file.",
+    symlinkDirectoryMessage: "Refusing to write baseline through symlinked directory.",
+  });
 };
 
 export const filterBaselineDiagnostics = (

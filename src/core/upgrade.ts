@@ -5,6 +5,7 @@ import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { BETTER_ALTERNATIVES, checkDeps } from "./deps.js";
 import { resolvePackageManager } from "./runtime.js";
+import { writeFileAtomicSafe } from "../fs/safe-write.js";
 import { discoverWorkspaces, findWorkspace } from "../project/workspaces.js";
 import { logger, highlighter } from "../output/logger.js";
 import type { PackageJson, WorkspaceInfo } from "../types.js";
@@ -98,9 +99,12 @@ const readLockfileVersion = (directory: string, name: string): string | undefine
 };
 
 const writePackageJson = (filePath: string, pkg: PackageJson): void => {
-  const tmpPath = `${filePath}.${process.pid}.tmp`;
-  fs.writeFileSync(tmpPath, `${JSON.stringify(pkg, null, 2)}\n`, { encoding: "utf-8", mode: 0o600 });
-  fs.renameSync(tmpPath, filePath);
+  writeFileAtomicSafe(path.dirname(filePath), filePath, `${JSON.stringify(pkg, null, 2)}\n`, {
+    mode: 0o600,
+    pathMessage: "package.json path must stay inside its package directory.",
+    symlinkFileMessage: "Refusing to write package.json through symlinked file.",
+    symlinkDirectoryMessage: "Refusing to write package.json through symlinked directory.",
+  });
 };
 
 const collectDeps = (pkg: PackageJson): Array<{ name: string; version: string; type: DependencyType }> => {

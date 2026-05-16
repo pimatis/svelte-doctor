@@ -1,6 +1,6 @@
-import fs from "node:fs";
 import path from "node:path";
 import { DEFAULT_COPY_MAX_DIAGNOSTICS } from "../constants.js";
+import { writeFileAtomicSafe } from "../fs/safe-write.js";
 import type { CopyOptions, CopyResult, Diagnostic } from "../types.js";
 import { sanitize } from "../output/logger.js";
 import { copyToClipboard } from "../output/clipboard.js";
@@ -40,48 +40,15 @@ export const resolveExportPath = (directory: string, filePath: string): string =
   return candidate;
 };
 
-const assertNoSymlinkAncestors = (root: string, targetPath: string): void => {
-  let current = path.dirname(targetPath);
-  const normalizedRoot = path.resolve(root);
-
-  // We only inspect ancestors that already exist. Missing directories are
-  // created by us; existing symlinked parents are rejected to keep writes
-  // repository-scoped.
-  while (current.startsWith(normalizedRoot) && current !== normalizedRoot) {
-    try {
-      const stat = fs.lstatSync(current);
-      if (stat.isSymbolicLink()) {
-        throw new Error("Refusing to write copy output into a symlinked directory.");
-      }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        throw error;
-      }
-    }
-
-    current = path.dirname(current);
-  }
-};
-
 export const writeExportFile = (directory: string, filePath: string, contents: string): string => {
   const root = path.resolve(directory);
-  const targetPath = resolveExportPath(root, filePath);
-
-  try {
-    const stat = fs.lstatSync(targetPath);
-    if (stat.isSymbolicLink()) {
-      throw new Error("Refusing to write copy output to a symlinked file.");
-    }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      throw error;
-    }
-  }
-
-  assertNoSymlinkAncestors(root, targetPath);
-  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-  fs.writeFileSync(targetPath, contents, { encoding: "utf-8", mode: 0o600 });
-  return targetPath;
+  resolveExportPath(root, filePath);
+  return writeFileAtomicSafe(root, filePath, contents, {
+    mode: 0o600,
+    pathMessage: "Copy file path must stay inside the target project root.",
+    symlinkFileMessage: "Refusing to write copy output to a symlinked file.",
+    symlinkDirectoryMessage: "Refusing to write copy output into a symlinked directory.",
+  });
 };
 
 export const copyWithFallback = async (
