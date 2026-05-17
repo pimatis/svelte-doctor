@@ -65,6 +65,11 @@ Run a single command to scan your entire codebase and receive a **0–100 health
 - **Cached Scans + Incremental Watch** for faster repeat checks and tighter feedback loops
 - **Automatic `.gitignore` Sync** for generated `.svelte-doctor/*` cache/history files while preserving tracked baseline negations
 - **Dependency Health Checks and Upgrade Planning** for ecosystem compatibility and npm registry updates
+- **Quick Health Check** via `quick` for fast error-only scans with instant score feedback
+- **Security Audit** via `audit` for focused security-only scans with a dedicated security score
+- **Ref Comparison** via `compare` for diagnosing regressions between commits, branches, and tags
+- **Project Metrics** via `stats` for rule frequency, category breakdown, and top affected files
+- **Config Inspection** via `config` and `validate` for viewing and validating the active configuration
 - **Zero Configuration** works out of the box
 
 ---
@@ -209,6 +214,30 @@ svelte-doctor pr-check --base main --head HEAD
 # List rules or explain one in detail
 svelte-doctor rules
 svelte-doctor explain no-unsafe-shell
+
+# Quick health check (errors only, fast)
+svelte-doctor quick
+svelte-doctor quick --score
+
+# Security-focused audit
+svelte-doctor audit
+svelte-doctor audit --score
+
+# Project metrics and statistics
+svelte-doctor stats
+svelte-doctor stats --top 5
+
+# Compare diagnostics between two git refs
+svelte-doctor compare --base main --head HEAD
+svelte-doctor compare --base v1.0.0 --head v2.0.0
+
+# View active configuration
+svelte-doctor config
+svelte-doctor config --json
+
+# Validate config file for errors
+svelte-doctor validate
+svelte-doctor validate --json
 
 ```
 
@@ -484,6 +513,124 @@ Checks the official npm registry for the latest `svelte-doctor` version and upda
 | `--manager <npm|pnpm|bun>` | Override package manager detection |
 | `--tag <latest>` | Release tag to install (`latest` only) |
 | `--json` | Output machine-readable JSON |
+
+### `svelte-doctor quick [directory] [options]`
+
+Fast error-only scan with health score. Runs a lint scan with cache enabled and dead-code detection disabled for maximum speed. Only error-level diagnostics are reported, making it ideal for quick pre-commit checks or rapid feedback during development.
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output machine-readable JSON |
+| `--score` | Output only the numeric score |
+
+Examples:
+
+```bash
+svelte-doctor quick
+svelte-doctor quick --score
+svelte-doctor quick packages/app --json
+```
+
+### `svelte-doctor compare [directory] [options]`
+
+Compare diagnostics between two git refs (commits, branches, tags). Creates temporary git worktrees for both refs, runs independent scans, and reports the score delta along with newly introduced and fixed diagnostics. The comparison is symmetric: it shows both what got worse and what improved.
+
+| Option | Description |
+|--------|-------------|
+| `--base <ref>` | Base git ref (commit, branch, tag) (default: `main`) |
+| `--head <ref>` | Head git ref (default: `HEAD`) |
+| `--json` | Output machine-readable JSON |
+
+Git refs are validated for injection-safe characters. Temporary worktrees are created in the OS temp directory and cleaned up automatically, even on scan failure.
+
+Examples:
+
+```bash
+svelte-doctor compare --base main --head HEAD
+svelte-doctor compare --base v1.0.0 --head v2.0.0
+svelte-doctor compare --base HEAD~5 --head HEAD --json
+svelte-doctor compare --base origin/main --head feature/xyz
+```
+
+### `svelte-doctor stats [directory] [options]`
+
+Show project metrics including total diagnostics by severity, category breakdown with error/warning counts and penalty weights, most frequently triggered rules, and most affected files. Useful for identifying systemic patterns and prioritizing cleanup efforts.
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output machine-readable JSON |
+| `--top <count>` | Number of top items to show per list (default: `10`) |
+
+Examples:
+
+```bash
+svelte-doctor stats
+svelte-doctor stats --top 5
+svelte-doctor stats --json
+svelte-doctor stats --top 3 --json
+```
+
+### `svelte-doctor audit [directory] [options]`
+
+Security-focused scan that runs the full lint pipeline but filters results to only the Security category. Computes a dedicated security score from the filtered diagnostics. Useful for compliance checks, security reviews, and CI gates that focus exclusively on security posture.
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output machine-readable JSON |
+| `--score` | Output only the security score |
+
+Security rules include XSS via `{@html}`, hardcoded secrets, `eval()` usage, insecure cookies, broad CORS, shell injection, server secret leaks, dangerous redirect parameters, and public env secret imports.
+
+Examples:
+
+```bash
+svelte-doctor audit
+svelte-doctor audit --score
+svelte-doctor audit --json
+svelte-doctor audit packages/api --json
+```
+
+### `svelte-doctor config [directory] [options]`
+
+Display the active `svelte-doctor` configuration. Reads from `svelte-doctor.config.json` first, then falls back to the `"svelte-doctor"` key in `package.json`. Shows all active settings including lint, dead-code, cache, watch, fix, reports, and ignore rules.
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output machine-readable JSON |
+| `--path` | Show only the config file path |
+
+Examples:
+
+```bash
+svelte-doctor config
+svelte-doctor config --json
+svelte-doctor config --path
+```
+
+### `svelte-doctor validate [directory] [options]`
+
+Validate the `svelte-doctor.config.json` file for syntax and schema errors. Checks for invalid JSON syntax, unknown top-level and nested keys, type mismatches (e.g., string where boolean expected), invalid enum values (e.g., `watch.deadCode`, `fix.verifyLevel`), empty report paths, and malformed ignore lists with non-string elements.
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output machine-readable JSON |
+
+Validation covers:
+- **Unknown keys** at all nesting levels
+- **Type checks** for `lint`, `deadCode`, `cache`, `watch`, `fix`, `reports`, `ignore`
+- **Enum validation** for `watch.deadCode` (`off`/`lazy`/`full`), `fix.verifyLevel` (`diagnostics`/`typecheck`/`tests`/`full`)
+- **Numeric bounds** for `fix.maxFiles` (must be positive)
+- **Path validation** for `reports.html`, `reports.junit`, `reports.markdown` (must be non-empty strings)
+- **Array validation** for `ignore.rules` and `ignore.files` (must be arrays of non-empty strings)
+- **Symlink detection** — refuses to validate symlinked config files
+
+Examples:
+
+```bash
+svelte-doctor validate
+svelte-doctor validate --json
+svelte-doctor validate packages/app
+```
 
 ---
 
