@@ -15,7 +15,7 @@ import { runUpgrade } from "./core/upgrade.js";
 import { saveBaseline } from "./core/baseline.js";
 import { buildGitHubAnnotations, buildHtmlReport, buildJunitReport, buildMarkdownReport, buildSarifReport, writeReport, writeSarifReport } from "./core/reporting.js";
 import { getSelectedGitFiles } from "./core/git.js";
-import { logger, highlighter } from "./output/logger.js";
+import { logger, highlighter, sanitize } from "./output/logger.js";
 import { printRuleExplain, printRules } from "./output/rules.js";
 import { allRules } from "./rules/index.js";
 import { DEFAULT_COPY_MAX_DIAGNOSTICS, VERSION } from "./constants.js";
@@ -23,6 +23,12 @@ import { loadConfig } from "./project/config.js";
 import { discoverProject } from "./project/discover.js";
 import { discoverWorkspaces, findWorkspace } from "./project/workspaces.js";
 import { calculateScore } from "./core/score.js";
+import { viewConfig } from "./core/config-view.js";
+import { validateConfigFile } from "./core/validate-config.js";
+import { runQuick } from "./core/quick.js";
+import { runStats } from "./core/stats.js";
+import { runAudit } from "./core/audit.js";
+import { runCompare } from "./core/compare.js";
 import type {
   ApplyOptions,
   CopyFormat,
@@ -41,6 +47,9 @@ import type {
 
 type CliCiPlatform = "github-actions" | "gitlab-ci" | "circle-ci";
 type CliPrPlatform = "github" | "gitlab" | "bitbucket" | "auto";
+
+const infoSafe = (value: string): string => highlighter.info(sanitize(value));
+const warnSafe = (value: string): string => highlighter.warn(sanitize(value));
 
 const parseDeadCodeMode = (value: string): DeadCodeMode => {
   if (value === "off" || value === "lazy" || value === "full") return value;
@@ -951,6 +960,344 @@ const migrateCommand = new Command("migrate")
     }
   });
 
+const configCommand = new Command("config")
+  .description("Show the active svelte-doctor configuration")
+  .argument("[directory]", "project directory", ".")
+  .option("--json", "output machine-readable JSON")
+  .option("--path", "show only the config file path")
+  .action((directory: string, flags: { json?: boolean; path?: boolean }) => {
+    try {
+      const result = viewConfig(directory);
+
+      if (flags.json) {
+        logger.log(JSON.stringify(result, null, 2));
+        return;
+      }
+
+      if (flags.path) {
+        logger.log(result.source ? sanitize(result.source) : "No config file found");
+        return;
+      }
+
+      logger.break();
+      logger.log(`  ${highlighter.bold("svelte-doctor config")} v${VERSION}`);
+      logger.break();
+
+      if (!result.found) {
+        logger.dim("  No configuration found.");
+        logger.dim("  Create svelte-doctor.config.json or add a \"svelte-doctor\" key to package.json.");
+        logger.break();
+        return;
+      }
+
+      logger.log(`  Source: ${infoSafe(result.source ?? "unknown")}`);
+      logger.break();
+
+      const config = result.config!;
+      if (config.lint !== undefined) logger.log(`  lint: ${highlighter.info(String(config.lint))}`);
+      if (config.deadCode !== undefined) logger.log(`  deadCode: ${highlighter.info(String(config.deadCode))}`);
+      if (config.cache !== undefined) logger.log(`  cache: ${highlighter.info(String(config.cache))}`);
+
+      if (config.watch) {
+        logger.log(`  watch.deadCode: ${infoSafe(config.watch.deadCode ?? "off")}`);
+      }
+
+      if (config.fix) {
+        if (config.fix.verifyLevel) logger.log(`  fix.verifyLevel: ${infoSafe(config.fix.verifyLevel)}`);
+        if (config.fix.maxFiles) logger.log(`  fix.maxFiles: ${highlighter.info(String(config.fix.maxFiles))}`);
+      }
+
+      if (config.reports) {
+        if (config.reports.html) logger.log(`  reports.html: ${infoSafe(config.reports.html)}`);
+        if (config.reports.junit) logger.log(`  reports.junit: ${infoSafe(config.reports.junit)}`);
+        if (config.reports.markdown) logger.log(`  reports.markdown: ${infoSafe(config.reports.markdown)}`);
+      }
+
+      if (config.ignore) {
+        if (config.ignore.rules?.length) {
+          logger.log(`  ignore.rules: ${warnSafe(config.ignore.rules.join(", "))}`);
+        }
+        if (config.ignore.files?.length) {
+          logger.log(`  ignore.files: ${warnSafe(config.ignore.files.join(", "))}`);
+        }
+      }
+
+      logger.break();
+    } catch (error) {
+      if (error instanceof Error) {
+        logger.error(`  Error: ${error.message}`);
+      }
+      process.exit(1);
+    }
+  });
+
+const validateCommand = new Command("validate")
+  .description("Validate the svelte-doctor config file for syntax and schema errors")
+  .argument("[directory]", "project directory", ".")
+  .option("--json", "output machine-readable JSON")
+  .action((directory: string, flags: { json?: boolean }) => {
+    try {
+      const result = validateConfigFile(directory);
+
+      if (flags.json) {
+        logger.log(JSON.stringify(result, null, 2));
+        return;
+      }
+
+      logger.break();
+      logger.log(`  ${highlighter.bold("svelte-doctor validate")} v${VERSION}`);
+      logger.break();
+
+      if (result.status === "not-found") {
+        logger.dim("  No svelte-doctor.config.json found.");
+        logger.break();
+        return;
+      }
+
+      logger.log(`  Source: ${infoSafe(result.source ?? "unknown")}`);
+      logger.break();
+
+      if (result.status === "valid") {
+        logger.success("  ✓ Configuration is valid.");
+      } else {
+        logger.error(`  ✗ Configuration has ${result.issues.length} issue(s):`);
+        logger.break();
+        for (const issue of result.issues) {
+          logger.error(`    ${sanitize(issue.field)}: ${sanitize(issue.message)}`);
+        }
+      }
+
+      logger.break();
+    } catch (error) {
+      if (error instanceof Error) {
+        logger.error(`  Error: ${error.message}`);
+      }
+      process.exit(1);
+    }
+  });
+
+const quickCommand = new Command("quick")
+  .description("Fast scan showing only errors — quick health check")
+  .argument("[directory]", "project directory", ".")
+  .option("--json", "output machine-readable JSON")
+  .option("--score", "output only the numeric score")
+  .action(async (directory: string, flags: { json?: boolean; score?: boolean }) => {
+    try {
+      const result = await runQuick(directory);
+
+      if (flags.json) {
+        logger.log(JSON.stringify(result, null, 2));
+        return;
+      }
+
+      if (flags.score) {
+        logger.log(String(result.score));
+        return;
+      }
+
+      logger.break();
+      logger.log(`  ${highlighter.bold("svelte-doctor quick")} v${VERSION}`);
+      logger.break();
+
+      const scoreColor = result.score >= 75 ? highlighter.success : result.score >= 50 ? highlighter.warn : highlighter.error;
+      logger.log(`  Score: ${scoreColor(String(result.score))} / 100  ${result.label}`);
+      logger.log(`  Errors: ${highlighter.error(String(result.errorCount))}  Files: ${result.totalFiles}  ${(result.elapsedMs / 1000).toFixed(1)}s`);
+      logger.break();
+
+      if (result.topErrors.length > 0) {
+        logger.log(`  ${highlighter.bold("Top errors:")}`);
+        logger.break();
+        for (const d of result.topErrors) {
+          logger.error(`    ${sanitize(d.filePath)}:${d.line}  ${sanitize(d.message)}`);
+          logger.dim(`      rule: ${sanitize(d.rule)}`);
+        }
+        logger.break();
+      } else {
+        logger.success("  ✓ No errors found.");
+        logger.break();
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        logger.error(`  Error: ${error.message}`);
+      }
+      process.exit(1);
+    }
+  });
+
+const statsCommand = new Command("stats")
+  .description("Show project metrics: rule frequency, top files, category breakdown")
+  .argument("[directory]", "project directory", ".")
+  .option("--json", "output machine-readable JSON")
+  .option("--top <count>", "number of top items to show", "10")
+  .action(async (directory: string, flags: { json?: boolean; top: string }) => {
+    try {
+      const topCount = parsePositiveInt(flags.top, "top");
+      const result = await runStats(directory, topCount);
+
+      if (flags.json) {
+        logger.log(JSON.stringify(result, null, 2));
+        return;
+      }
+
+      logger.break();
+      logger.log(`  ${highlighter.bold("svelte-doctor stats")} v${VERSION}`);
+      logger.break();
+
+      logger.log(`  Score: ${highlighter.info(String(result.score))} / 100  ${result.label}`);
+      logger.log(`  Files: ${result.totalFiles}  Diagnostics: ${result.totalDiagnostics}`);
+      logger.log(`  Errors: ${highlighter.error(String(result.errorCount))}  Warnings: ${highlighter.warn(String(result.warningCount))}  Fixable: ${highlighter.info(String(result.fixableCount))}`);
+      logger.log(`  Affected files: ${result.affectedFiles}  ${(result.elapsedMs / 1000).toFixed(1)}s`);
+      logger.break();
+
+      if (result.categories.length > 0) {
+        logger.log(`  ${highlighter.bold("Categories:")}`);
+        for (const cat of result.categories) {
+          logger.log(`    ${sanitize(cat.category)}: ${cat.count} (${cat.errors} errors, ${cat.warnings} warnings)`);
+        }
+        logger.break();
+      }
+
+      if (result.topRules.length > 0) {
+        logger.log(`  ${highlighter.bold("Top rules:")}`);
+        for (const r of result.topRules) {
+          logger.log(`    ${infoSafe(r.rule)}: ${r.count}  [${sanitize(r.category)}]`);
+        }
+        logger.break();
+      }
+
+      if (result.topFiles.length > 0) {
+        logger.log(`  ${highlighter.bold("Top files:")}`);
+        for (const f of result.topFiles) {
+          logger.log(`    ${highlighter.warn(String(f.count))}  ${sanitize(f.file)}`);
+        }
+        logger.break();
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        logger.error(`  Error: ${error.message}`);
+      }
+      process.exit(1);
+    }
+  });
+
+const auditCommand = new Command("audit")
+  .description("Security-focused scan — checks only security rules")
+  .argument("[directory]", "project directory", ".")
+  .option("--json", "output machine-readable JSON")
+  .option("--score", "output only the security score")
+  .action(async (directory: string, flags: { json?: boolean; score?: boolean }) => {
+    try {
+      const result = await runAudit(directory);
+
+      if (flags.json) {
+        logger.log(JSON.stringify(result, null, 2));
+        return;
+      }
+
+      if (flags.score) {
+        logger.log(String(result.securityScore.score));
+        return;
+      }
+
+      logger.break();
+      logger.log(`  ${highlighter.bold("svelte-doctor audit")} v${VERSION}`);
+      logger.break();
+
+      const scoreColor = result.securityScore.score >= 75 ? highlighter.success : result.securityScore.score >= 50 ? highlighter.warn : highlighter.error;
+      logger.log(`  Security Score: ${scoreColor(String(result.securityScore.score))} / 100  ${result.securityScore.label}`);
+      logger.log(`  Issues: ${highlighter.error(String(result.errorCount))} errors  ${highlighter.warn(String(result.warningCount))} warnings  Files: ${result.totalFiles}`);
+      logger.break();
+
+      if (result.securityDiagnostics.length > 0) {
+        for (const d of result.securityDiagnostics) {
+          const icon = d.severity === "error" ? highlighter.error("●") : highlighter.warn("●");
+          logger.log(`  ${icon} ${sanitize(d.filePath)}:${d.line}  ${sanitize(d.message)}`);
+          logger.dim(`    rule: ${sanitize(d.rule)}  ${sanitize(d.help)}`);
+        }
+        logger.break();
+      } else {
+        logger.success("  ✓ No security issues found.");
+        logger.break();
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        logger.error(`  Error: ${error.message}`);
+      }
+      process.exit(1);
+    }
+  });
+
+const compareCommand = new Command("compare")
+  .description("Compare diagnostics between two git refs (commits, branches)")
+  .argument("[directory]", "project directory", ".")
+  .option("--base <ref>", "base git ref (commit, branch, tag)", "main")
+  .option("--head <ref>", "head git ref", "HEAD")
+  .option("--json", "output machine-readable JSON")
+  .action(async (directory: string, flags: { base: string; head: string; json?: boolean }) => {
+    try {
+      const result = await runCompare(directory, flags.base, flags.head);
+
+      if (flags.json) {
+        logger.log(JSON.stringify(result, null, 2));
+        return;
+      }
+
+      logger.break();
+      logger.log(`  ${highlighter.bold("svelte-doctor compare")} v${VERSION}`);
+      logger.break();
+
+      logger.log(`  Base: ${infoSafe(result.base.ref)}  Score: ${result.base.score}  ${sanitize(result.base.label)}`);
+      logger.log(`  Head: ${infoSafe(result.head.ref)}  Score: ${result.head.score}  ${sanitize(result.head.label)}`);
+      logger.break();
+
+      const delta = result.scoreDelta;
+      const deltaStr = delta >= 0 ? `+${delta}` : String(delta);
+      const deltaColor = delta > 0 ? highlighter.success : delta < 0 ? highlighter.error : highlighter.dim;
+      logger.log(`  Delta: ${deltaColor(deltaStr)} points`);
+      logger.break();
+
+      if (result.newErrors.length > 0) {
+        logger.error(`  New errors (${result.newErrors.length}):`);
+        for (const d of result.newErrors) {
+          logger.error(`    + ${sanitize(d.filePath)}:${d.line}  ${sanitize(d.message)}`);
+        }
+      }
+
+      if (result.fixedErrors.length > 0) {
+        logger.success(`  Fixed errors (${result.fixedErrors.length}):`);
+        for (const d of result.fixedErrors) {
+          logger.success(`    - ${sanitize(d.filePath)}:${d.line}  ${sanitize(d.message)}`);
+        }
+      }
+
+      if (result.newWarnings.length > 0) {
+        logger.warn(`  New warnings (${result.newWarnings.length}):`);
+        for (const d of result.newWarnings) {
+          logger.warn(`    + ${sanitize(d.filePath)}:${d.line}  ${sanitize(d.message)}`);
+        }
+      }
+
+      if (result.fixedWarnings.length > 0) {
+        logger.success(`  Fixed warnings (${result.fixedWarnings.length}):`);
+        for (const d of result.fixedWarnings) {
+          logger.success(`    - ${sanitize(d.filePath)}:${d.line}  ${sanitize(d.message)}`);
+        }
+      }
+
+      if (result.newErrors.length === 0 && result.fixedErrors.length === 0 &&
+          result.newWarnings.length === 0 && result.fixedWarnings.length === 0) {
+        logger.dim("  No diagnostic changes between refs.");
+      }
+
+      logger.break();
+    } catch (error) {
+      if (error instanceof Error) {
+        logger.error(`  Error: ${error.message}`);
+      }
+      process.exit(1);
+    }
+  });
+
 program
   .addCommand(initCommand)
   .addCommand(checkCommand)
@@ -965,7 +1312,13 @@ program
   .addCommand(upgradeCommand)
   .addCommand(prCheckCommand)
   .addCommand(updateCommand)
-  .addCommand(migrateCommand);
+  .addCommand(migrateCommand)
+  .addCommand(configCommand)
+  .addCommand(validateCommand)
+  .addCommand(quickCommand)
+  .addCommand(statsCommand)
+  .addCommand(auditCommand)
+  .addCommand(compareCommand);
 
 const main = async () => {
   const args = process.argv.slice(2);

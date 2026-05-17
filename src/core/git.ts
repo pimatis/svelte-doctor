@@ -9,15 +9,16 @@ interface GitSelectionOptions {
 }
 
 export const validateGitRef = (value: string): string => {
+  if (value.includes("\0")) {
+    throw new Error("Git ref cannot contain NUL bytes.");
+  }
+  if (value.includes("\n") || value.includes("\r")) {
+    throw new Error("Git ref cannot contain newlines.");
+  }
+
   const ref = value.trim();
   if (ref.length === 0) {
     throw new Error("Git ref cannot be empty.");
-  }
-  if (ref.includes("\0")) {
-    throw new Error("Git ref cannot contain NUL bytes.");
-  }
-  if (ref.includes("\n") || ref.includes("\r")) {
-    throw new Error("Git ref cannot contain newlines.");
   }
   return ref;
 };

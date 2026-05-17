@@ -26,6 +26,7 @@ const createGitProject = () => {
 test("validateGitRef rejects empty and multiline refs", () => {
   assert.throws(() => validateGitRef(""), /cannot be empty/);
   assert.throws(() => validateGitRef("feature\nmain"), /cannot contain newlines/);
+  assert.throws(() => validateGitRef("feature\rmain"), /cannot contain newlines/);
 });
 
 test("getSelectedGitFiles supports since, changed, and staged selections", () => {
