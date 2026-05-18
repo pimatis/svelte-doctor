@@ -1,4 +1,5 @@
 import type { Rule, Diagnostic } from "../../types.js";
+import { fixNoUnnecessaryState } from "../../core/fixers.js";
 
 // wrapping a value in $state when it never changes adds reactivity overhead for nothing
 const noUnnecessaryState: Rule = {
@@ -7,6 +8,8 @@ const noUnnecessaryState: Rule = {
   severity: "warning",
   message: "`$state` used for a value that appears to never be reassigned",
   help: "If a value never changes, use a plain `let` or `const` instead of `$state()`. Wrapping non-reactive values in `$state` adds overhead for nothing",
+  autofixable: true,
+  fix: fixNoUnnecessaryState,
   check: (ctx) => {
     if (!ctx.filePath.endsWith(".svelte")) return [];
 

@@ -1,9 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { writeFileAtomicSafe } from "../fs/safe-write.js";
-import type { ApplyFileChange, ApplyOptions, ApplyResult, Diagnostic } from "../types.js";
+import type { ApplyFileChange, ApplyOptions, ApplyResult, Diagnostic, Rule } from "../types.js";
+import { allRules } from "../rules/index.js";
 import { scan } from "./scanner.js";
 import { transformMigrateSource } from "./migrate.js";
+
+// pre-build a Map for O(1) rule lookup instead of O(n) find per diagnostic
+const ruleMap = new Map<string, Rule>(allRules.map((r) => [r.name, r]));
 
 const MIGRATION_RULES = new Set([
   "no-legacy-reactive",
@@ -119,6 +123,23 @@ const applyFileFixes = (
       for (const ruleName of [...ruleNames].filter((entry) => MIGRATION_RULES.has(entry))) {
         appliedRules.add(ruleName);
       }
+    }
+  }
+
+  // Rule-level fix functions are diagnostic-scoped, so process from bottom to top
+  // to keep later line numbers stable when a fix removes lines.
+  const ruleFixDiagnostics = diagnostics
+    .filter((diagnostic) => ruleMap.get(diagnostic.rule)?.fix)
+    .sort((a, b) => b.line - a.line || b.column - a.column);
+
+  for (const diagnostic of ruleFixDiagnostics) {
+    const rule = ruleMap.get(diagnostic.rule);
+    if (!rule?.fix) continue;
+
+    const fixed = rule.fix(nextSource, diagnostic);
+    if (fixed !== nextSource) {
+      nextSource = fixed;
+      appliedRules.add(diagnostic.rule);
     }
   }
 

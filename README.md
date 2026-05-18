@@ -53,7 +53,7 @@ Run a single command to scan your entire codebase and receive a **0–100 health
 - **57 Source Diagnostic Rules** covering correctness, performance, security, architecture, SvelteKit reliability, runtime performance, hydration safety, and CSS specificity
 - **Build Artifact Diagnostics** for SvelteKit output chunks, duplicate libraries, oversized bundles, and inline base64 assets
 - **TypeScript AST-backed script analysis** for lower false-positive rates on security-sensitive checks
-- **Deterministic Safe Apply** via `apply` for high-confidence fixes before using an AI agent
+- **Deterministic Safe Apply** via `apply` for high-confidence fixes — covers CSS transitions, lodash/moment/icon imports, Svelte 4→5 migration, unnecessary `$state` wrappers, and `$effect` to `$derived` conversions
 - **Baseline Suppression** to keep legacy issues out of new CI failures
 - **Interactive Project Bootstrap** via `init` for config, CI, scripts, baseline, and `.gitignore` setup
 - **SARIF + GitHub Annotations** for code scanning and CI integration
@@ -342,6 +342,15 @@ svelte-doctor baseline --all-workspaces
 ### `svelte-doctor apply [directory] [options]`
 
 Apply deterministic, high-confidence fixes without launching an AI agent. This command is intentionally conservative and only rewrites patterns the tool can fix safely.
+
+**Supported fixes:**
+- `no-transition-all` — replaces `transition: all` with explicit `opacity` and `transform`
+- `no-full-lodash` — rewrites full lodash imports to per-function paths
+- `no-moment` — replaces `moment` imports with `dayjs`
+- `no-full-icon-import` — converts namespace icon imports to named imports
+- Svelte 4→5 migration rules (`no-legacy-reactive`, `no-export-let`, `no-legacy-slots`, `no-on-directive`, `no-event-dispatcher`, `no-let-directive`, `no-legacy-lifecycle`)
+- `no-unnecessary-state` — strips `$state()` wrapper from values that are never mutated
+- `no-effect-for-derived` — converts `$effect(() => { x = expr })` to `const x = $derived(expr)`
 
 | Option | Description |
 |--------|-------------|
@@ -642,22 +651,22 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 
 | Rule | Severity | Description |
 |------|----------|-------------|
-| `no-legacy-reactive` | error | `$:` reactive statements → `$derived` / `$effect` |
-| `no-legacy-lifecycle` | error | `onMount`/`onDestroy` imports → `$effect` |
-| `no-export-let` | error | `export let` → `$props()` |
-| `no-event-dispatcher` | error | `createEventDispatcher` → callback props |
-| `no-legacy-slots` | error | `<slot>` → `{@render children()}` |
-| `no-let-directive` | error | `let:` directive → snippet props |
-| `no-on-directive` | warning | `on:event` → `onevent` attributes |
+| `no-legacy-reactive` | error | `$:` reactive statements → `$derived` / `$effect` (fixable) |
+| `no-legacy-lifecycle` | error | `onMount`/`onDestroy` imports → `$effect` (fixable) |
+| `no-export-let` | error | `export let` → `$props()` (fixable) |
+| `no-event-dispatcher` | error | `createEventDispatcher` → callback props (fixable) |
+| `no-legacy-slots` | error | `<slot>` → `{@render children()}` (fixable) |
+| `no-let-directive` | error | `let:` directive → snippet props (fixable) |
+| `no-on-directive` | warning | `on:event` → `onevent` attributes (fixable) |
 
 ### Performance (20)
 
 | Rule | Severity | Description |
 |------|----------|-------------|
-| `no-effect-for-derived` | warning | `$effect` used where `$derived` fits |
+| `no-effect-for-derived` | warning | `$effect` used where `$derived` fits (fixable) |
 | `each-missing-key` | warning | `{#each}` without key expression |
 | `no-inline-object` | warning | Inline objects/arrays in template expressions |
-| `no-transition-all` | warning | `transition: all` is expensive |
+| `no-transition-all` | warning | `transition: all` is expensive (fixable) |
 | `no-large-inline-list-transform` | warning | Expensive `.filter().map().sort()` chains in template markup |
 | `no-repeated-derived-allocation` | warning | Repeated allocations inside `$derived()` |
 | `no-blocking-sync-fs-in-hot-cli-path` | warning | Sync fs calls in hot scan paths |
@@ -715,9 +724,9 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | Rule | Severity | Description |
 |------|----------|-------------|
 | `no-barrel-import` | warning | Barrel imports prevent tree-shaking |
-| `no-full-lodash` | warning | Full `lodash` import (~70kb) |
-| `no-moment` | warning | `moment.js` is heavy (~300kb) |
-| `no-full-icon-import` | warning | Wildcard icon imports prevent tree-shaking |
+| `no-full-lodash` | warning | Full `lodash` import (~70kb) (fixable) |
+| `no-moment` | warning | `moment.js` is heavy (~300kb) (fixable) |
+| `no-full-icon-import` | warning | Wildcard icon imports prevent tree-shaking (fixable) |
 | `chunk-size-limit` | warning | Build output chunk exceeds recommended size limit |
 | `no-duplicate-lib-in-chunks` | warning | Same package appears across multiple generated chunks |
 | `prefer-dynamic-import` | warning | Large dependency appears in an eagerly loaded build chunk |
@@ -735,7 +744,7 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 
 | Rule | Severity | Description |
 |------|----------|-------------|
-| `no-unnecessary-state` | warning | `$state` wrapping a value that is never mutated |
+| `no-unnecessary-state` | warning | `$state` wrapping a value that is never mutated (fixable) |
 | `no-derived-side-effect` | error | Side effects inside `$derived` |
 | `prefer-runes` | warning | `svelte/store` imports in a runes-mode project |
 

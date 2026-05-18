@@ -1,5 +1,6 @@
 import type { Diagnostic, Rule, RuleContext, ScriptAstContext } from "../../types.js";
 import { getLineAndColumn, isIdentifierNamed, ts, walkSourceFile } from "../../parser/script.js";
+import { fixNoEffectForDerived } from "../../core/fixers.js";
 
 // builds a line-index → boolean map in a single O(n) pass
 // true means the line is inside a <script> block (instance or module)
@@ -327,6 +328,8 @@ const noEffectForDerived: Rule = {
   help: "Replace `$effect(() => { x = expr })` with `const x = $derived(expr)` for better reactivity tracking and fewer re-runs.",
   appliesTo: ["svelte"],
   cost: "medium",
+  autofixable: true,
+  fix: fixNoEffectForDerived,
   check: (ctx: RuleContext): Diagnostic[] => {
     if (!ctx.filePath.endsWith(".svelte")) return [];
 

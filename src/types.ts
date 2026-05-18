@@ -185,6 +185,7 @@ export interface Rule {
   autofixable?: boolean;
   docs?: RuleDocs;
   check: (ctx: RuleContext) => Diagnostic[];
+  fix?: (source: string, diagnostic: Diagnostic) => string;
 }
 
 export interface AgentInfo {
