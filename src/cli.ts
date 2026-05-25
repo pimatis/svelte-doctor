@@ -23,6 +23,12 @@ import { auditCommand } from "./commands/audit.js";
 import { compareCommand } from "./commands/compare.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { resetCommand } from "./commands/reset.js";
+import { suggestIgnoreCommand } from "./commands/ignores.js";
+import { migrateStatusCommand } from "./commands/progress.js";
+import { graphCommand } from "./commands/graph.js";
+import { bundleImpactCommand } from "./commands/impact.js";
+import { testGapsCommand } from "./commands/coverage.js";
+import { createRuleCommand } from "./commands/scaffold.js";
 
 const program = new Command()
   .name("svelte-doctor")
@@ -51,7 +57,13 @@ program
   .addCommand(auditCommand)
   .addCommand(compareCommand)
   .addCommand(doctorCommand)
-  .addCommand(resetCommand);
+  .addCommand(resetCommand)
+  .addCommand(suggestIgnoreCommand)
+  .addCommand(migrateStatusCommand)
+  .addCommand(graphCommand)
+  .addCommand(bundleImpactCommand)
+  .addCommand(testGapsCommand)
+  .addCommand(createRuleCommand);
 
 const main = async () => {
   const args = process.argv.slice(2);

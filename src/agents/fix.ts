@@ -16,6 +16,8 @@ import {
 import { detectAgents, getPreferredAgent } from "./detect.js";
 import { scan } from "../core/scanner.js";
 
+const SUPPORTED_AGENT_IDS = "cursor, amp, claude, codex, opencode, pi, gemini, qwen, aider, goose";
+
 const createPromptBundle = (prompt: string): { dir: string; path: string } => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "svelte-doctor-"));
   const promptPath = path.join(dir, "prompt.txt");
@@ -259,7 +261,7 @@ export const runFix = async (
     if (options.agentOverride) {
       const forced = agents.find((a) => (a.id ?? a.command) === options.agentOverride);
       if (!forced) {
-        logger.error(`  Unknown agent: ${options.agentOverride}. Available: cursor, amp, claude, codex`);
+        logger.error(`  Unknown agent: ${options.agentOverride}. Available: ${SUPPORTED_AGENT_IDS}`);
         return null;
       }
       if (!forced.available) {

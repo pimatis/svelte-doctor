@@ -4,12 +4,12 @@ import { fileURLToPath } from "node:url";
 import { validateDirectory } from "../fs/validate.js";
 import { validateConfigFile } from "../core/validate-config.js";
 import { readPackageScripts, resolvePackageManager } from "../core/runtime.js";
-import { CACHE_DIR, CACHE_FILE, GITIGNORE_SVELTE_DOCTOR_ENTRY } from "../constants.js";
+import {
+  CACHE_DIR,
+  CACHE_FILE,
+  GITIGNORE_SVELTE_DOCTOR_ENTRY,
+} from "../constants.js";
 import type { ValidateConfigResult } from "../core/validate-config.js";
-
-// ---------------------------------------------------------------------------
-// types
-// ---------------------------------------------------------------------------
 
 export type DoctorStatus = "pass" | "warning" | "fail" | "na";
 
@@ -28,10 +28,6 @@ export interface DoctorResult {
   notApplicable: number;
 }
 
-// ---------------------------------------------------------------------------
-// helpers
-// ---------------------------------------------------------------------------
-
 const MILLISECONDS_PER_DAY = 86_400_000;
 
 const readPackageJson = (dir: string): Record<string, unknown> | null => {
@@ -45,10 +41,16 @@ const readPackageJson = (dir: string): Record<string, unknown> | null => {
   }
 };
 
-const parseSemver = (version: string): { major: number; minor: number; patch: number } | null => {
+const parseSemver = (
+  version: string,
+): { major: number; minor: number; patch: number } | null => {
   const match = /^v?(\d+)\.(\d+)\.(\d+)/.exec(version.trim());
   if (!match) return null;
-  return { major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]) };
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+  };
 };
 
 const satisfiesVersion = (current: string, required: string): boolean => {
@@ -60,15 +62,13 @@ const satisfiesVersion = (current: string, required: string): boolean => {
   return cur.patch >= req.patch;
 };
 
-// ---------------------------------------------------------------------------
-// individual checks
-// ---------------------------------------------------------------------------
-
 const checkNodeVersion = async (_dir: string): Promise<DoctorCheckResult> => {
   // Read required Node version from svelte-doctor's own package.json
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
   const ownPkg = readPackageJson(path.resolve(currentDir, ".."));
-  const required = (ownPkg as Record<string, unknown> | null)?.engines as Record<string, string> | undefined;
+  const required = (ownPkg as Record<string, unknown> | null)?.engines as
+    | Record<string, string>
+    | undefined;
   const requiredNode = required?.node ?? ">=22.18.0";
   const current = process.version;
 
@@ -89,10 +89,16 @@ const checkNodeVersion = async (_dir: string): Promise<DoctorCheckResult> => {
   };
 };
 
-const checkSvelteDependency = async (dir: string): Promise<DoctorCheckResult> => {
+const checkSvelteDependency = async (
+  dir: string,
+): Promise<DoctorCheckResult> => {
   const pkg = readPackageJson(dir);
   if (!pkg) {
-    return { name: "Svelte Dependency", status: "fail", message: "No package.json found" };
+    return {
+      name: "Svelte Dependency",
+      status: "fail",
+      message: "No package.json found",
+    };
   }
 
   const deps = {
@@ -106,7 +112,7 @@ const checkSvelteDependency = async (dir: string): Promise<DoctorCheckResult> =>
       name: "Svelte Dependency",
       status: "fail",
       message: "Not installed",
-      detail: 'Run `npm install svelte` or `bun add svelte`.',
+      detail: "Run `npm install svelte` or `bun add svelte`.",
     };
   }
 
@@ -118,7 +124,12 @@ const checkSvelteDependency = async (dir: string): Promise<DoctorCheckResult> =>
 };
 
 const checkSvelteConfig = async (dir: string): Promise<DoctorCheckResult> => {
-  const candidates = ["svelte.config.js", "svelte.config.ts", "svelte.config.mjs", "svelte.config.cjs"];
+  const candidates = [
+    "svelte.config.js",
+    "svelte.config.ts",
+    "svelte.config.mjs",
+    "svelte.config.cjs",
+  ];
   let foundPath: string | null = null;
 
   for (const candidate of candidates) {
@@ -144,7 +155,8 @@ const checkSvelteConfig = async (dir: string): Promise<DoctorCheckResult> => {
   }
 
   const content = fs.readFileSync(foundPath, "utf-8");
-  const hasPreprocess = content.includes("preprocess") || content.includes("vitePreprocess");
+  const hasPreprocess =
+    content.includes("preprocess") || content.includes("vitePreprocess");
 
   if (hasPreprocess) {
     return {
@@ -193,7 +205,8 @@ const checkTsconfig = async (dir: string): Promise<DoctorCheckResult> => {
   }
 
   const obj = raw as Record<string, unknown>;
-  const hasCompilerOptions = obj && typeof obj === "object" && "compilerOptions" in obj;
+  const hasCompilerOptions =
+    obj && typeof obj === "object" && "compilerOptions" in obj;
   const hasExtends = obj && typeof obj === "object" && "extends" in obj;
 
   if (hasCompilerOptions) {
@@ -225,17 +238,25 @@ const checkNodeModules = async (dir: string): Promise<DoctorCheckResult> => {
   try {
     const stat = fs.lstatSync(nodeModulesPath);
     if (!stat.isDirectory()) {
-      return { name: "node_modules", status: "fail", message: "Not a directory" };
+      return {
+        name: "node_modules",
+        status: "fail",
+        message: "Not a directory",
+      };
     }
 
-    const entries = fs.readdirSync(nodeModulesPath).filter(
-      (e) => !e.startsWith(".") && !e.startsWith("@"),
-    );
-    const scopedDirs = fs.readdirSync(nodeModulesPath).filter((e) => e.startsWith("@"));
+    const entries = fs
+      .readdirSync(nodeModulesPath)
+      .filter((e) => !e.startsWith(".") && !e.startsWith("@"));
+    const scopedDirs = fs
+      .readdirSync(nodeModulesPath)
+      .filter((e) => e.startsWith("@"));
     let scopedCount = 0;
     for (const scoped of scopedDirs) {
       try {
-        scopedCount += fs.readdirSync(path.join(nodeModulesPath, scoped)).length;
+        scopedCount += fs.readdirSync(
+          path.join(nodeModulesPath, scoped),
+        ).length;
       } catch {
         // skip
       }
@@ -267,7 +288,9 @@ const checkNodeModules = async (dir: string): Promise<DoctorCheckResult> => {
   }
 };
 
-const checkConfigValidation = async (dir: string): Promise<DoctorCheckResult> => {
+const checkConfigValidation = async (
+  dir: string,
+): Promise<DoctorCheckResult> => {
   const result: ValidateConfigResult = validateConfigFile(dir);
 
   if (result.status === "valid") {
@@ -288,7 +311,9 @@ const checkConfigValidation = async (dir: string): Promise<DoctorCheckResult> =>
     };
   }
 
-  const issueMessages = result.issues.map((i) => `${i.field}: ${i.message}`).join("; ");
+  const issueMessages = result.issues
+    .map((i) => `${i.field}: ${i.message}`)
+    .join("; ");
   return {
     name: "Config Validation",
     status: "fail",
@@ -303,7 +328,11 @@ const checkGitignore = async (dir: string): Promise<DoctorCheckResult> => {
   try {
     const stat = fs.lstatSync(gitignorePath);
     if (stat.isSymbolicLink() || !stat.isFile()) {
-      return { name: ".gitignore", status: "na", message: "No .gitignore file" };
+      return {
+        name: ".gitignore",
+        status: "na",
+        message: "No .gitignore file",
+      };
     }
   } catch {
     return { name: ".gitignore", status: "na", message: "No .gitignore file" };
@@ -339,7 +368,10 @@ const checkBuildArtifacts = async (dir: string): Promise<DoctorCheckResult> => {
       const stat = fs.lstatSync(fullPath);
       if (stat.isDirectory()) {
         const ageMs = now - stat.mtimeMs;
-        found.push({ name: artifact, ageDays: Math.round(ageMs / MILLISECONDS_PER_DAY) });
+        found.push({
+          name: artifact,
+          ageDays: Math.round(ageMs / MILLISECONDS_PER_DAY),
+        });
       }
     } catch {
       continue;
@@ -391,7 +423,9 @@ const checkCacheStatus = async (dir: string): Promise<DoctorCheckResult> => {
     const files = raw?.files as Record<string, unknown> | undefined;
     const entryCount = files ? Object.keys(files).length : 0;
     const sizeKB = Math.round(stat.size / 1024);
-    const ageDays = Math.round((Date.now() - stat.mtimeMs) / MILLISECONDS_PER_DAY);
+    const ageDays = Math.round(
+      (Date.now() - stat.mtimeMs) / MILLISECONDS_PER_DAY,
+    );
 
     if (entryCount === 0) {
       return {
@@ -415,10 +449,6 @@ const checkCacheStatus = async (dir: string): Promise<DoctorCheckResult> => {
     };
   }
 };
-
-// ---------------------------------------------------------------------------
-// orchestration
-// ---------------------------------------------------------------------------
 
 export const runDoctor = async (directory: string): Promise<DoctorResult> => {
   const resolvedDir = path.resolve(directory);

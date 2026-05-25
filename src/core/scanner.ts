@@ -37,6 +37,8 @@ import { parseSvelteFile, parseScriptFile } from "../parser/svelte.js";
 import { highlighter, logger } from "../output/logger.js";
 import { printCategoryBreakdown, printDiagnostics, printSummary } from "../output/summary.js";
 import { spinner } from "../output/spinner.js";
+import { buildIgnoreSuggestions } from "./ignores.js";
+import { estimateBundleImpact, summarizeBundleImpact } from "./impact.js";
 
 const completeStep = (message: string) => {
   spinner(message).start().succeed(message);
@@ -302,6 +304,9 @@ export const scan = async (
   const warningCount = diagnostics.filter((d) => d.severity === "warning").length;
   const affectedFileSet = new Set(diagnostics.map((d) => d.filePath));
   const fixableCount = countFixableDiagnostics(diagnostics);
+  const ignoreSuggestions = buildIgnoreSuggestions(diagnostics);
+  const bundleImpactItems = estimateBundleImpact(diagnostics);
+  const bundleImpact = summarizeBundleImpact(bundleImpactItems);
   const meta = {
     totalDiagnostics: diagnostics.length,
     suppressedCount: baselineResult.suppressedCount,
@@ -341,6 +346,8 @@ export const scan = async (
       warnings: warningCount,
       suppressedCount: meta.suppressedCount,
       fixableCount: meta.fixableCount,
+      ignorableCount: ignoreSuggestions.length,
+      bundleImpact,
       categoryBreakdown: scoreResult.categoryBreakdown,
       elapsedMs: meta.elapsedMs,
       targetMode: meta.targetMode,
@@ -372,11 +379,15 @@ export const scan = async (
     logger.success("  ✓ No issues found! Your codebase is clean.");
     logger.break();
     printSummary(diagnostics, elapsedMs, scoreResult, selectedManifest.sourceFileCount, meta);
+    logger.dim("  Ignore suggestions: 0 diagnostics can likely be ignored.");
+    logger.dim("  Potential bundle savings: 0KB.");
     return { diagnostics, scoreResult, meta };
   }
 
   printDiagnostics(diagnostics);
   printSummary(diagnostics, elapsedMs, scoreResult, selectedManifest.sourceFileCount, meta);
+  logger.log(`  Ignore suggestions: ${ignoreSuggestions.length} diagnostic${ignoreSuggestions.length === 1 ? "" : "s"} can likely be ignored.`);
+  logger.log(`  Potential bundle savings: ${bundleImpact.totalKilobytes}KB.`);
   printCategoryBreakdown(scoreResult.categoryBreakdown);
   logger.break();
   logger.dim(`  Run ${highlighter.info("svelte-doctor fix")} to auto-fix issues with an AI agent.`);

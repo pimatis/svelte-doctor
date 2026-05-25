@@ -62,6 +62,12 @@ Run a single command to scan your entire codebase and receive a **0–100 health
 - **Safe-by-default AI Fix** flow with secure temp prompts, opt-in unsafe execution, and post-fix verification
 - **AI-Friendly Copy Export** via `check --copy` with clipboard-first fallback behavior
 - **Svelte 4→5 Auto-Migration** with deterministic codemods
+- **Migration Progress Tracking** via `migrate-status` with migrated/pending/skipped counts, category breakdown, and ETA
+- **Smart Ignore Suggestions** via `suggest-ignore` with confidence scoring and generated ignore config snippets
+- **Component Dependency Graphs** via `graph` with ASCII, DOT, JSON, and circular dependency detection
+- **Bundle Impact Preview** via `bundle-impact` for estimated savings from fixable bundle-size diagnostics
+- **Test Coverage Gap Finder** via `test-gaps` for source-to-test matching and SvelteKit critical path checks
+- **Rule Authoring Kit** via `create-rule` for custom rule, test, and docs scaffolding
 - **Cached Scans + Incremental Watch** for faster repeat checks and tighter feedback loops
 - **Automatic `.gitignore` Sync** for generated `.svelte-doctor/*` cache/history files while preserving tracked baseline negations
 - **Dependency Health Checks and Upgrade Planning** for ecosystem compatibility and npm registry updates
@@ -198,6 +204,30 @@ svelte-doctor update --check
 
 # Auto-migrate Svelte 4 → Svelte 5
 svelte-doctor migrate
+
+# Track Svelte 4 → 5 migration progress
+svelte-doctor migrate-status
+svelte-doctor migrate-status --json
+
+# Suggest likely false-positive ignores
+svelte-doctor suggest-ignore
+svelte-doctor suggest-ignore --json
+
+# Preview bundle savings from fixable diagnostics
+svelte-doctor bundle-impact
+svelte-doctor bundle-impact --json
+
+# Build a component dependency graph
+svelte-doctor graph
+svelte-doctor graph --format dot
+svelte-doctor graph --format json
+
+# Find source files without matching tests
+svelte-doctor test-gaps
+svelte-doctor test-gaps --json
+
+# Scaffold a custom rule, test, and docs
+svelte-doctor create-rule no-custom-pattern
 
 # Watch for changes and show live score
 svelte-doctor watch
@@ -417,16 +447,52 @@ svelte-doctor apply --write --rules no-transition-all,no-full-lodash
 
 ### `svelte-doctor fix [directory] [options]`
 
-Detects installed AI coding agents (**Cursor**, **Amp**, **Claude Code**, **Codex**) and uses the best available one to fix reported issues automatically. The flow is **safe by default**: privileged agent flags are disabled unless you explicitly pass `--unsafe-agent-exec`. Diagnostics are redacted before prompt generation, prompts are written into a secure temp directory when needed, and post-fix verification can be escalated from diagnostics-only to full typecheck/test/build smoke.
+Detects installed AI coding agents (**Cursor**, **Amp**, **Claude Code**, **Codex**, **OpenCode**, **Pi**, **Gemini CLI**, **Qwen Code**, **Aider**, **Goose**) and uses the best available one to fix reported issues automatically. The flow is **safe by default**: privileged agent flags are disabled unless you explicitly pass `--unsafe-agent-exec`. Diagnostics are redacted before prompt generation, prompts are written into a secure temp directory when needed, and post-fix verification can be escalated from diagnostics-only to full typecheck/test/build smoke.
+
+Supported agent ids for `--agent` are `cursor`, `amp`, `claude`, `codex`, `opencode`, `pi`, `gemini`, `qwen`, `aider`, and `goose`. Install and authenticate at least one of them first, then run `svelte-doctor fix`. The command uses each agent's documented non-interactive mode where available: Amp execute mode, Claude print mode, Codex exec mode, OpenCode run mode, Pi print mode, Gemini headless mode, Qwen headless mode, Aider message mode, and Goose run mode.
+
+```bash
+# Use the best installed agent
+svelte-doctor fix
+
+# Force a specific agent
+svelte-doctor fix --agent amp
+svelte-doctor fix --agent claude
+svelte-doctor fix --agent codex
+svelte-doctor fix --agent opencode
+svelte-doctor fix --agent pi
+svelte-doctor fix --agent gemini
+svelte-doctor fix --agent qwen
+svelte-doctor fix --agent aider
+svelte-doctor fix --agent goose
+
+# Preview the prompt if you want to paste it manually
+svelte-doctor fix --dry-run-prompt
+```
 
 | Option | Description |
 |--------|-------------|
-| `--agent <name>` | Force a specific agent (cursor, amp, claude, codex) |
+| `--agent <name>` | Force a specific agent (cursor, amp, claude, codex, opencode, pi, gemini, qwen, aider, goose) |
 | `--errors-only` | Fix only errors first (reduces cascade errors, run again for warnings) |
 | `--unsafe-agent-exec` | Opt in to agent-specific privileged execution flags |
 | `--dry-run-prompt` | Generate the secure prompt bundle without spawning an agent |
 | `--verify-level <level>` | Verification depth: `diagnostics`, `typecheck`, `tests`, `full` |
 | `--max-files <count>` | Limit how many diagnostics are sent in a single agent batch |
+
+Supported agents under `src/agents`:
+
+| Agent id | CLI command | Non-interactive mode |
+|----------|-------------|----------------------|
+| `cursor` | `agent` | `--print --workspace <cwd> --output-format stream-json` |
+| `amp` | `amp` | `-x` execute mode, unsafe opt-in via `--dangerously-allow-all` |
+| `claude` | `claude` | `-p --output-format stream-json --include-partial-messages` |
+| `codex` | `codex` | `exec -C <cwd>`, unsafe opt-in via bypass flag |
+| `opencode` | `opencode` | `run` |
+| `pi` | `pi` | `-p` |
+| `gemini` | `gemini` | `-p`, unsafe opt-in via `--yolo` |
+| `qwen` | `qwen` | `-p`, unsafe opt-in via `--yolo` |
+| `aider` | `aider` | `--yes --no-auto-commits --message` |
+| `goose` | `goose` | `run --no-session --quiet -t` |
 
 ### `svelte-doctor migrate [directory] [options]`
 
@@ -446,6 +512,112 @@ Auto-migrate Svelte 4 syntax to Svelte 5. Deterministic, AST-free codemod that t
 |--------|-------------|
 | `--dry-run` | Show changes without modifying files |
 | `--no-backup` | Skip creating .svelte.bak backup files |
+
+### `svelte-doctor migrate-status [directory] [options]`
+
+Show Svelte 4 to 5 migration progress without modifying files. The command scans `.svelte` files for pending legacy patterns and reports migrated, pending, and skipped file counts, category-specific progress, and an estimated remaining time.
+
+Tracked categories:
+
+- reactive statements (`$:`)
+- `export let` props
+- legacy `<slot>` usage
+- `on:event` directives
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output machine-readable JSON |
+
+Examples:
+
+```bash
+svelte-doctor migrate-status
+svelte-doctor migrate-status --json
+```
+
+### `svelte-doctor suggest-ignore [directory] [options]`
+
+Generate smart ignore suggestions for diagnostics that are likely false positives or low-risk noise. Each suggestion includes a confidence score, the reason it was flagged, and an ignore config snippet you can review before copying into `svelte-doctor.config.json`.
+
+This is intentionally advisory. It does not write config automatically.
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output machine-readable JSON with suggestions and config |
+
+Examples:
+
+```bash
+svelte-doctor suggest-ignore
+svelte-doctor suggest-ignore --json
+```
+
+### `svelte-doctor graph [directory] [options]`
+
+Build a component dependency graph from local imports and rendered component tags. The graph helps answer which component imports or renders another component and highlights circular dependencies.
+
+| Option | Description |
+|--------|-------------|
+| `--format <ascii\|dot\|json>` | Output format, defaults to `ascii` |
+
+Examples:
+
+```bash
+svelte-doctor graph
+svelte-doctor graph --format dot > graph.dot
+svelte-doctor graph --format json
+```
+
+### `svelte-doctor bundle-impact [directory] [options]`
+
+Estimate potential bundle savings from fixable bundle-size diagnostics. Current estimates cover heavy imports such as `moment`, full `lodash`, and wildcard icon package imports.
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output machine-readable JSON |
+
+Examples:
+
+```bash
+svelte-doctor bundle-impact
+svelte-doctor bundle-impact --json
+```
+
+### `svelte-doctor test-gaps [directory] [options]`
+
+Find source files that do not have a nearby matching test file. It also marks critical SvelteKit paths, such as server load modules and form actions, so CI can prioritize missing tests for production-sensitive code.
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output machine-readable JSON |
+
+Examples:
+
+```bash
+svelte-doctor test-gaps
+svelte-doctor test-gaps --json
+```
+
+### `svelte-doctor create-rule <name> [directory] [options]`
+
+Scaffold a custom rule package with a rule template, test template, and docs template. Rule names must be kebab-case, for example `no-custom-pattern`. Existing files are never overwritten.
+
+Generated files:
+
+- `src/rules/custom/<name>/index.ts`
+- `src/rules/custom/<name>/README.md`
+- `test/<name>.test.mjs`
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output machine-readable JSON |
+
+Examples:
+
+```bash
+svelte-doctor create-rule no-custom-pattern
+svelte-doctor create-rule no-custom-pattern --json
+```
 
 ### `svelte-doctor watch [directory] [options]`
 

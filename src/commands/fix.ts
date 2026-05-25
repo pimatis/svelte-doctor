@@ -8,14 +8,28 @@ import { parseVerifyLevel, parsePositiveInt } from "./utils.js";
 import type { VerificationLevel } from "../types.js";
 
 export const fixCommand = new Command("fix")
-  .description("Use an AI agent (Cursor/amp/claude/codex) to auto-fix all reported issues")
+  .description("Use an AI agent (Cursor/Amp/Claude/Codex/OpenCode/Pi/Gemini/Qwen/Aider/Goose) to auto-fix all reported issues")
   .argument("[directory]", "project directory", ".")
-  .option("--agent <name>", "force a specific agent (cursor, amp, claude, codex)")
+  .option("--agent <name>", "force a specific agent (cursor, amp, claude, codex, opencode, pi, gemini, qwen, aider, goose)")
   .option("--errors-only", "fix only errors first (reduces cascade risk, run again for warnings)")
   .option("--unsafe-agent-exec", "allow agent-specific privileged execution flags (opt-in only)")
   .option("--dry-run-prompt", "write the agent prompt to a secure temp file without spawning an agent")
   .option("--verify-level <level>", "verification depth: diagnostics, typecheck, tests, or full", parseVerifyLevel, "diagnostics")
   .option("--max-files <count>", "maximum diagnostics to include in a single agent batch", "50")
+  .addHelpText("after", `
+
+Supported agents:
+  cursor    Cursor Agent CLI (agent --print)
+  amp       Amp execute mode (amp -x)
+  claude    Claude Code print mode (claude -p)
+  codex     Codex exec mode (codex exec)
+  opencode  OpenCode run mode (opencode run)
+  pi        Pi prompt mode (pi -p)
+  gemini    Gemini CLI headless mode (gemini -p)
+  qwen      Qwen Code headless mode (qwen -p)
+  aider     Aider message mode (aider --message)
+  goose     Goose run mode (goose run)
+`)
   .action(async (directory: string, flags: Record<string, unknown>) => {
     try {
       const resolvedDir = path.resolve(directory);
