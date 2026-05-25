@@ -84,6 +84,29 @@ test("bundle-impact estimates savings for fixable bundle diagnostics", () => {
   assert.equal(result.items.length, 3);
 });
 
+test("render-profile ranks expensive components by compile-time cost", () => {
+  const project = writeProject({
+    "package.json": JSON.stringify({ type: "module", dependencies: { svelte: "^5.0.0" } }),
+    "src/Cheap.svelte": `<p>cheap</p>\n`,
+    "src/Expensive.svelte": `<script>\n  let items = $state([1, 2, 3]);\n  let doubled = $derived(items.map((item) => item * 2));\n</script>\n{#each doubled as item}\n  <button onclick={() => items.push(item)} bind:this={button}>{item}</button>\n{/each}\n{#if doubled.length > 2}\n  <section><h2>large</h2><p>content</p></section>\n{/if}\n`,
+  });
+
+  const result = JSON.parse(runCli(project, ["render-profile", ".", "--json", "--top", "2"]));
+
+  assert.equal(result.totalComponents, 2);
+  assert.equal(result.entries[0].file, "src/Expensive.svelte");
+  assert.equal(result.entries[0].domNodes > result.entries[1].domNodes, true);
+  assert.equal(result.entries[0].hydrationComplexity > 0, true);
+  assert.equal(result.entries[0].rerenderRisk > 0, true);
+});
+
+test("render-profile help exposes watch mode", () => {
+  const output = runCli(process.cwd(), ["render-profile", "--help"]);
+
+  assert.match(output, /--watch/);
+  assert.match(output, /--top <count>/);
+});
+
 test("test-gaps maps source files to expected tests", () => {
   const project = writeProject({
     "package.json": JSON.stringify({ type: "module", dependencies: { svelte: "^5.0.0" } }),

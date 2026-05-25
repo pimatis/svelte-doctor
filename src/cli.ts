@@ -29,6 +29,7 @@ import { graphCommand } from "./commands/graph.js";
 import { bundleImpactCommand } from "./commands/impact.js";
 import { testGapsCommand } from "./commands/coverage.js";
 import { createRuleCommand } from "./commands/scaffold.js";
+import { renderProfileCommand } from "./commands/profile.js";
 
 const program = new Command()
   .name("svelte-doctor")
@@ -63,7 +64,8 @@ program
   .addCommand(graphCommand)
   .addCommand(bundleImpactCommand)
   .addCommand(testGapsCommand)
-  .addCommand(createRuleCommand);
+  .addCommand(createRuleCommand)
+  .addCommand(renderProfileCommand);
 
 const main = async () => {
   const args = process.argv.slice(2);

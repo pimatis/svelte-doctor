@@ -68,6 +68,7 @@ Run a single command to scan your entire codebase and receive a **0–100 health
 - **Bundle Impact Preview** via `bundle-impact` for estimated savings from fixable bundle-size diagnostics
 - **Test Coverage Gap Finder** via `test-gaps` for source-to-test matching and SvelteKit critical path checks
 - **Rule Authoring Kit** via `create-rule` for custom rule, test, and docs scaffolding
+- **Component Render Profiler** via `render-profile` for compile-time DOM, reactivity, hydration, and re-render cost ranking
 - **Cached Scans + Incremental Watch** for faster repeat checks and tighter feedback loops
 - **Automatic `.gitignore` Sync** for generated `.svelte-doctor/*` cache/history files while preserving tracked baseline negations
 - **Dependency Health Checks and Upgrade Planning** for ecosystem compatibility and npm registry updates
@@ -228,6 +229,12 @@ svelte-doctor test-gaps --json
 
 # Scaffold a custom rule, test, and docs
 svelte-doctor create-rule no-custom-pattern
+
+# Rank the most expensive components before runtime
+svelte-doctor render-profile
+svelte-doctor render-profile --top 10
+svelte-doctor render-profile --watch
+svelte-doctor render-profile --json
 
 # Watch for changes and show live score
 svelte-doctor watch
@@ -617,6 +624,36 @@ Examples:
 ```bash
 svelte-doctor create-rule no-custom-pattern
 svelte-doctor create-rule no-custom-pattern --json
+```
+
+### `svelte-doctor render-profile [directory] [options]`
+
+Analyze Svelte components before runtime and rank the most expensive render surfaces. The profiler parses and compiles each `.svelte` file, then combines AST and compiled-output signals into a deterministic render cost model.
+
+Per component metrics:
+
+- DOM node count
+- reactive dependency count
+- hydration complexity score
+- re-render risk factor
+- compiled output size
+- aggregate render cost
+
+The default terminal output lists the top 10 most expensive components. `--watch` re-runs the profile when `.svelte` files change and shows cost deltas, which helps catch render-cost regressions before a build reaches production.
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output machine-readable JSON |
+| `--top <count>` | Number of expensive components to show, defaults to 10 |
+| `--watch` | Watch `.svelte` files and show render cost changes |
+
+Examples:
+
+```bash
+svelte-doctor render-profile
+svelte-doctor render-profile --top 5
+svelte-doctor render-profile --watch
+svelte-doctor render-profile --json
 ```
 
 ### `svelte-doctor watch [directory] [options]`
