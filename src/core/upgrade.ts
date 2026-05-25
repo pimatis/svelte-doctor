@@ -6,6 +6,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { BETTER_ALTERNATIVES, checkDeps } from "./deps.js";
 import { resolvePackageManager } from "./runtime.js";
 import { writeFileAtomicSafe } from "../fs/safe-write.js";
+import { validateDirectory } from "../fs/validate.js";
 import { discoverWorkspaces, findWorkspace } from "../project/workspaces.js";
 import { logger, highlighter } from "../output/logger.js";
 import type { PackageJson, WorkspaceInfo } from "../types.js";
@@ -79,14 +80,22 @@ const withRangePrefix = (range: string, version: string): string => {
 };
 
 const readPackageJson = (directory: string): PackageJson =>
-  JSON.parse(fs.readFileSync(path.join(directory, "package.json"), "utf-8")) as PackageJson;
+  (() => {
+    const packagePath = path.join(directory, "package.json");
+    const stat = fs.lstatSync(packagePath);
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      throw new Error(`Refusing to read unsafe package.json: ${packagePath}`);
+    }
+    return JSON.parse(fs.readFileSync(packagePath, "utf-8")) as PackageJson;
+  })();
 
 const readLockfileVersion = (directory: string, name: string): string | undefined => {
   const candidates = ["bun.lock", "bun.lockb", "pnpm-lock.yaml", "package-lock.json"];
   for (const candidate of candidates) {
     const lockPath = path.join(directory, candidate);
-    if (!fs.existsSync(lockPath)) continue;
     try {
+      const stat = fs.lstatSync(lockPath);
+      if (stat.isSymbolicLink() || !stat.isFile()) continue;
       const source = fs.readFileSync(lockPath, "utf-8");
       const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const match = source.match(new RegExp(`${escaped}[^\n\r]*?(\\d+\\.\\d+\\.\\d+)`));
@@ -96,6 +105,19 @@ const readLockfileVersion = (directory: string, name: string): string | undefine
     }
   }
   return undefined;
+};
+
+const isPackageName = (name: string): boolean =>
+  /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)$/i.test(name);
+
+const isSemver = (version: string): boolean =>
+  /^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(version);
+
+const encodePackageName = (name: string): string | null => {
+  if (!isPackageName(name)) return null;
+  if (!name.startsWith("@")) return encodeURIComponent(name);
+  const [scope, packageName] = name.split("/");
+  return `${encodeURIComponent(scope)}/${encodeURIComponent(packageName)}`;
 };
 
 const writePackageJson = (filePath: string, pkg: PackageJson): void => {
@@ -118,14 +140,16 @@ const collectDeps = (pkg: PackageJson): Array<{ name: string; version: string; t
 };
 
 const fetchLatest = async (name: string): Promise<{ latestVersion: string; deprecated: boolean; changelogUrl?: string } | null> => {
+  const encoded = encodePackageName(name);
+  if (!encoded) return null;
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8000);
   try {
-    const encoded = name.startsWith("@") ? name.replace("/", "%2f") : name;
     const response = await fetch(`https://registry.npmjs.org/${encoded}/latest`, { signal: controller.signal });
     if (!response.ok) return null;
     const body = await response.json() as { version?: string; deprecated?: string; homepage?: string; repository?: { url?: string } };
-    if (!body.version) return null;
+    if (!body.version || !isSemver(body.version)) return null;
     return {
       latestVersion: body.version,
       deprecated: typeof body.deprecated === "string" && body.deprecated.length > 0,
@@ -238,6 +262,7 @@ const getTargets = (directory: string, options: UpgradeOptions): Array<Workspace
 
 export const runUpgrade = async (directory: string, options: UpgradeOptions): Promise<UpgradePlan[]> => {
   const resolvedDir = path.resolve(directory);
+  validateDirectory(resolvedDir);
   const targets = getTargets(resolvedDir, options);
   const plans: UpgradePlan[] = [];
   for (const target of targets) plans.push(await buildPlan(target.directory, options));

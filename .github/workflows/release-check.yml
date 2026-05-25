@@ -20,5 +20,5 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun run test
-      - run: npm pack --dry-run
+      - run: bun pm pack --dry-run
       - run: node ./dist/cli.mjs --version

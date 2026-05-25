@@ -9,9 +9,10 @@ type ProjectDiscoveryOptions = {
 
 const readPackageJson = (dir: string): PackageJson | null => {
   const filePath = path.join(dir, "package.json");
-  if (!fs.existsSync(filePath)) return null;
 
   try {
+    const stat = fs.lstatSync(filePath);
+    if (stat.isSymbolicLink() || !stat.isFile()) return null;
     return JSON.parse(fs.readFileSync(filePath, "utf-8"));
   } catch {
     return null;

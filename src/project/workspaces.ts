@@ -4,6 +4,10 @@ import type { PackageJson, WorkspaceInfo } from "../types.js";
 
 const readPackageJson = (directory: string): PackageJson => {
   const packagePath = path.join(directory, "package.json");
+  const stat = fs.lstatSync(packagePath);
+  if (stat.isSymbolicLink() || !stat.isFile()) {
+    throw new Error(`Refusing to read unsafe package.json: ${packagePath}`);
+  }
   return JSON.parse(fs.readFileSync(packagePath, "utf-8")) as PackageJson;
 };
 
@@ -56,6 +60,30 @@ const expandPattern = (root: string, pattern: string): string[] => {
   return directories;
 };
 
+const isInsideOrEqual = (root: string, target: string): boolean => {
+  const relative = path.relative(root, target);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+};
+
+const resolveSafeWorkspaceDirectory = (rootDirectory: string, candidate: string): string | null => {
+  const root = path.resolve(rootDirectory);
+  const resolved = path.resolve(candidate);
+  if (!isInsideOrEqual(root, resolved)) return null;
+
+  try {
+    const stat = fs.lstatSync(resolved);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) return null;
+
+    const rootReal = fs.realpathSync.native(root);
+    const resolvedReal = fs.realpathSync.native(resolved);
+    if (!isInsideOrEqual(rootReal, resolvedReal)) return null;
+
+    return resolved;
+  } catch {
+    return null;
+  }
+};
+
 export const discoverWorkspaces = (rootDirectory: string): WorkspaceInfo[] => {
   const pkg = readPackageJson(rootDirectory);
   const patterns = getWorkspacePatterns(pkg);
@@ -63,16 +91,19 @@ export const discoverWorkspaces = (rootDirectory: string): WorkspaceInfo[] => {
 
   for (const pattern of patterns) {
     for (const candidate of expandPattern(rootDirectory, pattern)) {
+      const safeCandidate = resolveSafeWorkspaceDirectory(rootDirectory, candidate);
+      if (!safeCandidate) continue;
+
       try {
-        const packagePath = path.join(candidate, "package.json");
+        const packagePath = path.join(safeCandidate, "package.json");
         const stat = fs.lstatSync(packagePath);
         if (stat.isSymbolicLink() || !stat.isFile()) continue;
 
         const workspacePkg = JSON.parse(fs.readFileSync(packagePath, "utf-8")) as PackageJson;
-        const relativePath = path.relative(rootDirectory, candidate).replaceAll(path.sep, "/");
+        const relativePath = path.relative(rootDirectory, safeCandidate).replaceAll(path.sep, "/");
         const workspace: WorkspaceInfo = {
-          name: workspacePkg.name ?? path.basename(candidate),
-          directory: candidate,
+          name: workspacePkg.name ?? path.basename(safeCandidate),
+          directory: safeCandidate,
           relativePath,
         };
         workspaces.set(workspace.name, workspace);

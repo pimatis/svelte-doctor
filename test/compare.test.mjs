@@ -68,6 +68,11 @@ test("compare throws for invalid git ref", async () => {
     () => runCompare(project, "HEAD\r", "HEAD"),
     /cannot contain newlines/i,
   );
+
+  await assert.rejects(
+    () => runCompare(project, "--help", "HEAD"),
+    /cannot start with a dash/i,
+  );
 });
 
 test("compare throws for invalid directory", async () => {

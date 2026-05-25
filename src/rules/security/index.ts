@@ -233,7 +233,28 @@ const noEval: Rule = {
 };
 
 // sensitive env var name segments that should never be exposed via public $env modules
-const sensitiveVarPattern = /(?:SECRET|TOKEN|KEY|PASSWORD|AUTH|CREDENTIAL|PRIVATE)/i;
+const isSensitiveEnvName = (name: string): boolean =>
+  /(?:^|_)(?:SECRET|TOKEN|KEY|PASSWORD|AUTH|CREDENTIAL|PRIVATE)(?:_|$)/i.test(name);
+
+const escapeRegexLiteral = (value: string): string =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const hasSensitiveEnvObjectAccess = (source: string, objectName: string): boolean => {
+  const escapedObject = escapeRegexLiteral(objectName);
+  const dotAccess = new RegExp(`\\b${escapedObject}\\.([A-Za-z_$][\\w$]*)`, "g");
+  let dotMatch: RegExpExecArray | null;
+  while ((dotMatch = dotAccess.exec(source)) !== null) {
+    if (isSensitiveEnvName(dotMatch[1])) return true;
+  }
+
+  const bracketAccess = new RegExp("\\b" + escapedObject + "\\[\\s*['\"`]([^'\"`]+)['\"`]\\s*\\]", "g");
+  let bracketMatch: RegExpExecArray | null;
+  while ((bracketMatch = bracketAccess.exec(source)) !== null) {
+    if (isSensitiveEnvName(bracketMatch[1])) return true;
+  }
+
+  return false;
+};
 
 const noPublicEnvSecrets: Rule = {
   name: "no-public-env-secrets",
@@ -254,21 +275,58 @@ const noPublicEnvSecrets: Rule = {
     const diagnostics: Diagnostic[] = [];
 
     for (const block of ctx.scriptBlocks) {
+      const publicEnvObjects = new Set<string>();
+
       walkSourceFile(block.sourceFile, (node) => {
         if (!ts.isImportDeclaration(node)) return;
         if (!ts.isStringLiteral(node.moduleSpecifier)) return;
 
         const moduleName = node.moduleSpecifier.text;
         if (!/^\$env\/(?:static|dynamic)\/public$/.test(moduleName)) return;
-        if (!node.importClause?.namedBindings || !ts.isNamedImports(node.importClause.namedBindings)) return;
+        if (!node.importClause?.namedBindings) return;
+
+        if (ts.isNamespaceImport(node.importClause.namedBindings)) {
+          publicEnvObjects.add(node.importClause.namedBindings.name.text);
+          return;
+        }
+
+        if (!ts.isNamedImports(node.importClause.namedBindings)) return;
+
+        for (const element of node.importClause.namedBindings.elements) {
+          const imported = element.propertyName?.text ?? element.name.text;
+          if (imported === "env") {
+            publicEnvObjects.add(element.name.text);
+          }
+        }
 
         const hasSensitiveImport = node.importClause.namedBindings.elements.some((element) => {
           const imported = element.propertyName?.text ?? element.name.text;
-          return sensitiveVarPattern.test(imported);
+          return isSensitiveEnvName(imported);
         });
         if (!hasSensitiveImport) return;
 
         pushScriptDiagnostic(diagnostics, ctx, noPublicEnvSecrets, block, node.getStart(block.sourceFile));
+      });
+
+      if (publicEnvObjects.size === 0) continue;
+
+      walkSourceFile(block.sourceFile, (node) => {
+        if (!ts.isPropertyAccessExpression(node)) return;
+        if (!ts.isIdentifier(node.expression)) return;
+        if (!publicEnvObjects.has(node.expression.text)) return;
+        if (!isSensitiveEnvName(node.name.text)) return;
+
+        pushScriptDiagnostic(diagnostics, ctx, noPublicEnvSecrets, block, node.name.getStart(block.sourceFile));
+      });
+
+      walkSourceFile(block.sourceFile, (node) => {
+        if (!ts.isElementAccessExpression(node)) return;
+        if (!ts.isIdentifier(node.expression)) return;
+        if (!publicEnvObjects.has(node.expression.text)) return;
+        if (!ts.isStringLiteralLike(node.argumentExpression)) return;
+        if (!isSensitiveEnvName(node.argumentExpression.text)) return;
+
+        pushScriptDiagnostic(diagnostics, ctx, noPublicEnvSecrets, block, node.argumentExpression.getStart(block.sourceFile));
       });
     }
 
@@ -402,27 +460,45 @@ const noServerSecretLeak: Rule = {
   cost: "medium",
   check: (ctx) => {
     if (ctx.projectInfo.framework !== "sveltekit") return [];
-    if (!/\.(server|hooks)\.(ts|js)$/.test(ctx.filePath) && !/\+page\.server\.(ts|js)$/.test(ctx.filePath)) return [];
+    if (!/\.(server|hooks)\.(ts|js)$/.test(ctx.filePath) && !/\+(page\.server|server)\.(ts|js)$/.test(ctx.filePath)) return [];
 
     const privateEnvNames = new Set<string>();
-    for (const line of ctx.lines) {
-      const match = line.match(/import\s+\{([^}]+)\}\s+from\s+['"]\$env\/(?:static|dynamic)\/private['"]/);
-      if (!match) continue;
-      for (const entry of match[1].split(",")) {
-        const normalized = entry.trim().split(/\s+as\s+/i).pop();
-        if (normalized) privateEnvNames.add(normalized.trim());
-      }
+    const privateEnvObjects = new Set<string>();
+    for (const block of ctx.scriptBlocks) {
+      walkSourceFile(block.sourceFile, (node) => {
+        if (!ts.isImportDeclaration(node)) return;
+        if (!ts.isStringLiteral(node.moduleSpecifier)) return;
+        if (!/^\$env\/(?:static|dynamic)\/private$/.test(node.moduleSpecifier.text)) return;
+        if (!node.importClause?.namedBindings) return;
+
+        if (ts.isNamespaceImport(node.importClause.namedBindings)) {
+          privateEnvObjects.add(node.importClause.namedBindings.name.text);
+          return;
+        }
+
+        if (!ts.isNamedImports(node.importClause.namedBindings)) return;
+        for (const element of node.importClause.namedBindings.elements) {
+          const imported = element.propertyName?.text ?? element.name.text;
+          if (imported === "env") {
+            privateEnvObjects.add(element.name.text);
+            continue;
+          }
+          privateEnvNames.add(element.name.text);
+        }
+      });
     }
 
-    if (privateEnvNames.size === 0) return [];
+    if (privateEnvNames.size === 0 && privateEnvObjects.size === 0) return [];
 
     const diagnostics: Diagnostic[] = [];
     for (let i = 0; i < ctx.lines.length; i++) {
       const line = ctx.lines[i];
       if (!/\b(return|json)\b/.test(line)) continue;
 
+      const nearby = ctx.lines.slice(i, Math.min(ctx.lines.length, i + 8)).join("\n");
+
       for (const envName of privateEnvNames) {
-        if (!new RegExp(`\\b${envName}\\b`).test(line)) continue;
+        if (!new RegExp(`\\b${escapeRegexLiteral(envName)}\\b`).test(nearby)) continue;
         diagnostics.push({
           filePath: ctx.filePath,
           rule: noServerSecretLeak.name,
@@ -430,7 +506,21 @@ const noServerSecretLeak: Rule = {
           message: noServerSecretLeak.message,
           help: noServerSecretLeak.help,
           line: i + 1,
-          column: Math.max(1, line.indexOf(envName) + 1),
+          column: Math.max(1, line.search(/\b(return|json)\b/) + 1),
+          category: noServerSecretLeak.category,
+        });
+      }
+
+      for (const envObject of privateEnvObjects) {
+        if (!hasSensitiveEnvObjectAccess(nearby, envObject)) continue;
+        diagnostics.push({
+          filePath: ctx.filePath,
+          rule: noServerSecretLeak.name,
+          severity: noServerSecretLeak.severity,
+          message: noServerSecretLeak.message,
+          help: noServerSecretLeak.help,
+          line: i + 1,
+          column: Math.max(1, line.search(/\b(return|json)\b/) + 1),
           category: noServerSecretLeak.category,
         });
       }

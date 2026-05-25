@@ -28,6 +28,7 @@ export const MILLISECONDS_PER_SECOND = 1000;
 export const CACHE_DIR = ".svelte-doctor";
 export const CACHE_FILE = "cache.json";
 export const BASELINE_FILE = "baseline.json";
+export const HISTORY_FILE = "history.json";
 export const SCAN_CACHE_VERSION = 2;
 export const BASELINE_VERSION = 1;
 export const DEFAULT_FIX_MAX_FILES = 50;

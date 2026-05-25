@@ -7,7 +7,10 @@ const isNodeError = (err: unknown): err is NodeJS.ErrnoException =>
 // throws a clear error instead of letting random ENOENT crash the scan
 export const validateDirectory = (dir: string): void => {
   try {
-    const stat = fs.statSync(dir);
+    const stat = fs.lstatSync(dir);
+    if (stat.isSymbolicLink()) {
+      throw new Error(`Refusing to scan symlinked directory: "${dir}"`);
+    }
     if (!stat.isDirectory()) {
       throw new Error(`"${dir}" is not a directory`);
     }

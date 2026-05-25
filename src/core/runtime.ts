@@ -15,6 +15,8 @@ const readPackageJson = (directory: string): PackageJson | null => {
   const packagePath = path.join(directory, "package.json");
 
   try {
+    const stat = fs.lstatSync(packagePath);
+    if (stat.isSymbolicLink() || !stat.isFile()) return null;
     return JSON.parse(fs.readFileSync(packagePath, "utf-8")) as PackageJson;
   } catch {
     return null;

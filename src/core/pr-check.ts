@@ -3,6 +3,7 @@ import os from "node:os";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { scan } from "./scanner.js";
+import { verifyGitCommitRef } from "./git.js";
 import { logger, highlighter } from "../output/logger.js";
 import type { Diagnostic, FailOn } from "../types.js";
 
@@ -66,14 +67,25 @@ const buildMarkdown = (baseRef: string, headRef: string, baseScore: number, head
   return lines.join("\n");
 };
 
+const validatePullRequestNumber = (pr: string | undefined): string | null => {
+  if (!pr) return null;
+  const trimmed = pr.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    throw new Error("Pull request identifier must be a numeric PR number.");
+  }
+  return trimmed;
+};
+
 const postGithubComment = (directory: string, pr: string | undefined, body: string): void => {
-  if (!pr) return;
-  execFileSync("gh", ["pr", "comment", pr, "--body", body], { cwd: directory, stdio: "inherit" });
+  const safePr = validatePullRequestNumber(pr);
+  if (!safePr) return;
+  execFileSync("gh", ["pr", "comment", safePr, "--body", body], { cwd: directory, stdio: "inherit" });
 };
 
 const postGithubReview = (directory: string, pr: string | undefined, body: string): void => {
-  if (!pr) return;
-  execFileSync("gh", ["pr", "review", pr, "--comment", "--body", body], { cwd: directory, stdio: "inherit" });
+  const safePr = validatePullRequestNumber(pr);
+  if (!safePr) return;
+  execFileSync("gh", ["pr", "review", safePr, "--comment", "--body", body], { cwd: directory, stdio: "inherit" });
 };
 
 const setGithubStatus = (directory: string, headSha: string, state: "success" | "failure", description: string): void => {
@@ -107,10 +119,10 @@ const scanRef = async (directory: string, ref: string, relativeFiles: string[]) 
 
 export const runPrCheck = async (directory: string, options: PrCheckOptions): Promise<void> => {
   const resolvedDir = path.resolve(directory);
-  const baseRef = options.base ?? "main";
-  const headRef = options.head ?? "HEAD";
+  const baseRef = verifyGitCommitRef(resolvedDir, options.base ?? "main");
+  const headRef = verifyGitCommitRef(resolvedDir, options.head ?? "HEAD");
   const changedFiles = listChangedFiles(resolvedDir, baseRef, headRef);
-  const headSha = git(resolvedDir, ["rev-parse", headRef]);
+  const headSha = git(resolvedDir, ["rev-parse", `${headRef}^{commit}`]);
   const baseResult = await scanRef(resolvedDir, baseRef, changedFiles);
   const headResult = await scanRef(resolvedDir, headRef, changedFiles);
   const diff = diffDiagnostics(baseResult.diagnostics, headResult.diagnostics);

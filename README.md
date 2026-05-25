@@ -70,6 +70,9 @@ Run a single command to scan your entire codebase and receive a **0–100 health
 - **Ref Comparison** via `compare` for diagnosing regressions between commits, branches, and tags
 - **Project Metrics** via `stats` for rule frequency, category breakdown, and top affected files
 - **Config Inspection** via `config` and `validate` for viewing and validating the active configuration
+- **Environment Diagnosis** via `doctor` to check Node.js, Svelte, config, and project setup health
+- **Generated File Cleanup** via `reset` to safely clear cache, baseline, and history
+- **Single-Command Scan + Fix** via `check --fix` for one-step diagnostic and deterministic auto-fix
 - **Zero Configuration** works out of the box
 
 ---
@@ -239,11 +242,40 @@ svelte-doctor config --json
 svelte-doctor validate
 svelte-doctor validate --json
 
+# Check your development environment
+svelte-doctor doctor
+
+# Clean generated files
+svelte-doctor reset
+svelte-doctor reset --cache
+
+# Scan and apply deterministic fixes in one step
+svelte-doctor check --fix
+svelte-doctor check --fix --dry-run
+svelte-doctor check --fix --fix-ai
 ```
 
 ---
 
 ## Commands
+
+### `svelte-doctor doctor [directory] [options]`
+
+Check your development environment for common issues — inspired by `flutter doctor`. Diagnoses Node.js version, Svelte dependency presence, `svelte.config.js` configuration, `tsconfig.json` validity, `node_modules` installation state, `svelte-doctor.config.json` schema validation, `.gitignore` completeness, build artifact freshness, and scan cache status.
+
+Each check returns one of four statuses: **pass**, **warning**, **fail**, or **na** (not applicable). The command exits with code 1 if any check fails, making it suitable for CI onboarding gates.
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output machine-readable JSON |
+
+Examples:
+
+```bash
+svelte-doctor doctor
+svelte-doctor doctor packages/app
+svelte-doctor doctor --json
+```
 
 ### `svelte-doctor init [directory] [options]`
 
@@ -307,6 +339,13 @@ Scan your project for issues and output a health score. The scanner analyzes sou
 | `--since <ref>` | Scan files changed since a git ref |
 | `--all-workspaces` | Scan all package.json workspaces |
 | `--workspace <name>` | Scan one workspace by name or relative path |
+| `--fix` | Apply deterministic auto-fixes after scan |
+| `--fix-ai` | Also run AI agent fix after deterministic fixes |
+| `--dry-run` | With `--fix`: preview fixes without writing files |
+| `--rules <csv>` | With `--fix`: limit deterministic fixes to comma-separated rules |
+| `--errors-only` | With `--fix`: fix only error-severity diagnostics |
+| `--verify-level <level>` | With `--fix-ai`: verification depth — `diagnostics`, `typecheck`, `tests`, or `full` |
+| `--max-files <count>` | With `--fix-ai`: max diagnostics in AI agent batch (default: 50) |
 
 `--copy` is designed for cases where you want to paste diagnostics into a different AI agent instead of using `svelte-doctor fix`. The default mode tries the system clipboard first, then falls back to stdout if no clipboard integration is available. If you need deterministic output for scripts, use `--copy-output file`.
 
@@ -325,6 +364,12 @@ svelte-doctor check --html --html-file .svelte-doctor/report.html
 svelte-doctor check --junit --junit-file .svelte-doctor/junit.xml
 svelte-doctor check --markdown --markdown-file .svelte-doctor/report.md
 svelte-doctor check --all-workspaces --html --junit --markdown
+
+# Scan and apply fixes in one step
+svelte-doctor check --fix
+svelte-doctor check --fix --dry-run
+svelte-doctor check --fix --errors-only
+svelte-doctor check --fix --fix-ai --verify-level tests
 ```
 
 ### `svelte-doctor baseline [directory]`
@@ -639,6 +684,31 @@ Examples:
 svelte-doctor validate
 svelte-doctor validate --json
 svelte-doctor validate packages/app
+```
+
+### `svelte-doctor reset [directory] [options]`
+
+Clean generated files (cache, baseline, score history) inside `.svelte-doctor/`. Useful when cache gets corrupted, baseline becomes stale, or you want to start fresh without manually deleting files.
+
+By default (no flags), all generated files are removed and the `.svelte-doctor/` directory is cleaned up if empty afterwards.
+
+| Option | Description |
+|--------|-------------|
+| `--all` | Clean everything in `.svelte-doctor/` (default if no flag) |
+| `--cache` | Clean only scan cache |
+| `--baseline` | Clean only baseline |
+| `--history` | Clean only score history |
+| `--dry-run` | Show what would be deleted without deleting |
+| `--json` | Output machine-readable JSON |
+
+Examples:
+
+```bash
+svelte-doctor reset
+svelte-doctor reset --dry-run
+svelte-doctor reset --cache
+svelte-doctor reset --baseline --history
+svelte-doctor reset --all --json
 ```
 
 ---

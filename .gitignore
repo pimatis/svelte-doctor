@@ -34,7 +34,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .DS_Store
 
 # svelte-doctor score history
-.svelte-doctor
+.svelte-doctor/*
 
 # internal docs — not shipped
 GUIDE.md

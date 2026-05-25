@@ -20,6 +20,12 @@ export const validateGitRef = (value: string): string => {
   if (ref.length === 0) {
     throw new Error("Git ref cannot be empty.");
   }
+  if (ref.startsWith("-")) {
+    throw new Error("Git ref cannot start with a dash.");
+  }
+  if (ref.includes("..") || ref.includes("@{") || ref.endsWith(".") || ref.endsWith(".lock")) {
+    throw new Error("Git ref contains an unsafe sequence.");
+  }
   return ref;
 };
 
@@ -40,6 +46,16 @@ const runGit = (directory: string, args: string[]): string => {
 
 const ensureGitRepository = (directory: string): void => {
   runGit(directory, ["rev-parse", "--show-toplevel"]);
+};
+
+export const verifyGitCommitRef = (directory: string, value: string): string => {
+  const ref = validateGitRef(value);
+  try {
+    runGit(directory, ["rev-parse", "--verify", `${ref}^{commit}`]);
+  } catch {
+    throw new Error(`Git ref "${ref}" is invalid or not a commit.`);
+  }
+  return ref;
 };
 
 const readGitFileList = (directory: string, args: string[]): string[] =>
@@ -63,13 +79,7 @@ export const getSelectedGitFiles = (
     relativeFiles = readGitFileList(directory, ["diff", "--cached", "--name-only", "--diff-filter=ACMR"]);
   } else {
     if (options.since) {
-      const safeRef = validateGitRef(options.since);
-
-      try {
-        runGit(directory, ["rev-parse", "--verify", safeRef]);
-      } catch {
-        throw new Error(`Git ref "${safeRef}" is invalid or not found.`);
-      }
+      const safeRef = verifyGitCommitRef(directory, options.since);
 
       relativeFiles = readGitFileList(directory, ["diff", "--name-only", "--diff-filter=ACMR", `${safeRef}...HEAD`]);
     }

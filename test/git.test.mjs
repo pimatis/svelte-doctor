@@ -27,6 +27,9 @@ test("validateGitRef rejects empty and multiline refs", () => {
   assert.throws(() => validateGitRef(""), /cannot be empty/);
   assert.throws(() => validateGitRef("feature\nmain"), /cannot contain newlines/);
   assert.throws(() => validateGitRef("feature\rmain"), /cannot contain newlines/);
+  assert.throws(() => validateGitRef("--help"), /cannot start with a dash/);
+  assert.throws(() => validateGitRef("main..feature"), /unsafe sequence/);
+  assert.throws(() => validateGitRef("main@{1}"), /unsafe sequence/);
 });
 
 test("getSelectedGitFiles supports since, changed, and staged selections", () => {
@@ -57,7 +60,7 @@ test("getSelectedGitFiles rejects invalid refs before diffing", () => {
 
   assert.throws(
     () => getSelectedGitFiles(project, { since: "missing-ref" }),
-    /invalid or not found/,
+    /invalid or not a commit/,
   );
 });
 

@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import { scan } from "./scanner.js";
-import { validateGitRef } from "./git.js";
+import { verifyGitCommitRef } from "./git.js";
 import { validateDirectory } from "../fs/validate.js";
 import type { Diagnostic, ScanResult } from "../types.js";
 
@@ -47,7 +47,7 @@ const diagnosticKey = (d: Diagnostic): string =>
   `${d.rule}::${d.filePath}::${d.line}::${d.column}`;
 
 const scanRef = async (directory: string, ref: string): Promise<CompareRefResult> => {
-  const safeRef = validateGitRef(ref);
+  const safeRef = verifyGitCommitRef(directory, ref);
 
   const worktreePath = createWorktree(directory, safeRef);
   try {

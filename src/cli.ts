@@ -21,6 +21,8 @@ import { quickCommand } from "./commands/quick.js";
 import { statsCommand } from "./commands/stats.js";
 import { auditCommand } from "./commands/audit.js";
 import { compareCommand } from "./commands/compare.js";
+import { doctorCommand } from "./commands/doctor.js";
+import { resetCommand } from "./commands/reset.js";
 
 const program = new Command()
   .name("svelte-doctor")
@@ -47,7 +49,9 @@ program
   .addCommand(quickCommand)
   .addCommand(statsCommand)
   .addCommand(auditCommand)
-  .addCommand(compareCommand);
+  .addCommand(compareCommand)
+  .addCommand(doctorCommand)
+  .addCommand(resetCommand);
 
 const main = async () => {
   const args = process.argv.slice(2);
