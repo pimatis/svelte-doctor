@@ -1,6 +1,6 @@
 {
   "name": "svelte-doctor",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "Diagnose and fix performance, correctness, and architecture issues in your Svelte codebase",
   "keywords": [
     "svelte",
