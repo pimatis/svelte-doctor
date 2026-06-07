@@ -59,7 +59,7 @@ Run a single command to scan your entire codebase and receive a **0–100 health
 - **SARIF + GitHub Annotations** for code scanning and CI integration
 - **PR Check Workflow** for branch diff analysis and GitHub PR summary comments
 - **Diff-Aware and Workspace-Aware Scans** for staged files, changed files, and monorepos
-- **Safe-by-default AI Fix** flow with secure temp prompts, opt-in unsafe execution, and post-fix verification
+- **Safe-by-default AI Fix** flow with secure temp prompts, opt-in unsafe execution, post-fix verification, and support for Cursor, Amp, Claude Code, Codex, Copilot CLI, OpenCode, Pi, Gemini CLI, Qwen Code, Aider, and Goose
 - **AI-Friendly Copy Export** via `check --copy` with clipboard-first fallback behavior
 - **Svelte 4→5 Auto-Migration** with deterministic codemods
 - **Migration Progress Tracking** via `migrate-status` with migrated/pending/skipped counts, category breakdown, and ETA
@@ -193,6 +193,9 @@ svelte-doctor apply --write
 
 # Auto-fix issues with an AI agent
 svelte-doctor fix
+
+# Force Copilot CLI (runs: copilot -p "<prompt>")
+svelte-doctor fix --agent copilot
 
 # Generate a secure prompt without spawning an agent
 svelte-doctor fix --dry-run-prompt
@@ -454,9 +457,9 @@ svelte-doctor apply --write --rules no-transition-all,no-full-lodash
 
 ### `svelte-doctor fix [directory] [options]`
 
-Detects installed AI coding agents (**Cursor**, **Amp**, **Claude Code**, **Codex**, **OpenCode**, **Pi**, **Gemini CLI**, **Qwen Code**, **Aider**, **Goose**) and uses the best available one to fix reported issues automatically. The flow is **safe by default**: privileged agent flags are disabled unless you explicitly pass `--unsafe-agent-exec`. Diagnostics are redacted before prompt generation, prompts are written into a secure temp directory when needed, and post-fix verification can be escalated from diagnostics-only to full typecheck/test/build smoke.
+Detects installed AI coding agents (**Cursor**, **Amp**, **Claude Code**, **Codex**, **Copilot CLI**, **OpenCode**, **Pi**, **Gemini CLI**, **Qwen Code**, **Aider**, **Goose**) and uses the best available one to fix reported issues automatically. The flow is **safe by default**: privileged agent flags are disabled unless you explicitly pass `--unsafe-agent-exec`. Diagnostics are redacted before prompt generation, prompts are written into a secure temp directory when needed, and post-fix verification can be escalated from diagnostics-only to full typecheck/test/build smoke.
 
-Supported agent ids for `--agent` are `cursor`, `amp`, `claude`, `codex`, `opencode`, `pi`, `gemini`, `qwen`, `aider`, and `goose`. Install and authenticate at least one of them first, then run `svelte-doctor fix`. The command uses each agent's documented non-interactive mode where available: Amp execute mode, Claude print mode, Codex exec mode, OpenCode run mode, Pi print mode, Gemini headless mode, Qwen headless mode, Aider message mode, and Goose run mode.
+Supported agent ids for `--agent` are `cursor`, `amp`, `claude`, `codex`, `copilot`, `opencode`, `pi`, `gemini`, `qwen`, `aider`, and `goose`. Install and authenticate at least one of them first, then run `svelte-doctor fix`. The command uses each agent's documented non-interactive mode where available: Amp execute mode, Claude print mode, Codex exec mode, Copilot prompt mode, OpenCode run mode, Pi print mode, Gemini headless mode, Qwen headless mode, Aider message mode, and Goose run mode.
 
 ```bash
 # Use the best installed agent
@@ -466,6 +469,7 @@ svelte-doctor fix
 svelte-doctor fix --agent amp
 svelte-doctor fix --agent claude
 svelte-doctor fix --agent codex
+svelte-doctor fix --agent copilot
 svelte-doctor fix --agent opencode
 svelte-doctor fix --agent pi
 svelte-doctor fix --agent gemini
@@ -479,7 +483,7 @@ svelte-doctor fix --dry-run-prompt
 
 | Option | Description |
 |--------|-------------|
-| `--agent <name>` | Force a specific agent (cursor, amp, claude, codex, opencode, pi, gemini, qwen, aider, goose) |
+| `--agent <name>` | Force a specific agent (cursor, amp, claude, codex, copilot, opencode, pi, gemini, qwen, aider, goose) |
 | `--errors-only` | Fix only errors first (reduces cascade errors, run again for warnings) |
 | `--unsafe-agent-exec` | Opt in to agent-specific privileged execution flags |
 | `--dry-run-prompt` | Generate the secure prompt bundle without spawning an agent |
@@ -494,6 +498,7 @@ Supported agents under `src/agents`:
 | `amp` | `amp` | `-x` execute mode, unsafe opt-in via `--dangerously-allow-all` |
 | `claude` | `claude` | `-p --output-format stream-json --include-partial-messages` |
 | `codex` | `codex` | `exec -C <cwd>`, unsafe opt-in via bypass flag |
+| `copilot` | `copilot` | `-p` |
 | `opencode` | `opencode` | `run` |
 | `pi` | `pi` | `-p` |
 | `gemini` | `gemini` | `-p`, unsafe opt-in via `--yolo` |
