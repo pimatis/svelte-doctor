@@ -13,6 +13,7 @@ import { discoverProject } from "../project/discover.js";
 import { buildConfig } from "../project/configBuilder.js";
 import { getCiTemplate, type CiPlatform } from "../project/templates.js";
 import type { DeadCodeMode, FailOn, PackageJson, RuleCategory } from "../types.js";
+import { installHook } from "./install-hook.js";
 
 export interface InitOptions {
   ci?: CiPlatform;
@@ -72,16 +73,8 @@ const mergeScripts = (directory: string): boolean => {
 };
 
 const setupPreCommitHook = (directory: string): boolean => {
-  const gitDir = path.join(directory, ".git");
-  if (!fs.existsSync(gitDir)) return false;
-
-  const hooksDir = path.join(gitDir, "hooks");
-  const hookPath = path.join(hooksDir, "pre-commit");
-  fs.mkdirSync(hooksDir, { recursive: true });
-  if (fs.existsSync(hookPath)) return false;
-
-  writeTextAtomic(directory, hookPath, "#!/bin/sh\nbunx svelte-doctor check --changed --fail-on error\n", 0o755);
-  return true;
+  const [status] = installHook(directory, { hookTypes: ["pre-commit"], mode: "changed", failOn: "error", minScore: 0 });
+  return status?.action === "installed" || status?.action === "updated";
 };
 
 export const runInit = async (directory: string, options: InitOptions): Promise<void> => {
