@@ -25,6 +25,13 @@ const CATEGORY_PATTERNS = [
   { key: "export-let", label: "export let props", pattern: /^\s*export\s+let\s+\w+/m },
   { key: "slots", label: "slots", pattern: /<\/?slot(?:\s|>|\/)/ },
   { key: "event-directives", label: "event directives", pattern: /\son:[a-zA-Z]+/ },
+  { key: "event-dispatcher", label: "event dispatcher", pattern: /\bcreateEventDispatcher\b/ },
+  { key: "lifecycle", label: "legacy lifecycle", pattern: /\b(?:onMount|onDestroy|beforeUpdate|afterUpdate)\b/ },
+  { key: "let-directives", label: "let directives", pattern: /\slet:[a-zA-Z]+/ },
+  { key: "stores", label: "store usage", pattern: /from\s+["']svelte\/store["']/ },
+  { key: "class-directives", label: "class directives", pattern: /\sclass:[a-zA-Z]+/ },
+  { key: "module-exports", label: "module exports", pattern: /^\s*export\s+const\s+/m },
+  { key: "svelte-options", label: "svelte options", pattern: /<svelte:options\b/ },
 ];
 
 export const getMigrationStatus = (directory: string): MigrationStatusResult => {

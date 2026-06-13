@@ -1,505 +1,78 @@
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
+import readline from "node:readline/promises";
+import { stdin as input, stdout as output } from "node:process";
+import pc from "picocolors";
 import { SVELTE_FILE_PATTERN, VERSION } from "../constants.js";
+import { runCodemod, type CodemodStageName } from "../codemod/index.js";
+import { detectComplexity } from "../codemod/detectors/detect-complexity.js";
 import { collectFiles } from "../fs/walker.js";
 import { validateDirectory } from "../fs/validate.js";
 import { toPosix } from "../fs/normalize.js";
 import { writeFileAtomicSafe } from "../fs/safe-write.js";
 import { logger, highlighter, sanitize, stripAnsi } from "../output/logger.js";
 import { spinner } from "../output/spinner.js";
-import pc from "picocolors";
+import { createUnifiedDiff } from "../codemod/reporters/diff.js";
+import { buildPlanReport, type MigrationPlanReport } from "../codemod/reporters/report.js";
 
-interface MigrateOptions {
+export interface MigrateOptions {
   dryRun: boolean;
   backup: boolean;
+  diff?: boolean;
+  interactive?: boolean;
+  plan?: boolean;
+  rollback?: boolean;
+  json?: boolean;
+  stage?: CodemodStageName;
+  commitStages?: boolean;
 }
 
-interface MigrateFileResult {
+export interface MigrateFileResult {
   filePath: string;
   relativePath: string;
   changes: string[];
   modified: boolean;
+  warnings: string[];
+  diff?: string;
 }
 
-interface MigrateResult {
+export interface MigrateResult {
   filesScanned: number;
   filesModified: number;
   totalChanges: number;
   fileResults: MigrateFileResult[];
   backupsCreated: number;
+  plan?: MigrationPlanReport;
+  rolledBackFiles?: number;
 }
 
-const transformOnDirectives = (line: string): { line: string; changed: boolean } => {
-  const onDirectivePattern = /\son:(\w+)(\|[a-zA-Z|]+)?=/g;
-  let changed = false;
-
-  const result = line.replace(onDirectivePattern, (_match, eventName, modifiers) => {
-    changed = true;
-    if (modifiers) {
-      return ` on${eventName}= /* TODO: modifiers ${modifiers} removed — handle manually */`;
-    }
-    return ` on${eventName}=`;
-  });
-
-  return { line: result, changed };
-};
-
-const transformOnDirectivesShorthand = (line: string): { line: string; changed: boolean } => {
-  // on:click without = (shorthand forwarding)
-  const shorthandPattern = /\son:(\w+)(\|[a-zA-Z|]+)?(?=[>\s/])/g;
-  let changed = false;
-
-  const result = line.replace(shorthandPattern, (_match, eventName, modifiers) => {
-    changed = true;
-    if (modifiers) {
-      return ` on${eventName} /* TODO: modifiers ${modifiers} removed — handle manually */`;
-    }
-    return ` on${eventName}`;
-  });
-
-  return { line: result, changed };
-};
-
-const transformSlots = (line: string): { line: string; changed: boolean } => {
-  let changed = false;
-  let result = line;
-
-  // <slot name="x" /> self-closing named slot
-  const namedSlotSelfClose = /<slot\s+name="(\w+)"\s*\/>/g;
-  result = result.replace(namedSlotSelfClose, (_match, name) => {
-    changed = true;
-    return `{@render ${name}?.()}`;
-  });
-
-  // <slot name="x"></slot> named slot open+close on same line
-  const namedSlotOpenClose = /<slot\s+name="(\w+)"\s*>\s*<\/slot>/g;
-  result = result.replace(namedSlotOpenClose, (_match, name) => {
-    changed = true;
-    return `{@render ${name}?.()}`;
-  });
-
-  // <slot name="x"> named slot open tag only (closing tag on a later line)
-  const namedSlotOpen = /<slot\s+name="(\w+)"\s*>/g;
-  result = result.replace(namedSlotOpen, (_match, name) => {
-    changed = true;
-    return `{@render ${name}?.()}`;
-  });
-
-  // remove </slot> only when a named open tag was replaced on this same line
-  // (the namedSlotOpen pass above converts the open tag but leaves the close)
-  if (changed) {
-    result = result.replace(/<\/slot>/g, "");
-  }
-
-  // <slot /> default self-closing
-  result = result.replace(/<slot\s*\/>/g, () => {
-    changed = true;
-    return "{@render children?.()}";
-  });
-
-  // <slot></slot> default open+close on the same line
-  result = result.replace(/<slot\s*>\s*<\/slot>/g, () => {
-    changed = true;
-    return "{@render children?.()}";
-  });
-
-  // <slot> default open tag only — closing </slot> may be on a later line
-  // only run this pass when no named slot was matched above to avoid double replacement
-  if (!changed) {
-    result = result.replace(/<slot\s*>/g, () => {
-      changed = true;
-      return "{@render children?.()}";
-    });
-
-    // remove inline </slot> that follows the opening tag on the same line
-    if (changed) {
-      result = result.replace(/<\/slot>/g, "");
-    }
-  }
-
-  // standalone </slot> closing tag with no matching open on this line
-  // happens when <slot> and </slot> are on separate lines; strip the close
-  if (!changed && /<\/slot>/.test(result)) {
-    result = result.replace(/<\/slot>/g, "");
-    changed = true;
-  }
-
-  return { line: result, changed };
-};
-
-// builds a boolean map of which line indices are inside a <script> block
-// O(n) single pass instead of O(n²) from calling the old per-line helper
-const buildScriptLineMap = (lines: string[]): boolean[] => {
-  const map: boolean[] = new Array(lines.length).fill(false);
-  let insideScript = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i].trim();
-    if (/^<script[\s>]/.test(trimmed)) {
-      insideScript = true;
-      continue;
-    }
-    if (trimmed === "</script>") {
-      insideScript = false;
-      continue;
-    }
-    map[i] = insideScript;
-  }
-
-  return map;
-};
-
-const collectExportLetProps = (lines: string[]): { props: { name: string; defaultValue: string | null; lineIndex: number }[] } => {
-  const props: { name: string; defaultValue: string | null; lineIndex: number }[] = [];
-  const exportLetPattern = /^\s*export\s+let\s+(\w+)\s*(?::\s*[^=;]+)?\s*(?:=\s*(.+?))?\s*;?\s*$/;
-  const scriptLineMap = buildScriptLineMap(lines);
-
-  for (let i = 0; i < lines.length; i++) {
-    if (!scriptLineMap[i]) continue;
-
-    const match = exportLetPattern.exec(lines[i]);
-    if (!match) continue;
-
-    props.push({
-      name: match[1],
-      defaultValue: match[2]?.trim() ?? null,
-      lineIndex: i,
-    });
-  }
-
-  return { props };
-};
-
-const buildPropsDestructure = (props: { name: string; defaultValue: string | null }[]): string => {
-  const parts = props.map((p) => {
-    if (p.defaultValue) return `${p.name} = ${p.defaultValue}`;
-    return p.name;
-  });
-
-  return `  let { ${parts.join(", ")} } = $props();`;
-};
-
-const transformExportLetProps = (lines: string[]): { lines: string[]; changed: boolean } => {
-  const { props } = collectExportLetProps(lines);
-  if (props.length === 0) return { lines, changed: false };
-
-  const result = [...lines];
-  const propsLine = buildPropsDestructure(props);
-
-  // replace first export let with $props destructure
-  result[props[0].lineIndex] = propsLine;
-
-  // remove remaining export let lines (reverse to preserve indices)
-  for (let i = props.length - 1; i > 0; i--) {
-    result.splice(props[i].lineIndex, 1);
-  }
-
-  return { lines: result, changed: true };
-};
-
-const isReactiveExpression = (statement: string): boolean => {
-  const trimmed = statement.trim();
-
-  // await expressions are side effects, not pure derivations
-  if (/\bawait\b/.test(trimmed)) return false;
-
-  // assignment with computation on the right side
-  if (/^\w+\s*=\s*.+/.test(trimmed)) return true;
-
-  return false;
-};
-
-const isSideEffect = (statement: string): boolean => {
-  const trimmed = statement.trim();
-
-  // function calls: console.log(...), fetch(...), etc.
-  if (/^\w+[\w.]*\s*\(/.test(trimmed)) return true;
-  // if blocks
-  if (trimmed.startsWith("if ")) return true;
-  // await expressions anywhere in the statement
-  if (/\bawait\b/.test(trimmed)) return true;
-
-  return false;
-};
-
-const transformReactiveStatements = (lines: string[]): { lines: string[]; changed: boolean } => {
-  const result = [...lines];
-  let changed = false;
-  const reactivePattern = /^(\s*)\$:\s+(.+)$/;
-
-  // collect all prior variable declarations so we can detect existing bindings
-  // and avoid generating duplicate `const` declarations
-  const declaredVars = new Set<string>();
-  for (const line of result) {
-    const declMatch = /^\s*(?:let|const|var)\s+(\w+)/.exec(line);
-    if (declMatch) declaredVars.add(declMatch[1]);
-  }
-
-  // single-pass script block tracking — avoids O(n²) from calling isInsideScriptBlock per line
-  let insideScript = false;
-
-  for (let i = 0; i < result.length; i++) {
-    const trimmed = result[i].trim();
-    if (/^<script[\s>]/.test(trimmed)) { insideScript = true; continue; }
-    if (trimmed === "</script>") { insideScript = false; continue; }
-    if (!insideScript) continue;
-
-    const match = reactivePattern.exec(result[i]);
-    if (!match) continue;
-
-    const indent = match[1];
-    const statement = match[2];
-
-    // Multi-line block for $: { ... }.
-    if (statement.trim() === "{" || statement.trim().startsWith("{")) {
-      const blockEndIndex = findBlockEnd(result, i, statement);
-      if (blockEndIndex >= 0) {
-        result[i] = `${indent}$effect(() => ${statement}`;
-        // append ); to the closing brace line
-        if (blockEndIndex !== i) {
-          result[blockEndIndex] = result[blockEndIndex].replace(/\}\s*$/, "});");
-        }
-        if (blockEndIndex === i) {
-          result[i] = result[i].replace(/\}\s*$/, "});");
-        }
-        changed = true;
-        continue;
-      }
-    }
-
-    if (isReactiveExpression(statement) && !isSideEffect(statement)) {
-      // $: doubled = count * 2  →  const doubled = $derived(count * 2)
-      const assignMatch = /^(\w+)\s*=\s*(.+?);\s*$/.exec(statement);
-      if (assignMatch) {
-        const varName = assignMatch[1];
-        if (declaredVars.has(varName)) {
-          result[i] = `${indent}${varName} = $derived(${assignMatch[2]});`;
-        }
-        if (!declaredVars.has(varName)) {
-          result[i] = `${indent}const ${varName} = $derived(${assignMatch[2]});`;
-        }
-        changed = true;
-        continue;
-      }
-
-      // fallback for expressions without semicolon
-      const assignMatchNoSemi = /^(\w+)\s*=\s*(.+)$/.exec(statement);
-      if (assignMatchNoSemi) {
-        const varName = assignMatchNoSemi[1];
-        if (declaredVars.has(varName)) {
-          result[i] = `${indent}${varName} = $derived(${assignMatchNoSemi[2]});`;
-        }
-        if (!declaredVars.has(varName)) {
-          result[i] = `${indent}const ${varName} = $derived(${assignMatchNoSemi[2]});`;
-        }
-        changed = true;
-        continue;
-      }
-    }
-
-    if (isSideEffect(statement)) {
-      const hasSemicolon = statement.endsWith(";");
-      const cleanStatement = hasSemicolon ? statement : `${statement};`;
-      result[i] = `${indent}$effect(() => { ${cleanStatement} });`;
-      changed = true;
-      continue;
-    }
-
-    // fallback: wrap in $effect
-    result[i] = `${indent}$effect(() => { ${statement} });`;
-    changed = true;
-  }
-
-  return { lines: result, changed };
-};
-
-const findBlockEnd = (lines: string[], startIndex: number, firstLine: string): number => {
-  let depth = 0;
-
-  for (const ch of firstLine) {
-    if (ch === "{") depth++;
-    if (ch === "}") depth--;
-  }
-
-  if (depth === 0) return startIndex;
-
-  for (let i = startIndex + 1; i < lines.length; i++) {
-    for (const ch of lines[i]) {
-      if (ch === "{") depth++;
-      if (ch === "}") depth--;
-    }
-    if (depth === 0) return i;
-  }
-
-  return -1;
-};
-
-const transformEventDispatcher = (lines: string[]): { lines: string[]; changed: boolean } => {
-  const result = [...lines];
-  let changed = false;
-
-  for (let i = 0; i < result.length; i++) {
-    // remove createEventDispatcher import
-    if (/import\s+\{[^}]*createEventDispatcher[^}]*\}\s+from\s+['"]svelte['"]/.test(result[i])) {
-      // if createEventDispatcher is the only import
-      if (/import\s+\{\s*createEventDispatcher\s*\}\s+from\s+['"]svelte['"]/.test(result[i])) {
-        result[i] = `// TODO: createEventDispatcher removed. Use callback props via $props().`;
-        changed = true;
-        continue;
-      }
-
-      // remove just createEventDispatcher from multi-import
-      result[i] = result[i].replace(/,?\s*createEventDispatcher\s*,?/, (match) => {
-        if (match.startsWith(",")) return "";
-        if (match.endsWith(",")) return "";
-        return "";
-      });
-      changed = true;
-    }
-
-    // remove const dispatch = createEventDispatcher()
-    if (/^\s*const\s+\w+\s*=\s*createEventDispatcher\s*\(\s*\)/.test(result[i])) {
-      result[i] = `  // TODO: replace dispatch() calls with callback props from $props()`;
-      changed = true;
-    }
-  }
-
-  return { lines: result, changed };
-};
-
-const transformLifecycleImports = (lines: string[]): { lines: string[]; changed: boolean } => {
-  const result = [...lines];
-  let changed = false;
-  const lifecycleFns = ["onMount", "onDestroy", "beforeUpdate", "afterUpdate"];
-
-  for (let i = 0; i < result.length; i++) {
-    const importMatch = /import\s+\{([^}]+)\}\s+from\s+['"]svelte['"]/.exec(result[i]);
-    if (!importMatch) continue;
-
-    const imports = importMatch[1].split(",").map((s) => s.trim());
-    const lifecycleImports = imports.filter((imp) => lifecycleFns.some((fn) => imp === fn || imp.startsWith(`${fn} as`)));
-    const otherImports = imports.filter((imp) => !lifecycleFns.some((fn) => imp === fn || imp.startsWith(`${fn} as`)));
-
-    if (lifecycleImports.length === 0) continue;
-
-    changed = true;
-
-    if (otherImports.length === 0) {
-      result[i] = `// TODO: ${lifecycleImports.join(", ")} removed. Use $effect() instead.`;
-      continue;
-    }
-
-    result[i] = `import { ${otherImports.join(", ")} } from 'svelte';`;
-    result.splice(i + 1, 0, `  // TODO: ${lifecycleImports.join(", ")} removed. Use $effect() instead.`);
-  }
-
-  return { lines: result, changed };
-};
-
-const transformLetDirectives = (line: string): { line: string; changed: boolean } => {
-  // let:value={localVar} → remove the directive attribute in-place
-  // and append a TODO comment after the closing > of the element
-  const letDirectivePattern = /\slet:(\w+)(?:=\{(\w+)\})?/g;
-  let changed = false;
-  const removedDirectives: string[] = [];
-
-  const result = line.replace(letDirectivePattern, (_match, name) => {
-    changed = true;
-    removedDirectives.push(name);
-    return "";
-  });
-
-  if (!changed) return { line, changed: false };
-
-  const comment = ` <!-- TODO: let:${removedDirectives.join(", let:")} removed — use snippet props with {@render} -->`;
-  const closingTagIndex = result.lastIndexOf(">");
-  if (closingTagIndex >= 0) {
-    return { line: result.slice(0, closingTagIndex + 1) + comment + result.slice(closingTagIndex + 1), changed: true };
-  }
-
-  return { line: result + comment, changed: true };
-};
-
-export const transformMigrateSource = (source: string): { content: string; changes: string[] } => {
-  const changes: string[] = [];
-  let lines = source.split("\n");
-
-  // export let → $props() (must run before reactive statements)
-  const propsResult = transformExportLetProps(lines);
-  if (propsResult.changed) {
-    lines = propsResult.lines;
-    changes.push("export-let → $props");
-  }
-
-  // $: → $derived / $effect
-  const reactiveResult = transformReactiveStatements(lines);
-  if (reactiveResult.changed) {
-    lines = reactiveResult.lines;
-    changes.push("$: → $derived/$effect");
-  }
-
-  // createEventDispatcher → callback props
-  const dispatcherResult = transformEventDispatcher(lines);
-  if (dispatcherResult.changed) {
-    lines = dispatcherResult.lines;
-    changes.push("createEventDispatcher → callback props");
-  }
-
-  // lifecycle imports → $effect
-  const lifecycleResult = transformLifecycleImports(lines);
-  if (lifecycleResult.changed) {
-    lines = lifecycleResult.lines;
-    changes.push("lifecycle → $effect");
-  }
-
-  // Line-by-line template transforms — only run outside <script> and <style> blocks
-  let hasOnDirectiveChange = false;
-  let hasSlotChange = false;
-  let hasLetDirectiveChange = false;
-
-  const scriptLineMap = buildScriptLineMap(lines);
-  let insideStyle = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i].trim();
-    if (/^<style[\s>]/.test(trimmed)) { insideStyle = true; continue; }
-    if (trimmed === "</style>") { insideStyle = false; continue; }
-
-    if (scriptLineMap[i] || insideStyle) continue;
-
-    // shorthand must run first: on:click (no =) must be matched before
-    // the value-assignment pass sees on:click= and transforms it, so the
-    // two patterns never overlap on the same token
-    const onShorthand = transformOnDirectivesShorthand(lines[i]);
-    if (onShorthand.changed) {
-      lines[i] = onShorthand.line;
-      hasOnDirectiveChange = true;
-    }
-
-    const onResult = transformOnDirectives(lines[i]);
-    if (onResult.changed) {
-      lines[i] = onResult.line;
-      hasOnDirectiveChange = true;
-    }
-
-    const slotResult = transformSlots(lines[i]);
-    if (slotResult.changed) {
-      lines[i] = slotResult.line;
-      hasSlotChange = true;
-    }
-
-    const letResult = transformLetDirectives(lines[i]);
-    if (letResult.changed) {
-      lines[i] = letResult.line;
-      hasLetDirectiveChange = true;
-    }
-  }
-
-  if (hasOnDirectiveChange) changes.push("on:event → onevent");
-  if (hasSlotChange) changes.push("slot → @render");
-  if (hasLetDirectiveChange) changes.push("let: → snippet");
-
-  return { content: lines.join("\n"), changes };
+const COMMIT_STAGES: Array<{ stage: CodemodStageName; message: string }> = [
+  { stage: "reactive-statement", message: "migrate: convert reactive statements to runes" },
+  { stage: "export-let", message: "migrate: convert props to $props()" },
+  { stage: "slot", message: "migrate: convert slots to render tags" },
+  { stage: "on-directive", message: "migrate: convert event directives" },
+  { stage: "lifecycle", message: "migrate: replace lifecycle imports" },
+];
+
+const VALID_STAGES = new Set<CodemodStageName>([
+  "reactive-statement",
+  "export-let",
+  "event-dispatcher",
+  "slot",
+  "on-directive",
+  "lifecycle",
+  "let-directive",
+  "store",
+  "class-directive",
+  "module-export",
+  "snippet",
+  "svelte-options",
+]);
+
+export const parseCodemodStage = (stage: string): CodemodStageName => {
+  if (VALID_STAGES.has(stage as CodemodStageName)) return stage as CodemodStageName;
+  throw new Error(`Unknown migration stage: ${stage}`);
 };
 
 const createBackup = (directory: string, filePath: string, source: string): boolean => {
@@ -516,21 +89,81 @@ const createBackup = (directory: string, filePath: string, source: string): bool
   }
 };
 
-const printMigrateSummary = (result: MigrateResult, options: MigrateOptions) => {
+const writeMigratedFile = (directory: string, filePath: string, content: string): void => {
+  writeFileAtomicSafe(directory, filePath, content, {
+    mode: 0o644,
+    pathMessage: "Migrated file path must stay inside project root.",
+    symlinkFileMessage: "Refusing to write migrated source through symlinked file.",
+    symlinkDirectoryMessage: "Refusing to write migrated source through symlinked directory.",
+  });
+};
+
+export const transformMigrateSource = (source: string, options: { stage?: CodemodStageName } = {}): { content: string; changes: string[] } => {
+  const result = runCodemod(source, options);
+  return {
+    content: result.content,
+    changes: [...new Set(result.changes.map((change) => change.label))],
+  };
+};
+
+const collectMigrationPlan = (directory: string, svelteFiles: string[], stage?: CodemodStageName): MigrationPlanReport => {
+  const files = svelteFiles.map((filePath) => {
+    const source = fs.readFileSync(filePath, "utf-8");
+    const result = runCodemod(source, { stage }, filePath);
+    const complexity = detectComplexity(source);
+    return {
+      file: toPosix(path.relative(directory, filePath)),
+      changes: result.changes,
+      warnings: result.warnings,
+      reviewReasons: complexity.reasons,
+    };
+  }).filter((file) => file.changes.length > 0 || file.reviewReasons.length > 0 || file.warnings.length > 0);
+
+  return buildPlanReport(files);
+};
+
+const printPlan = (plan: MigrationPlanReport): void => {
   const boxWidth = 51;
-  const border = "─".repeat(boxWidth - 2);
+  const border = "-".repeat(boxWidth - 2);
+  logger.break();
+  logger.log(pc.bold(`  +${border}+`));
+  logger.log(pc.bold("  |") + "  Migration Plan".padEnd(boxWidth - 2) + pc.bold("|"));
+  logger.log(pc.bold("  |") + " ".repeat(boxWidth - 2) + pc.bold("|"));
+
+  const lines = [
+    `  Total files: ${plan.totalFiles}`,
+    `  Fully auto-migratable: ${plan.autoMigratable}`,
+    `  Needs manual review: ${plan.needsReview}`,
+    "",
+    "  Top remaining issues:",
+    ...(plan.topIssues.length > 0 ? plan.topIssues.map((issue) => `  - ${issue.label}: ${issue.count} files`) : ["  - none"]),
+  ];
+
+  for (const line of lines) {
+    const pad = Math.max(0, boxWidth - 2 - stripAnsi(line).length);
+    logger.log(pc.bold("  |") + line + " ".repeat(pad) + pc.bold("|"));
+  }
+
+  logger.log(pc.bold(`  +${border}+`));
+};
+
+const printMigrateSummary = (result: MigrateResult, options: MigrateOptions): void => {
+  if (options.json || options.diff || options.plan) return;
+
+  const boxWidth = 51;
+  const border = "-".repeat(boxWidth - 2);
 
   logger.break();
-  logger.log(pc.bold(`  ┌${border}┐`));
+  logger.log(pc.bold(`  +${border}+`));
 
   const title = options.dryRun ? "  Migration Preview (dry-run)" : "  Migration Complete";
   const titlePad = Math.max(0, boxWidth - 2 - stripAnsi(title).length);
-  logger.log(pc.bold("  │") + title + " ".repeat(titlePad) + pc.bold("│"));
+  logger.log(pc.bold("  |") + title + " ".repeat(titlePad) + pc.bold("|"));
 
   const emptyLine = " ".repeat(boxWidth - 2);
-  logger.log(pc.bold("  │") + emptyLine + pc.bold("│"));
+  logger.log(pc.bold("  |") + emptyLine + pc.bold("|"));
 
-  const lines: string[] = [
+  const lines = [
     `  Files scanned: ${result.filesScanned}`,
     `  Files modified: ${result.filesModified}`,
     `  Total changes: ${result.totalChanges}`,
@@ -543,102 +176,181 @@ const printMigrateSummary = (result: MigrateResult, options: MigrateOptions) => 
 
   for (const line of lines) {
     const pad = Math.max(0, boxWidth - 2 - stripAnsi(line).length);
-    logger.log(pc.bold("  │") + line + " ".repeat(pad) + pc.bold("│"));
+    logger.log(pc.bold("  |") + line + " ".repeat(pad) + pc.bold("|"));
   }
 
-  logger.log(pc.bold("  │") + emptyLine + pc.bold("│"));
-  logger.log(pc.bold(`  └${border}┘`));
+  logger.log(pc.bold("  |") + emptyLine + pc.bold("|"));
+  logger.log(pc.bold(`  +${border}+`));
 };
 
-export const migrate = async (
-  directory: string,
-  options: MigrateOptions,
-): Promise<MigrateResult> => {
+const askApplyDecision = async (relativePath: string, diff: string, changes: string[], rl: readline.Interface): Promise<"yes" | "no" | "all" | "quit"> => {
+  logger.break();
+  logger.log(`  ${highlighter.bold(relativePath)}`);
+  logger.log(`  ${changes.length} change${changes.length === 1 ? "" : "s"} needed`);
+  logger.break();
+  logger.log(diff);
+  logger.break();
+  const answer = (await rl.question("  Apply? [y]es / [n]o / [a]ll / [q]uit: ")).trim().toLowerCase();
+  if (answer === "a") return "all";
+  if (answer === "q") return "quit";
+  if (answer === "n") return "no";
+  return "yes";
+};
+
+const rollbackBackups = (directory: string): MigrateResult => {
+  const backupFiles = collectFiles(directory, /\.svelte\.bak$/);
+  let restored = 0;
+
+  for (const backupPath of backupFiles) {
+    const targetPath = backupPath.replace(/\.bak$/, "");
+    const content = fs.readFileSync(backupPath, "utf-8");
+    writeMigratedFile(directory, targetPath, content);
+    fs.unlinkSync(backupPath);
+    restored++;
+  }
+
+  return {
+    filesScanned: backupFiles.length,
+    filesModified: restored,
+    totalChanges: restored,
+    fileResults: [],
+    backupsCreated: 0,
+    rolledBackFiles: restored,
+  };
+};
+
+const maybeCommitStage = (directory: string, message: string, files: MigrateFileResult[]): void => {
+  const changedFiles = files.filter((file) => file.modified).map((file) => file.relativePath);
+  if (changedFiles.length === 0) return;
+
+  const status = spawnSync("git", ["status", "--porcelain", "--", ...changedFiles], { cwd: directory, encoding: "utf-8" });
+  if (status.status !== 0 || status.stdout.trim().length === 0) return;
+
+  const add = spawnSync("git", ["add", "--", ...changedFiles], { cwd: directory, encoding: "utf-8" });
+  if (add.status !== 0) throw new Error(`Failed to stage migration changes: ${add.stderr}`);
+  const commit = spawnSync("git", ["commit", "-m", message], { cwd: directory, encoding: "utf-8" });
+  if (commit.status !== 0) throw new Error(`Failed to commit migration stage: ${commit.stderr}`);
+};
+
+const migrateOnce = async (directory: string, options: MigrateOptions): Promise<MigrateResult> => {
   validateDirectory(directory);
-
-  logger.break();
-  logger.log(`  ${highlighter.bold("svelte-doctor migrate")} v${VERSION}`);
-  logger.break();
-
-  const discoverSpinner = spinner("Discovering .svelte files...").start();
+  const discoverSpinner = options.json || options.diff || options.plan ? null : spinner("Discovering .svelte files...").start();
   const svelteFiles = collectFiles(directory, SVELTE_FILE_PATTERN);
-  discoverSpinner.succeed(`Found ${highlighter.info(String(svelteFiles.length))} .svelte files`);
+  discoverSpinner?.succeed(`Found ${highlighter.info(String(svelteFiles.length))} .svelte files`);
 
   if (svelteFiles.length === 0) {
-    logger.break();
-    logger.dim("  No .svelte files found. Nothing to migrate.");
     return { filesScanned: 0, filesModified: 0, totalChanges: 0, fileResults: [], backupsCreated: 0 };
   }
 
-  if (options.dryRun) {
-    logger.break();
-    logger.dim("  Running in dry-run mode so no files will be modified.");
+  if (options.plan) {
+    const plan = collectMigrationPlan(directory, svelteFiles, options.stage);
+    return { filesScanned: svelteFiles.length, filesModified: 0, totalChanges: 0, fileResults: [], backupsCreated: 0, plan };
   }
-
-  logger.break();
-  logger.dim("  Migrating...");
-  logger.break();
 
   const fileResults: MigrateFileResult[] = [];
   let backupsCreated = 0;
+  let applyAll = false;
+  const rl = options.interactive ? readline.createInterface({ input, output }) : null;
 
-  for (const filePath of svelteFiles) {
-    const relativePath = toPosix(path.relative(directory, filePath));
-    const sanitizedPath = sanitize(relativePath);
+  try {
+    for (const filePath of svelteFiles) {
+      const relativePath = toPosix(path.relative(directory, filePath));
+      const sanitizedPath = sanitize(relativePath);
+      const source = fs.readFileSync(filePath, "utf-8");
+      const codemodResult = runCodemod(source, { stage: options.stage }, filePath);
+      const changes = [...new Set(codemodResult.changes.map((change) => change.label))];
+      const warnings = codemodResult.warnings.map((warning) => warning.message);
 
-    let source: string;
-
-    try {
-      source = fs.readFileSync(filePath, "utf-8");
-    } catch {
-      logger.warn(`  ⚠ Could not read ${sanitizedPath} so skipping`);
-      continue;
-    }
-
-    const { content, changes } = transformMigrateSource(source);
-
-    if (changes.length === 0) {
-      logger.dim(`  - ${sanitizedPath} no changes needed`);
-      fileResults.push({ filePath, relativePath, changes: [], modified: false });
-      continue;
-    }
-
-    if (!options.dryRun) {
-      if (options.backup) {
-        if (createBackup(directory, filePath, source)) {
-          backupsCreated++;
-        }
-      }
-
-      try {
-        writeFileAtomicSafe(directory, filePath, content, {
-          mode: 0o644,
-          pathMessage: "Migrated file path must stay inside project root.",
-          symlinkFileMessage: "Refusing to write migrated source through symlinked file.",
-          symlinkDirectoryMessage: "Refusing to write migrated source through symlinked directory.",
-        });
-      } catch {
-        logger.error(`  ✗ Failed to write ${sanitizedPath}`);
+      if (changes.length === 0) {
+        if (!options.json && !options.diff) logger.dim(`  - ${sanitizedPath} no changes needed`);
+        fileResults.push({ filePath, relativePath, changes: [], modified: false, warnings });
         continue;
       }
+
+      const diff = createUnifiedDiff(relativePath, source, codemodResult.content);
+      let shouldWrite = !options.dryRun;
+
+      if (rl && !applyAll) {
+        const decision = await askApplyDecision(relativePath, diff, changes, rl);
+        if (decision === "quit") break;
+        if (decision === "all") applyAll = true;
+        if (decision === "no") shouldWrite = false;
+      }
+
+      const accepted = shouldWrite || options.dryRun || applyAll;
+
+      if (shouldWrite) {
+        if (options.backup && createBackup(directory, filePath, source)) backupsCreated++;
+        writeMigratedFile(directory, filePath, codemodResult.content);
+      }
+
+      if (options.diff) logger.log(diff);
+      if (!options.json && !options.diff && !options.interactive) {
+        const changeLabel = changes.length === 1 ? "1 change" : `${changes.length} changes`;
+        const changeList = highlighter.dim(`(${changes.join(", ")})`);
+        logger.success(`  + ${sanitizedPath} ${changeLabel} ${changeList}`);
+      }
+
+      fileResults.push({ filePath, relativePath, changes, modified: accepted, warnings, diff });
     }
-
-    const changeLabel = changes.length === 1 ? "1 change" : `${changes.length} changes`;
-    const changeList = highlighter.dim(`(${changes.join(", ")})`);
-    logger.success(`  ✓ ${sanitizedPath} ${changeLabel} ${changeList}`);
-
-    fileResults.push({ filePath, relativePath, changes, modified: true });
+  } finally {
+    rl?.close();
   }
 
-  const result: MigrateResult = {
+  return {
     filesScanned: svelteFiles.length,
-    filesModified: fileResults.filter((f) => f.modified).length,
-    totalChanges: fileResults.reduce((sum, f) => sum + f.changes.length, 0),
+    filesModified: fileResults.filter((file) => file.modified).length,
+    totalChanges: fileResults.reduce((sum, file) => sum + file.changes.length, 0),
     fileResults,
     backupsCreated,
   };
+};
+
+export const migrate = async (directory: string, options: MigrateOptions): Promise<MigrateResult> => {
+  if (!options.json && !options.diff && !options.plan) {
+    logger.break();
+    logger.log(`  ${highlighter.bold("svelte-doctor migrate")} v${VERSION}`);
+    logger.break();
+  }
+
+  if (options.rollback) {
+    const result = rollbackBackups(directory);
+    if (options.json) logger.log(JSON.stringify(result, null, 2));
+    if (!options.json) logger.success(`  Restored ${result.rolledBackFiles ?? 0} backup file${result.rolledBackFiles === 1 ? "" : "s"}.`);
+    return result;
+  }
+
+  if (options.commitStages) {
+    let aggregate: MigrateResult = { filesScanned: 0, filesModified: 0, totalChanges: 0, fileResults: [], backupsCreated: 0 };
+    for (const stage of COMMIT_STAGES) {
+      const result = await migrateOnce(directory, { ...options, backup: false, stage: stage.stage, commitStages: false });
+      maybeCommitStage(directory, stage.message, result.fileResults);
+      aggregate = {
+        filesScanned: Math.max(aggregate.filesScanned, result.filesScanned),
+        filesModified: aggregate.filesModified + result.filesModified,
+        totalChanges: aggregate.totalChanges + result.totalChanges,
+        fileResults: [...aggregate.fileResults, ...result.fileResults],
+        backupsCreated: aggregate.backupsCreated + result.backupsCreated,
+      };
+    }
+    if (options.json) logger.log(JSON.stringify(aggregate, null, 2));
+    printMigrateSummary(aggregate, options);
+    return aggregate;
+  }
+
+  const result = await migrateOnce(directory, options);
+
+  if (options.plan && result.plan) {
+    if (options.json) logger.log(JSON.stringify(result.plan, null, 2));
+    if (!options.json) printPlan(result.plan);
+    return result;
+  }
+
+  if (options.json) {
+    logger.log(JSON.stringify(result, null, 2));
+    return result;
+  }
 
   printMigrateSummary(result, options);
-
   return result;
 };

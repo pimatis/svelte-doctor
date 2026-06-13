@@ -62,7 +62,7 @@ Run a single command to scan your entire codebase and receive a **0–100 health
 - **Diff-Aware and Workspace-Aware Scans** for staged files, changed files, and monorepos
 - **Safe-by-default AI Fix** flow with secure temp prompts, opt-in unsafe execution, post-fix verification, and support for Cursor, Amp, Claude Code, Codex, Copilot CLI, OpenCode, Pi, Gemini CLI, Qwen Code, Aider, and Goose
 - **AI-Friendly Copy Export** via `check --copy` with clipboard-first fallback behavior
-- **Svelte 4→5 Auto-Migration** with deterministic codemods
+- **Svelte 4→5 AST-backed Auto-Migration** with modular codemods, plan/diff/interactive modes, backups, rollback, staged commits, and JSON output
 - **Migration Progress Tracking** via `migrate-status` with migrated/pending/skipped counts, category breakdown, and ETA
 - **Smart Ignore Suggestions** via `suggest-ignore` with confidence scoring and generated ignore config snippets
 - **Component Dependency Graphs** via `graph` with ASCII, DOT, JSON, and circular dependency detection
@@ -215,6 +215,11 @@ svelte-doctor update --check
 
 # Auto-migrate Svelte 4 → Svelte 5
 svelte-doctor migrate
+svelte-doctor migrate --plan
+svelte-doctor migrate --dry-run --diff
+svelte-doctor migrate --interactive
+svelte-doctor migrate --stage export-let
+svelte-doctor migrate --rollback
 
 # Track Svelte 4 → 5 migration progress
 svelte-doctor migrate-status
@@ -549,22 +554,54 @@ Supported agents under `src/agents`:
 
 ### `svelte-doctor migrate [directory] [options]`
 
-Auto-migrate Svelte 4 syntax to Svelte 5. Deterministic, AST-free codemod that transforms legacy patterns in-place.
+Auto-migrate Svelte 4 syntax to Svelte 5. The migration engine uses a modular codemod pipeline with Svelte parser validation and TypeScript AST-backed script transforms for safer rewrites than line-only regex replacement. Template transforms remain conservative and parser-validated; complex cases are marked for review instead of being silently rewritten.
 
 **Transformations:**
 - `$:` reactive statements → `$derived()` / `$effect()`
-- `export let` → `let { ... } = $props()`
-- `<slot>` → `{@render children()}`
-- `<slot name="x">` → `{@render x?.()}`
+- `export let` props, including defaults and TypeScript annotations → `let { ... } = $props()`
+- Destructuring reactive assignments such as `$: ({ value } = item)` → `$derived()` review-safe output
+- `createEventDispatcher` → callback props review marker
+- `<slot>` and named slots → `{@render children?.()}` / `{@render name?.()}`
 - `on:click={handler}` → `onclick={handler}`
-- `createEventDispatcher` → callback props (with TODO comment)
-- `let:` directives → snippet props (with TODO comment)
-- Legacy lifecycle imports → `$effect()` (with TODO comment)
+- `let:` directives → snippet-prop review markers
+- `onMount` / `onDestroy` → `$effect()` review marker
+- `beforeUpdate` / `afterUpdate` → `$effect.pre()` review marker
+- `svelte/store` `writable` / `derived` usage → manual-review warning for shared stores and subscriptions
+- `class:active={isActive}` → `class={isActive ? "active" : ""}`
+- `export const` in instance scripts → `<script module>` exports
+- `<svelte:options immutable/accessors>` → modern API review marker
 
 | Option | Description |
 |--------|-------------|
 | `--dry-run` | Show changes without modifying files |
-| `--no-backup` | Skip creating .svelte.bak backup files |
+| `--diff` | Output unified diff for proposed changes |
+| `--interactive` | Show each file diff and ask before applying (`y`, `n`, `a`, `q`) |
+| `--plan` | Report total files, auto-migratable files, manual-review files, and top issue categories without writing files |
+| `--commit-stages` | Run supported migration stages and create one git commit per stage |
+| `--rollback` | Restore files from `.svelte.bak` backups and remove the backup files |
+| `--no-backup` | Skip creating `.svelte.bak` backup files |
+| `--stage <name>` | Run only one stage: `reactive-statement`, `export-let`, `event-dispatcher`, `slot`, `on-directive`, `lifecycle`, `let-directive`, `store`, `class-directive`, `module-export`, `snippet`, or `svelte-options` |
+| `--json` | Output machine-readable JSON |
+
+Examples:
+
+```bash
+# Preview all changes as a patch without writing files
+svelte-doctor migrate --dry-run --diff > migration.patch
+
+# Get a migration plan for CI or rollout estimation
+svelte-doctor migrate --plan
+svelte-doctor migrate --plan --json
+
+# Review and accept each file interactively
+svelte-doctor migrate --interactive
+
+# Apply only one stage
+svelte-doctor migrate --stage export-let
+
+# Restore from backups created by the default migration mode
+svelte-doctor migrate --rollback
+```
 
 ### `svelte-doctor migrate-status [directory] [options]`
 
