@@ -31,6 +31,7 @@ import { testGapsCommand } from "./commands/coverage.js";
 import { createRuleCommand } from "./commands/scaffold.js";
 import { renderProfileCommand } from "./commands/profile.js";
 import { installHookCommand } from "./commands/install-hook.js";
+import { whereUsedCommand } from "./commands/where-used.js";
 
 const program = new Command()
   .name("svelte-doctor")
@@ -67,14 +68,17 @@ program
   .addCommand(testGapsCommand)
   .addCommand(createRuleCommand)
   .addCommand(renderProfileCommand)
-  .addCommand(installHookCommand);
+  .addCommand(installHookCommand)
+  .addCommand(whereUsedCommand);
 
 const main = async () => {
   const args = process.argv.slice(2);
   const hasGlobalFlag = args.some((arg) => arg === "--help" || arg === "-h" || arg === "--version" || arg === "-v");
   const subcommands = program.commands.map((cmd) => cmd.name());
   const firstArg = args.find((arg) => !arg.startsWith("-"));
-  const hasSubcommand = firstArg && subcommands.includes(firstArg);
+  // commander exposes a built-in "help" subcommand (svelte-doctor help <command>)
+  // include it so help routing is not swallowed by the check fallback
+  const hasSubcommand = firstArg && (subcommands.includes(firstArg) || firstArg === "help");
 
   try {
     if (hasGlobalFlag || hasSubcommand) {

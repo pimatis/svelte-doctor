@@ -65,14 +65,14 @@
   },
   "dependencies": {
     "commander": "^15.0.0",
-    "knip": "^6.16.1",
-    "ora": "^9.4.0",
+    "knip": "^6.24.0",
+    "ora": "^9.4.1",
     "picocolors": "^1.1.1",
-    "svelte": "^5.56.3",
+    "svelte": "^5.56.4",
     "typescript": "^6.0.3"
   },
   "devDependencies": {
-    "tsdown": "^0.22.2",
-    "@types/node": "^25.9.3"
+    "tsdown": "^0.22.3",
+    "@types/node": "^26.1.0"
   }
 }

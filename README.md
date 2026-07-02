@@ -65,7 +65,8 @@ Run a single command to scan your entire codebase and receive a **0–100 health
 - **Svelte 4→5 AST-backed Auto-Migration** with modular codemods, plan/diff/interactive modes, backups, rollback, staged commits, and JSON output
 - **Migration Progress Tracking** via `migrate-status` with migrated/pending/skipped counts, category breakdown, and ETA
 - **Smart Ignore Suggestions** via `suggest-ignore` with confidence scoring and generated ignore config snippets
-- **Component Dependency Graphs** via `graph` with ASCII, DOT, JSON, and circular dependency detection
+- **Component Dependency Graphs** via `graph` with ASCII, DOT, JSON, alias resolution, and circular dependency detection
+- **Component Where-Used Lookup** via `where-used` with line-accurate import/render locations, `$lib` and tsconfig alias resolution, dynamic import detection, render tree, scope filtering, and reverse direction
 - **Bundle Impact Preview** via `bundle-impact` for estimated savings from fixable bundle-size diagnostics
 - **Test Coverage Gap Finder** via `test-gaps` for source-to-test matching and SvelteKit critical path checks
 - **Rule Authoring Kit** via `create-rule` for custom rule, test, and docs scaffolding
@@ -237,6 +238,14 @@ svelte-doctor bundle-impact --json
 svelte-doctor graph
 svelte-doctor graph --format dot
 svelte-doctor graph --format json
+
+# Find every place a component is imported or rendered
+svelte-doctor where-used Button
+svelte-doctor where-used src/lib/Button.svelte
+svelte-doctor where-used Button --json
+svelte-doctor where-used Button --tree
+svelte-doctor where-used Button --scope src/routes
+svelte-doctor where-used Button --direction uses
 
 # Find source files without matching tests
 svelte-doctor test-gaps
@@ -644,7 +653,7 @@ svelte-doctor suggest-ignore --json
 
 ### `svelte-doctor graph [directory] [options]`
 
-Build a component dependency graph from local imports and rendered component tags. The graph helps answer which component imports or renders another component and highlights circular dependencies.
+Build a component dependency graph from local imports and rendered component tags. The graph helps answer which component imports or renders another component and highlights circular dependencies. Imports through SvelteKit's `$lib` alias and custom `tsconfig.json` `compilerOptions.paths` aliases are resolved, alongside relative and re-export specifiers.
 
 | Option | Description |
 |--------|-------------|
@@ -656,6 +665,50 @@ Examples:
 svelte-doctor graph
 svelte-doctor graph --format dot > graph.dot
 svelte-doctor graph --format json
+```
+
+### `svelte-doctor where-used <component> [directory] [options]`
+
+Find every place a component is imported or rendered, with line-accurate locations and source snippets. Useful for impact analysis before refactoring or removing a component.
+
+The `<component>` argument accepts a component name (`Button`) or a full project-relative path (`src/lib/Button.svelte`). Multiple components can be passed comma-separated (`Button,Card,Modal`).
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output machine-readable JSON |
+| `--type <import\|render>` | Restrict to import or render usages |
+| `--scope <path>` | Restrict results to files under a subdirectory |
+| `--direction <used-by\|uses>` | `used-by` (default) finds who uses the component; `uses` finds what it depends on |
+| `--tree` | Render the parent render hierarchy as an ASCII tree rooted at entry points |
+
+Ambiguous component names (for example `src/lib/Button.svelte` and `src/ui/Button.svelte`) produce an error listing the candidates so you can disambiguate with the full path. Re-exports (`export { default as Button } from ...`) and string-literal dynamic imports (`await import("...")`) are reported as import usages. Imports through SvelteKit's `$lib` alias (default `$lib` -> `src/lib`) and custom `tsconfig.json` `compilerOptions.paths` aliases (`$components/*`, `@/*`, etc.) are resolved automatically, so SvelteKit projects report import usages the same way relative imports do.
+
+Examples:
+
+```bash
+# who uses Button?
+svelte-doctor where-used Button
+
+# full path query
+svelte-doctor where-used src/lib/Button.svelte
+
+# CI / automation output
+svelte-doctor where-used Button --json
+
+# multiple components
+svelte-doctor where-used Button,Card,Modal
+
+# only render sites
+svelte-doctor where-used Button --type render
+
+# render tree of parents leading to Button
+svelte-doctor where-used Button --tree
+
+# scope to a subdirectory
+svelte-doctor where-used Button --scope src/pages
+
+# reverse: what does Button depend on?
+svelte-doctor where-used Button --direction uses
 ```
 
 ### `svelte-doctor bundle-impact [directory] [options]`
