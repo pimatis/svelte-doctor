@@ -1,5 +1,6 @@
 import type { Rule, Diagnostic } from "../../types.js";
 import { fixNoUnnecessaryState } from "../../core/fixers.js";
+import { getDeadStoreIndex, type DeadStoreIndex } from "../../core/stores.js";
 
 // wrapping a value in $state when it never changes adds reactivity overhead for nothing
 const noUnnecessaryState: Rule = {
@@ -201,8 +202,57 @@ const preferRunes: Rule = {
   },
 };
 
+// a writable store that is only ever read, never written, is a read-only contract
+// disguised as a writable — it should be a readable store or migrated to runes $state
+const noUnwrittenStore: Rule = {
+  name: "no-unwritten-store",
+  category: "State & Reactivity",
+  severity: "warning",
+  message: "`writable` store is never written to",
+  help: "A `writable` that is only read should be a `readable` store or Svelte 5 `$state`. Run `svelte-doctor dead-stores` for a full cross-file report",
+  appliesTo: ["all"],
+  check: (ctx) => {
+    if (!ctx.filePath.endsWith(".svelte") && !ctx.filePath.endsWith(".ts") && !ctx.filePath.endsWith(".js")) {
+      return [];
+    }
+
+    let index: DeadStoreIndex;
+    try {
+      index = getDeadStoreIndex(ctx.projectRoot);
+    } catch {
+      return [];
+    }
+
+    const decls = index.declarationsByFile.get(ctx.filePath);
+    if (!decls) return [];
+
+    const diagnostics: Diagnostic[] = [];
+
+    for (const decl of decls) {
+      if (decl.kind !== "writable") continue;
+
+      const writes = index.writesByDeclaration.get(`${decl.file}::${decl.name}`) ?? [];
+      if (writes.length > 0) continue;
+
+      diagnostics.push({
+        filePath: ctx.filePath,
+        rule: noUnwrittenStore.name,
+        severity: noUnwrittenStore.severity,
+        message: `\`${decl.name}\` is a \`writable\` store that is never written to`,
+        help: noUnwrittenStore.help,
+        line: decl.line,
+        column: decl.column,
+        category: noUnwrittenStore.category,
+      });
+    }
+
+    return diagnostics;
+  },
+};
+
 export const reactivityRules: Rule[] = [
   noUnnecessaryState,
   noDerivedSideEffect,
   preferRunes,
+  noUnwrittenStore,
 ];

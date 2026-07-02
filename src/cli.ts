@@ -32,6 +32,7 @@ import { createRuleCommand } from "./commands/scaffold.js";
 import { renderProfileCommand } from "./commands/profile.js";
 import { installHookCommand } from "./commands/install-hook.js";
 import { whereUsedCommand } from "./commands/where-used.js";
+import { deadStoresCommand } from "./commands/dead-stores.js";
 
 const program = new Command()
   .name("svelte-doctor")
@@ -69,7 +70,8 @@ program
   .addCommand(createRuleCommand)
   .addCommand(renderProfileCommand)
   .addCommand(installHookCommand)
-  .addCommand(whereUsedCommand);
+  .addCommand(whereUsedCommand)
+  .addCommand(deadStoresCommand);
 
 const main = async () => {
   const args = process.argv.slice(2);

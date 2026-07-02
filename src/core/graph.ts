@@ -155,7 +155,7 @@ const resolveAliased = (directory: string, specifier: string, aliases: AliasEntr
 };
 
 // try relative resolution first, then alias resolution for non-relative specifiers
-const resolveSpecifier = (
+export const resolveSpecifier = (
   directory: string,
   fromFile: string,
   specifier: string,

@@ -68,6 +68,7 @@ Run a single command to scan your entire codebase and receive a **0–100 health
 - **Component Dependency Graphs** via `graph` with ASCII, DOT, JSON, alias resolution, and circular dependency detection
 - **Component Where-Used Lookup** via `where-used` with line-accurate import/render locations, `$lib` and tsconfig alias resolution, dynamic import detection, render tree, scope filtering, and reverse direction
 - **Bundle Impact Preview** via `bundle-impact` for estimated savings from fixable bundle-size diagnostics
+- **Dead Store Detection** via `dead-stores` for finding `writable` stores never written anywhere, with cross-file write tracking and runes migration suggestions
 - **Test Coverage Gap Finder** via `test-gaps` for source-to-test matching and SvelteKit critical path checks
 - **Rule Authoring Kit** via `create-rule` for custom rule, test, and docs scaffolding
 - **Component Render Profiler** via `render-profile` for compile-time DOM, reactivity, hydration, and re-render cost ranking
@@ -211,6 +212,12 @@ svelte-doctor fix --dry-run-prompt
 # Update the global CLI from npm
 svelte-doctor update
 
+# Find writable stores that are never written (runes migration helper)
+svelte-doctor dead-stores
+
+# Dead store report as JSON for CI
+svelte-doctor dead-stores --json
+
 # Check whether a newer version exists
 svelte-doctor update --check
 
@@ -246,6 +253,10 @@ svelte-doctor where-used Button --json
 svelte-doctor where-used Button --tree
 svelte-doctor where-used Button --scope src/routes
 svelte-doctor where-used Button --direction uses
+
+# Find writable stores that are never written (runes migration helper)
+svelte-doctor dead-stores
+svelte-doctor dead-stores --json
 
 # Find source files without matching tests
 svelte-doctor test-gaps
@@ -711,6 +722,49 @@ svelte-doctor where-used Button --scope src/pages
 svelte-doctor where-used Button --direction uses
 ```
 
+### `svelte-doctor dead-stores [directory] [options]`
+
+Detect `writable` stores that are never written to anywhere in the project. A `writable` that is only ever read should be a `readable` store or migrated to Svelte 5 runes `$state`. This is especially useful when migrating a codebase from stores to runes: it identifies stores that can be safely converted to read-only values without changing any write sites.
+
+The analysis is cross-file: it tracks `.set()`, `.update()`, `this.store.set()` in classes, and `$store =` auto-subscription writes in `.svelte` templates, resolving imports and re-exports back to the original declaration. Stores that are written in any file are reported as OK with their write sites listed.
+
+| Option | Description |
+|--------|-------------|
+| `--json` | Output machine-readable JSON |
+
+Examples:
+
+```bash
+# full dead store report
+svelte-doctor dead-stores
+
+# CI / automation output
+svelte-doctor dead-stores --json
+
+# scan a specific workspace
+svelte-doctor dead-stores packages/app
+```
+
+Sample text output:
+
+```
+  Dead store report: 1 never-written, 1 ok, 2 total
+
+  Never written (candidates for readable or $state):
+
+  user - writable - NEVER WRITTEN (src/stores/user.ts:2)
+  Used in ($-auto-subscribe, 1):
+    src/routes/+page.svelte:7           $currentUser
+  Replace with: replace `user` with a `readable` store (read-only contract) or migrate to runes `$state` and expose via props
+
+  Written (OK):
+
+  counter - writable - WRITTEN (src/stores/counter.ts:2)
+  Written in 2 places:
+    src/routes/+page.svelte:5           $counter =
+    src/stores/counter.ts:3             counter.set()
+```
+
 ### `svelte-doctor bundle-impact [directory] [options]`
 
 Estimate potential bundle savings from fixable bundle-size diagnostics. Current estimates cover heavy imports such as `moment`, full `lodash`, and wildcard icon package imports.
@@ -1058,7 +1112,7 @@ svelte-doctor reset --all --json
 
 ---
 
-## Rules (57 source rules + 3 build artifact diagnostics)
+## Rules (58 source rules + 3 build artifact diagnostics)
 
 ### Correctness (7)
 
@@ -1155,13 +1209,14 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `click-needs-keyboard` | warning | Click handler on non-interactive element without keyboard support |
 | `anchor-no-content` | warning | `<a>` without text content or `aria-label` |
 
-### State & Reactivity (3)
+### State & Reactivity (4)
 
 | Rule | Severity | Description |
 |------|----------|-------------|
 | `no-unnecessary-state` | warning | `$state` wrapping a value that is never mutated (fixable) |
 | `no-derived-side-effect` | error | Side effects inside `$derived` |
 | `prefer-runes` | warning | `svelte/store` imports in a runes-mode project |
+| `no-unwritten-store` | warning | `writable` store that is never written via `.set()`, `.update()` or `$store =` |
 
 ---
 
