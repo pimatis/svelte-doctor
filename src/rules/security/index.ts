@@ -622,6 +622,118 @@ const noUnsafeShell: Rule = {
   },
 };
 
+const noPlainExternalAnchor: Rule = {
+  name: "no-plain-external-anchor",
+  category: "Security",
+  severity: "warning",
+  message:
+    'External link is missing `rel="noopener noreferrer"` — the target page can access `window.opener`',
+  help: 'Add `rel="noopener noreferrer"` to all `<a>` elements that link to external domains.',
+  docs: {
+    summary: "Flags external links without security-related rel attributes.",
+    whyItMatters:
+      "Without noopener, the target page can use window.opener to redirect the parent page (tabnabbing). Noreferrer additionally prevents leaking the referrer URL.",
+    safeFix: 'Add rel="noopener noreferrer" to the anchor tag.',
+  },
+  check: (ctx) => {
+    if (!ctx.filePath.endsWith(".svelte")) return [];
+
+    const diagnostics: Diagnostic[] = [];
+    const lines = ctx.source.split("\n");
+
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i].trimStart();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("<!--"))
+        continue;
+
+      const anchorMatch = lines[i].match(
+        /<a\b[^>]*\bhref\s*=\s*["']https?:\/\/(?!\/)[^"']*["'][^>]*>/,
+      );
+      if (!anchorMatch) continue;
+
+      const fullTag = anchorMatch[0];
+      if (/\brel\s*=\s*["'][^"']*\bnoopener\b/.test(fullTag)) continue;
+
+      diagnostics.push({
+        filePath: ctx.filePath,
+        rule: noPlainExternalAnchor.name,
+        severity: noPlainExternalAnchor.severity,
+        message: noPlainExternalAnchor.message,
+        help: noPlainExternalAnchor.help,
+        line: i + 1,
+        column: lines[i].indexOf("<a") + 1,
+        category: noPlainExternalAnchor.category,
+      });
+    }
+
+    return diagnostics;
+  },
+};
+
+const noExposedErrorDetails: Rule = {
+  name: "no-exposed-error-details",
+  category: "Security",
+  severity: "error",
+  message:
+    "Raw error details (`error.message` or `error.stack`) returned to the client — sensitive server internals may leak",
+  help: "Sanitize error output before returning it to the client. Log the full error on the server and return a generic user-facing message instead.",
+  docs: {
+    summary: "Flags error details leaked through load functions or form actions.",
+    whyItMatters:
+      "Error messages and stack traces can expose server paths, database schemas, library versions, and internal logic to attackers.",
+    safeFix:
+      "Catch errors, log the full details server-side, return a generic message like 'An unexpected error occurred'.",
+  },
+  check: (ctx) => {
+    if (!/\+(?:page|layout|server)\.(?:server\.)?(?:ts|js)$/.test(ctx.filePath)) return [];
+
+    const diagnostics: Diagnostic[] = [];
+    const lines = ctx.source.split("\n");
+    const leakPatterns = {
+      "error.message": /\berror\s*\.\s*message\b/,
+      "error.stack": /\berror\s*\.\s*stack\b/,
+    };
+
+    let insideLoadOrAction = false;
+
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i].trimStart();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*")) continue;
+
+      if (
+        /\bexport\s+(?:const|let|async\s+function|function)\s+(?:load|actions)\b/.test(lines[i])
+      ) {
+        insideLoadOrAction = true;
+        continue;
+      }
+
+      if (insideLoadOrAction && /^};?\s*$|^\s*}\s*;?\s*$/.test(lines[i])) {
+        insideLoadOrAction = false;
+        continue;
+      }
+
+      if (!insideLoadOrAction) continue;
+
+      for (const [label, pattern] of Object.entries(leakPatterns)) {
+        if (pattern.test(lines[i])) {
+          diagnostics.push({
+            filePath: ctx.filePath,
+            rule: noExposedErrorDetails.name,
+            severity: noExposedErrorDetails.severity,
+            message: `${noExposedErrorDetails.message} (${label})`,
+            help: noExposedErrorDetails.help,
+            line: i + 1,
+            column: lines[i].search(pattern) + 1,
+            category: noExposedErrorDetails.category,
+          });
+        }
+      }
+    }
+
+    return diagnostics;
+  },
+};
+
 export const securityRules: Rule[] = [
   noUnsafeHtml,
   noSecrets,
@@ -632,4 +744,6 @@ export const securityRules: Rule[] = [
   noBroadCors,
   noServerSecretLeak,
   noUnsafeShell,
+  noPlainExternalAnchor,
+  noExposedErrorDetails,
 ];

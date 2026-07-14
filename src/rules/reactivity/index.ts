@@ -262,9 +262,114 @@ const noUnwrittenStore: Rule = {
   },
 };
 
+const noMixedRunesAndStores: Rule = {
+  name: "no-mixed-runes-and-stores",
+  category: "State & Reactivity",
+  severity: "warning",
+  message:
+    "Component mixes `$state`/`$derived` runes with `svelte/store` imports — choose one reactivity model",
+  help: "Migrate store usage to runes ($state, $derived) or extract the store logic into a separate module.",
+  docs: {
+    summary: "Flags components that use both runes and Svelte stores.",
+    whyItMatters:
+      "Mixing the two reactivity models creates confusion about which state is reactive and how updates propagate.",
+    safeFix: "Replace svelte/store imports with $state() and $derived() runes.",
+  },
+  check: (ctx) => {
+    if (!ctx.filePath.endsWith(".svelte")) return [];
+    if (!ctx.projectInfo.usesRunes) return [];
+
+    const hasStoreImport = /\bfrom\s+["']svelte\/store["']/.test(ctx.source);
+    if (!hasStoreImport) return [];
+
+    const hasRuneUsage = /\$(?:state|derived|effect|props)\b/.test(ctx.source);
+    if (!hasRuneUsage) return [];
+
+    const diagnostics: Diagnostic[] = [];
+    const lines = ctx.source.split("\n");
+
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i].trimStart();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*")) continue;
+
+      if (/\bfrom\s+["']svelte\/store["']/.test(lines[i])) {
+        diagnostics.push({
+          filePath: ctx.filePath,
+          rule: noMixedRunesAndStores.name,
+          severity: noMixedRunesAndStores.severity,
+          message: noMixedRunesAndStores.message,
+          help: noMixedRunesAndStores.help,
+          line: i + 1,
+          column: lines[i].indexOf("svelte/store") + 1,
+          category: noMixedRunesAndStores.category,
+        });
+      }
+    }
+
+    return diagnostics;
+  },
+};
+
+const noUnnecessaryDerivedDependency: Rule = {
+  name: "no-unnecessary-derived-dependency",
+  category: "State & Reactivity",
+  severity: "warning",
+  message: "`$derived()` expression references no reactive state — should be a plain `const`",
+  help: "Replace `const x = $derived(value)` with `const x = value`, or ensure at least one dependency reads a $state variable.",
+  docs: {
+    summary: "Flags $derived() blocks that read no reactive dependencies.",
+    whyItMatters:
+      "A $derived() without reactive dependencies wastes memory and compiler overhead. It may also indicate a bug where the author forgot to use $state for one of the inputs.",
+    safeFix: "Remove the $derived() wrapper or promote the dependency to $state().",
+  },
+  check: (ctx) => {
+    if (
+      !ctx.filePath.endsWith(".svelte") &&
+      !ctx.filePath.endsWith(".svelte.js") &&
+      !ctx.filePath.endsWith(".svelte.ts")
+    )
+      return [];
+    if (!ctx.projectInfo.usesRunes) return [];
+
+    const diagnostics: Diagnostic[] = [];
+    const lines = ctx.source.split("\n");
+
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i].trimStart();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
+
+      const match = lines[i].match(
+        /(?:const|let|var)\s+(\w+)\s*=\s*\$derived\s*\(\s*([^)]+)\s*\)\s*;?\s*$/,
+      );
+      if (!match) continue;
+
+      const expression = match[2];
+      if (!expression || expression.trim().length === 0) continue;
+
+      const hasStateRead = /\$\w+/.test(expression) || /\b\w+\.\w+/.test(expression);
+      if (hasStateRead) continue;
+
+      diagnostics.push({
+        filePath: ctx.filePath,
+        rule: noUnnecessaryDerivedDependency.name,
+        severity: noUnnecessaryDerivedDependency.severity,
+        message: `${noUnnecessaryDerivedDependency.message} (\`${match[1]}\` reads no reactive state)`,
+        help: noUnnecessaryDerivedDependency.help,
+        line: i + 1,
+        column: match.index! + 1,
+        category: noUnnecessaryDerivedDependency.category,
+      });
+    }
+
+    return diagnostics;
+  },
+};
+
 export const reactivityRules: Rule[] = [
   noUnnecessaryState,
   noDerivedSideEffect,
   preferRunes,
   noUnwrittenStore,
+  noMixedRunesAndStores,
+  noUnnecessaryDerivedDependency,
 ];

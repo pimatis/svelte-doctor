@@ -394,6 +394,172 @@ const formActionMissingAuthCheck: Rule = {
   },
 };
 
+const noMissingPrefetch: Rule = {
+  name: "no-missing-prefetch",
+  category: "SvelteKit",
+  severity: "warning",
+  message:
+    "Navigation link is missing `data-sveltekit-prefetch` — every navigation causes a full page load",
+  help: "Add `data-sveltekit-prefetch` to navigation links, especially in layouts and headers. This enables SvelteKit's built-in prefetching for faster page transitions.",
+  docs: {
+    summary: "Flags navigation links without data-sveltekit-prefetch.",
+    whyItMatters:
+      "Without prefetch, every internal navigation triggers a full server round-trip. Prefetch loads the target page data on hover/tap, making navigations feel instant.",
+    safeFix: "Add data-sveltekit-prefetch to the <a> element.",
+  },
+  check: (ctx) => {
+    if (!ctx.filePath.endsWith(".svelte")) return [];
+    if (
+      !/\+(page|layout|error)\.svelte$/.test(ctx.filePath) &&
+      !/(?:nav|header|sidebar|layout)/i.test(ctx.filePath)
+    )
+      return [];
+
+    const diagnostics: Diagnostic[] = [];
+    const lines = ctx.source.split("\n");
+
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i].trimStart();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("<!--"))
+        continue;
+
+      const anchorMatch = lines[i].match(/<a\b[^>]*\bhref\s*=\s*["']\/(?!\/)[^"']*["'][^>]*>/);
+      if (!anchorMatch) continue;
+
+      if (/data-sveltekit-prefetch/.test(anchorMatch[0])) continue;
+      if (/\brel\s*=\s*["'][^"']*\bexternal\b/.test(anchorMatch[0])) continue;
+
+      diagnostics.push({
+        filePath: ctx.filePath,
+        rule: noMissingPrefetch.name,
+        severity: noMissingPrefetch.severity,
+        message: noMissingPrefetch.message,
+        help: noMissingPrefetch.help,
+        line: i + 1,
+        column: lines[i].indexOf("<a") + 1,
+        category: noMissingPrefetch.category,
+      });
+    }
+
+    return diagnostics;
+  },
+};
+
+const noFormActionWithoutRedirect: Rule = {
+  name: "no-form-action-without-redirect",
+  category: "SvelteKit",
+  severity: "warning",
+  message:
+    "Form action mutates data but does not call `redirect()` — refresh will resubmit the form",
+  help: "Follow the POST-Redirect-GET pattern: after a successful mutation, call `redirect(303, '/path')` instead of returning plain data.",
+  docs: {
+    summary: "Flags form actions that mutate without redirecting.",
+    whyItMatters:
+      "Without a redirect after POST, browser refresh re-submits the form, causing duplicate submissions.",
+    safeFix: "Add redirect(303, '/target-path') after the mutation completes.",
+  },
+  check: (ctx) => {
+    if (!/\+(?:page|layout)\.server\.(?:ts|js)$/.test(ctx.filePath)) return [];
+
+    const diagnostics: Diagnostic[] = [];
+    const source = ctx.source;
+    const hasActions = /export\s+(?:const|let)\s+actions\s*[:=]/.test(source);
+    if (!hasActions) return [];
+
+    const hasRedirect = /\bredirect\s*\(/.test(source);
+    if (hasRedirect) return [];
+
+    const hasMutationVerb =
+      /\b(create|update|delete|insert|remove|save|write|upsert|destroy)\b/i.test(source);
+    if (!hasMutationVerb) return [];
+
+    const lines = source.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i].trimStart();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*")) continue;
+
+      if (/\bexport\s+(?:const|let)\s+actions\s*[:=]/.test(lines[i])) {
+        diagnostics.push({
+          filePath: ctx.filePath,
+          rule: noFormActionWithoutRedirect.name,
+          severity: noFormActionWithoutRedirect.severity,
+          message: noFormActionWithoutRedirect.message,
+          help: noFormActionWithoutRedirect.help,
+          line: i + 1,
+          column: lines[i].indexOf("actions") + 1,
+          category: noFormActionWithoutRedirect.category,
+        });
+      }
+    }
+
+    return diagnostics;
+  },
+};
+
+const noNonSerializableLoadReturn: Rule = {
+  name: "no-non-serializable-load-return",
+  category: "SvelteKit",
+  severity: "error",
+  message:
+    "Server `load` function returns a non-serializable value — this will break SvelteKit's data transport",
+  help: "Return only JSON-serializable data from server load functions. Avoid functions, class instances, BigInt, Symbol, or undefined values.",
+  docs: {
+    summary: "Flags non-serializable return values in server load functions.",
+    whyItMatters:
+      "SvelteKit serializes server load return values with devalue to send them to the client. Functions, class instances, and certain types cannot be serialized and will cause runtime errors.",
+    safeFix:
+      "Return plain objects, arrays, primitives, Date, Map, Set, or other devalue-compatible types.",
+  },
+  check: (ctx) => {
+    if (!/\+(?:page|layout)\.server\.(?:ts|js)$/.test(ctx.filePath)) return [];
+
+    const diagnostics: Diagnostic[] = [];
+    const lines = ctx.source.split("\n");
+
+    let insideLoad = false;
+    const nonSerializablePatterns = [
+      { pattern: /\bnew\s+\w+\s*\(/, name: "class instance" },
+      { pattern: /=>/, name: "arrow function" },
+      { pattern: /\bfunction\s*\(/, name: "inline function" },
+      { pattern: /\bBigInt\s*\(/, name: "BigInt" },
+      { pattern: /\bSymbol\s*\(/, name: "Symbol" },
+    ];
+
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i].trimStart();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*")) continue;
+
+      if (/\bexport\s+(?:const|let|async\s+function|function)\s+load\b/.test(lines[i])) {
+        insideLoad = true;
+        continue;
+      }
+
+      if (insideLoad && /^\s*return\s+/.test(lines[i])) {
+        for (const { pattern, name } of nonSerializablePatterns) {
+          if (pattern.test(lines[i])) {
+            diagnostics.push({
+              filePath: ctx.filePath,
+              rule: noNonSerializableLoadReturn.name,
+              severity: noNonSerializableLoadReturn.severity,
+              message: `${noNonSerializableLoadReturn.message} (${name} detected)`,
+              help: noNonSerializableLoadReturn.help,
+              line: i + 1,
+              column: 1,
+              category: noNonSerializableLoadReturn.category,
+            });
+          }
+        }
+      }
+
+      if (insideLoad && /^};?\s*$|^\s*}\s*;?\s*$/.test(lines[i])) {
+        insideLoad = false;
+      }
+    }
+
+    return diagnostics;
+  },
+};
+
 export const sveltekitRules: Rule[] = [
   noClientFetch,
   loadMissingType,
@@ -402,4 +568,7 @@ export const sveltekitRules: Rule[] = [
   missingErrorPage,
   serverLoadMissingErrorGuard,
   formActionMissingAuthCheck,
+  noMissingPrefetch,
+  noFormActionWithoutRedirect,
+  noNonSerializableLoadReturn,
 ];

@@ -1096,6 +1096,66 @@ const noStyleTagProps: Rule = {
   },
 };
 
+const preferSnippetOverPassedFunction: Rule = {
+  name: "prefer-snippet-over-passed-function",
+  category: "Performance",
+  severity: "warning",
+  message:
+    "Function prop detected where `{#snippet}` + `{@render}` should be used for Svelte 5 rendering",
+  help: "Replace function props named `children` or `render*` with `{#snippet name}...{/snippet}` blocks and `{@render name()}` calls.",
+  docs: {
+    summary: "Flags function props that should be snippets.",
+    whyItMatters:
+      "Passing functions as component props for rendering causes unnecessary re-renders. Svelte 5 snippets are compiled more efficiently.",
+    safeFix:
+      "Define a snippet in the parent: {#snippet name()}...{/snippet}, then pass it as a prop and render with {@render name()}.",
+  },
+  check: (ctx) => {
+    if (!ctx.filePath.endsWith(".svelte")) return [];
+    if (!ctx.projectInfo.usesRunes) return [];
+
+    const diagnostics: Diagnostic[] = [];
+    const lines = ctx.source.split("\n");
+    const snippetProps = /\b(children|render[A-Z]\w*|childRender|defaultSlot)\b/;
+    const renderUsage = (ctx.source.match(/\{@render\s+/g) ?? []).length;
+    if (renderUsage >= 2) return [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i].trimStart();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
+
+      const propsMatch = lines[i].match(
+        /(?:let|const|var)\s*\{([^}]+)\}\s*(?::\s*[^=]+)?\s*=\s*\$props\s*\(/,
+      );
+      if (!propsMatch) continue;
+
+      const propsList = propsMatch[1];
+      const names = propsList
+        .split(",")
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0);
+
+      for (const name of names) {
+        const cleanName = name.replace(/\s*:\s*.+$/, "").trim();
+        if (!snippetProps.test(cleanName)) continue;
+
+        diagnostics.push({
+          filePath: ctx.filePath,
+          rule: preferSnippetOverPassedFunction.name,
+          severity: preferSnippetOverPassedFunction.severity,
+          message: `${preferSnippetOverPassedFunction.message} (prop: \`${cleanName}\`)`,
+          help: preferSnippetOverPassedFunction.help,
+          line: i + 1,
+          column: lines[i].indexOf(cleanName) + 1,
+          category: preferSnippetOverPassedFunction.category,
+        });
+      }
+    }
+
+    return diagnostics;
+  },
+};
+
 export const performanceRules: Rule[] = [
   noEffectForDerived,
   eachMissingKey,
@@ -1117,4 +1177,5 @@ export const performanceRules: Rule[] = [
   noIdSelector,
   noImportantOverride,
   noStyleTagProps,
+  preferSnippetOverPassedFunction,
 ];

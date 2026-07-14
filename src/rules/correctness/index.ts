@@ -334,6 +334,165 @@ const noOnDirective: Rule = {
   },
 };
 
+const noInspectInProduction: Rule = {
+  name: "no-$inspect-in-production",
+  category: "Correctness",
+  severity: "error",
+  message: "`$inspect()` debug rune found — it becomes a noop in production but ships dead code",
+  help: "Remove `$inspect()` calls before deploying. They are development-only debugging utilities.",
+  docs: {
+    summary: "Flags $inspect() debugging rune that should not reach production.",
+    whyItMatters:
+      "$inspect() ships as dead code in production builds, unnecessarily increasing bundle size.",
+    safeFix: "Delete the $inspect() call or wrap it in an if (import.meta.env.DEV) guard block.",
+  },
+  check: (ctx) => {
+    if (
+      !ctx.filePath.endsWith(".svelte") &&
+      !ctx.filePath.endsWith(".svelte.js") &&
+      !ctx.filePath.endsWith(".svelte.ts")
+    )
+      return [];
+
+    const diagnostics: Diagnostic[] = [];
+    const lines = ctx.source.split("\n");
+    const pattern = /\$inspect\s*\(/;
+
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i].trimStart();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
+
+      const match = pattern.exec(lines[i]);
+      if (!match) continue;
+
+      diagnostics.push({
+        filePath: ctx.filePath,
+        rule: noInspectInProduction.name,
+        severity: noInspectInProduction.severity,
+        message: noInspectInProduction.message,
+        help: noInspectInProduction.help,
+        line: i + 1,
+        column: match.index + 1,
+        category: noInspectInProduction.category,
+      });
+    }
+
+    return diagnostics;
+  },
+};
+
+const noStateFrozenMisuse: Rule = {
+  name: "no-$state-frozen-misuse",
+  category: "Correctness",
+  severity: "warning",
+  message:
+    "`$state.frozen()` object is mutated via destructive method — frozen state is shallow-immutable",
+  help: "Replace the frozen state value wholesale instead of mutating it, e.g. `items = [...items, newItem]` instead of `items.push(newItem)`.",
+  docs: {
+    summary: "Flags mutations on $state.frozen() values.",
+    whyItMatters:
+      "$state.frozen() creates shallow-immutable state. Mutating methods like .push() or .splice() silently fail to trigger updates.",
+    safeFix: "Reassign the value with a new copy: items = [...items, newItem].",
+  },
+  check: (ctx) => {
+    if (
+      !ctx.filePath.endsWith(".svelte") &&
+      !ctx.filePath.endsWith(".svelte.js") &&
+      !ctx.filePath.endsWith(".svelte.ts")
+    )
+      return [];
+    if (!ctx.projectInfo.usesRunes) return [];
+
+    const diagnostics: Diagnostic[] = [];
+    const lines = ctx.source.split("\n");
+
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i].trimStart();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
+
+      const frozenMatch = lines[i].match(/(?:const|let|var)\s+(\w+)\s*=\s*\$state\.frozen\s*\(/);
+      if (!frozenMatch) continue;
+
+      const varName = frozenMatch[1];
+
+      for (let j = i; j < lines.length; j++) {
+        const laterTrimmed = lines[j].trimStart();
+        if (laterTrimmed.startsWith("//") || laterTrimmed.startsWith("*")) continue;
+
+        if (
+          new RegExp(
+            `\\b${varName}\\s*\\.\\s*(?:push|pop|shift|unshift|splice|sort|reverse|fill|copyWithin)\\s*\\(`,
+          ).test(laterTrimmed)
+        ) {
+          diagnostics.push({
+            filePath: ctx.filePath,
+            rule: noStateFrozenMisuse.name,
+            severity: noStateFrozenMisuse.severity,
+            message: `${noStateFrozenMisuse.message} (mutating \`${varName}\`)`,
+            help: noStateFrozenMisuse.help,
+            line: j + 1,
+            column: laterTrimmed.indexOf(varName) + 1,
+            category: noStateFrozenMisuse.category,
+          });
+        }
+      }
+    }
+
+    return diagnostics;
+  },
+};
+
+const noClassInstanceAsState: Rule = {
+  name: "no-class-instance-as-$state",
+  category: "Correctness",
+  severity: "warning",
+  message:
+    "Class instance passed to `$state()` — property access on class instances does not create reactive dependencies",
+  help: "Use individual reactive primitives ($state) for each field instead of wrapping the whole class instance.",
+  docs: {
+    summary: "Flags class instances wrapped in $state().",
+    whyItMatters:
+      "Svelte 5 fine-grained reactivity tracks primitive value access, not class property access. Instance property reads inside $derived or template won't register as dependencies.",
+    safeFix:
+      "Store individual reactive fields: let name = $state(instance.name) instead of let obj = $state(new MyClass()).",
+  },
+  check: (ctx) => {
+    if (
+      !ctx.filePath.endsWith(".svelte") &&
+      !ctx.filePath.endsWith(".svelte.js") &&
+      !ctx.filePath.endsWith(".svelte.ts")
+    )
+      return [];
+    if (!ctx.projectInfo.usesRunes) return [];
+
+    const diagnostics: Diagnostic[] = [];
+    const lines = ctx.source.split("\n");
+
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i].trimStart();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
+
+      const match = lines[i].match(
+        /(?:let|const|var)\s+\w+\s*=\s*\$state\s*(?:<[^>]*>)?\s*\(\s*new\s+\w+/,
+      );
+      if (!match) continue;
+
+      diagnostics.push({
+        filePath: ctx.filePath,
+        rule: noClassInstanceAsState.name,
+        severity: noClassInstanceAsState.severity,
+        message: noClassInstanceAsState.message,
+        help: noClassInstanceAsState.help,
+        line: i + 1,
+        column: match.index! + 1,
+        category: noClassInstanceAsState.category,
+      });
+    }
+
+    return diagnostics;
+  },
+};
+
 export const correctnessRules: Rule[] = [
   noLegacyReactive,
   noLegacyLifecycle,
@@ -342,4 +501,7 @@ export const correctnessRules: Rule[] = [
   noLegacySlots,
   noLetDirective,
   noOnDirective,
+  noInspectInProduction,
+  noStateFrozenMisuse,
+  noClassInstanceAsState,
 ];
