@@ -25,14 +25,19 @@ const spawnCli = (cwd, args, input = "") =>
     env: { ...process.env, FORCE_COLOR: "0" },
   });
 
-const createSvelteProject = (files) => createProject({
-  "package.json": JSON.stringify({
-    name: "migration-fixture",
-    type: "module",
-    dependencies: { svelte: "^5.0.0" },
-  }, null, 2),
-  ...files,
-});
+const createSvelteProject = (files) =>
+  createProject({
+    "package.json": JSON.stringify(
+      {
+        name: "migration-fixture",
+        type: "module",
+        dependencies: { svelte: "^5.0.0" },
+      },
+      null,
+      2,
+    ),
+    ...files,
+  });
 
 test("transformMigrateSource converts props and reactive statements with AST", () => {
   const source = `<script lang="ts">
@@ -48,7 +53,10 @@ test("transformMigrateSource converts props and reactive statements with AST", (
 
   const result = transformMigrateSource(source);
 
-  assert.match(result.content, /let \{ count = 0, name \}: \{ count: number; name: string \} = \$props\(\);/);
+  assert.match(
+    result.content,
+    /let \{ count = 0, name \}: \{ count: number; name: string \} = \$props\(\);/,
+  );
   assert.match(result.content, /const doubled = \$derived\(count \* 2\);/);
   assert.match(result.content, /const \{ value \} = \$derived\(item\);/);
   assert.match(result.content, /onclick=\{\(\) => count \+= 1\}/);
@@ -73,7 +81,10 @@ test("transformMigrateSource avoids markup false positives in scripts styles and
 
   assert.match(result.content, /const html = "<slot \/> on:click class:active let:item";/);
   assert.match(result.content, /content: "<slot \/> on:click class:active let:item";/);
-  assert.match(result.content, /<button onclick=\{handle\} class=\{enabled \? "active" : ""\}>Run<\/button>/);
+  assert.match(
+    result.content,
+    /<button onclick=\{handle\} class=\{enabled \? "active" : ""\}>Run<\/button>/,
+  );
 });
 
 test("runCodemod keeps store rewrites manual-review only", () => {
@@ -88,7 +99,12 @@ const doubled = derived(count, ($count) => $count * 2);
 
   assert.equal(result.content, source);
   assert.equal(result.changes.length, 0);
-  assert.equal(result.warnings.some((warning) => warning.message.includes("svelte/store migration needs manual review")), true);
+  assert.equal(
+    result.warnings.some((warning) =>
+      warning.message.includes("svelte/store migration needs manual review"),
+    ),
+    true,
+  );
 });
 
 test("migrate plan reports review-only legacy features", () => {
@@ -106,7 +122,10 @@ const count = writable(0);
 
   assert.equal(result.totalFiles, 1);
   assert.equal(result.needsReview, 1);
-  assert.equal(result.topIssues.some((issue) => issue.label === "store usage"), true);
+  assert.equal(
+    result.topIssues.some((issue) => issue.label === "store usage"),
+    true,
+  );
 });
 
 test("migrate dry-run diff does not write files", () => {
@@ -196,15 +215,24 @@ test("migrate commit-stages commits only migrated files", () => {
   });
 
   execFileSync("git", ["init"], { cwd: project, stdio: "ignore" });
-  execFileSync("git", ["config", "user.email", "fixture@example.com"], { cwd: project, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "fixture@example.com"], {
+    cwd: project,
+    stdio: "ignore",
+  });
   execFileSync("git", ["config", "user.name", "Fixture"], { cwd: project, stdio: "ignore" });
   execFileSync("git", ["add", "."], { cwd: project, stdio: "ignore" });
   execFileSync("git", ["commit", "-m", "init"], { cwd: project, stdio: "ignore" });
   fs.writeFileSync(path.join(project, "notes.txt"), "do not commit\n", "utf-8");
 
   const result = JSON.parse(runCli(project, ["migrate", ".", "--commit-stages", "--json"]));
-  const log = execFileSync("git", ["log", "--oneline", "--format=%s"], { cwd: project, encoding: "utf-8" });
-  const trackedNotes = execFileSync("git", ["ls-files", "notes.txt"], { cwd: project, encoding: "utf-8" });
+  const log = execFileSync("git", ["log", "--oneline", "--format=%s"], {
+    cwd: project,
+    encoding: "utf-8",
+  });
+  const trackedNotes = execFileSync("git", ["ls-files", "notes.txt"], {
+    cwd: project,
+    encoding: "utf-8",
+  });
 
   assert.equal(result.filesModified >= 1, true);
   assert.match(log, /migrate: convert reactive statements to runes/);

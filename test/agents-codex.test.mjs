@@ -9,5 +9,10 @@ test("Codex agent uses exec mode in the target cwd", () => {
   assert.equal(agent.id, "codex");
   assert.equal(agent.available, true);
   assert.deepEqual(agent.getSpawnArgs?.("/repo", "safe"), ["exec", "-C", "/repo"]);
-  assert.deepEqual(agent.getSpawnArgs?.("/repo", "unsafe"), ["exec", "-C", "/repo", "--dangerously-bypass-approvals-and-sandbox"]);
+  assert.deepEqual(agent.getSpawnArgs?.("/repo", "unsafe"), [
+    "exec",
+    "-C",
+    "/repo",
+    "--dangerously-bypass-approvals-and-sandbox",
+  ]);
 });

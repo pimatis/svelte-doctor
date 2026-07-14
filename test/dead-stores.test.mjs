@@ -302,9 +302,7 @@ test("no-unwritten-store resolves through re-export chains", async () => {
         "export const counter = writable(0);",
         "export function reset() { counter.set(0); }",
       ].join("\n"),
-      "src/stores/index.ts": [
-        "export { counter } from './counter';",
-      ].join("\n"),
+      "src/stores/index.ts": ["export { counter } from './counter';"].join("\n"),
       "src/routes/+page.svelte": [
         "<script>",
         "  import { counter } from '../stores/index';",

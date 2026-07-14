@@ -32,9 +32,21 @@ const runCli = (cwd, args) =>
 const setupDotDir = (root) => {
   const dotDir = path.join(root, ".svelte-doctor");
   fs.mkdirSync(dotDir, { recursive: true });
-  fs.writeFileSync(path.join(dotDir, "cache.json"), JSON.stringify({ version: 2, files: { test: {} } }), "utf-8");
-  fs.writeFileSync(path.join(dotDir, "baseline.json"), JSON.stringify({ version: 1, entries: [] }), "utf-8");
-  fs.writeFileSync(path.join(dotDir, "history.json"), JSON.stringify([{ timestamp: "2024-01-01", score: 100 }]), "utf-8");
+  fs.writeFileSync(
+    path.join(dotDir, "cache.json"),
+    JSON.stringify({ version: 2, files: { test: {} } }),
+    "utf-8",
+  );
+  fs.writeFileSync(
+    path.join(dotDir, "baseline.json"),
+    JSON.stringify({ version: 1, entries: [] }),
+    "utf-8",
+  );
+  fs.writeFileSync(
+    path.join(dotDir, "history.json"),
+    JSON.stringify([{ timestamp: "2024-01-01", score: 100 }]),
+    "utf-8",
+  );
 };
 
 test("reset --all removes everything in .svelte-doctor", () => {
@@ -69,7 +81,9 @@ test("reset --cache removes only cache.json", () => {
 
   // Cache gone, baseline still there
   assert.throws(() => fs.statSync(path.join(project, ".svelte-doctor", "cache.json")));
-  const baseline = JSON.parse(fs.readFileSync(path.join(project, ".svelte-doctor", "baseline.json"), "utf-8"));
+  const baseline = JSON.parse(
+    fs.readFileSync(path.join(project, ".svelte-doctor", "baseline.json"), "utf-8"),
+  );
   assert.equal(baseline.version, 1);
 });
 

@@ -11,8 +11,14 @@ const buildScriptLineMap = (source: string): boolean[] => {
 
   for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i].trim();
-    if (/^<script[\s>]/.test(trimmed)) { inside = true; continue; }
-    if (trimmed === "</script>") { inside = false; continue; }
+    if (/^<script[\s>]/.test(trimmed)) {
+      inside = true;
+      continue;
+    }
+    if (trimmed === "</script>") {
+      inside = false;
+      continue;
+    }
     map[i] = inside;
   }
 
@@ -33,7 +39,10 @@ const buildStyleLineMap = (source: string): boolean[] => {
       inside = !closesOnSameLine;
       continue;
     }
-    if (trimmed === "</style>") { inside = false; continue; }
+    if (trimmed === "</style>") {
+      inside = false;
+      continue;
+    }
     map[i] = inside;
     if (inside && /<\/style>/.test(trimmed)) {
       inside = false;
@@ -70,7 +79,9 @@ const createPerformanceDiagnostic = (
   category: rule.category,
 });
 
-const extractStyleBlocks = (source: string): Array<{ content: string; startLine: number; global: boolean }> => {
+const extractStyleBlocks = (
+  source: string,
+): Array<{ content: string; startLine: number; global: boolean }> => {
   const blocks: Array<{ content: string; startLine: number; global: boolean }> = [];
   const pattern = /<style\b([^>]*)>([\s\S]*?)<\/style>/gi;
   let match: RegExpExecArray | null;
@@ -157,14 +168,19 @@ const stripCssNoise = (selector: string): string => {
 const calculateSpecificityScore = (selector: string): number => {
   const cleanSelector = stripCssNoise(selector);
   const idCount = (cleanSelector.match(/#[\w-]+/g) ?? []).length;
-  const classCount = (cleanSelector.match(/(?:\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+(?:\([^)]*\))?)/g) ?? []).length;
+  const classCount = (
+    cleanSelector.match(/(?:\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+(?:\([^)]*\))?)/g) ?? []
+  ).length;
   const typeCount = (cleanSelector.match(/(?:^|[\s>+~])(?:[a-zA-Z][\w-]*|::[\w-]+)/g) ?? []).length;
 
   return idCount * 100 + classCount * 10 + typeCount;
 };
 
 const selectorDepth = (selector: string): number =>
-  stripCssNoise(selector).trim().split(/\s+|\s*[>+~]\s*/).filter(Boolean).length;
+  stripCssNoise(selector)
+    .trim()
+    .split(/\s+|\s*[>+~]\s*/)
+    .filter(Boolean).length;
 
 const extractSelectors = (css: string): Array<{ selector: string; index: number }> => {
   const selectors: Array<{ selector: string; index: number }> = [];
@@ -207,7 +223,11 @@ const extractSelectors = (css: string): Array<{ selector: string; index: number 
 
     if (char === "{") {
       const selectorList = buffer.trim();
-      const isRuleSelector = blockDepth === 0 && selectorList && !selectorList.startsWith("@") && !selectorList.includes(";");
+      const isRuleSelector =
+        blockDepth === 0 &&
+        selectorList &&
+        !selectorList.startsWith("@") &&
+        !selectorList.includes(";");
       if (isRuleSelector) {
         for (const selector of splitSelectorList(selectorList)) {
           selectors.push({ selector, index: selectorStart });
@@ -260,7 +280,12 @@ const hasReturnStatement = (node: ts.Node): boolean => {
   const visit = (candidate: ts.Node) => {
     if (found) return;
 
-    if (candidate !== node && (ts.isArrowFunction(candidate) || ts.isFunctionExpression(candidate) || ts.isFunctionDeclaration(candidate))) {
+    if (
+      candidate !== node &&
+      (ts.isArrowFunction(candidate) ||
+        ts.isFunctionExpression(candidate) ||
+        ts.isFunctionDeclaration(candidate))
+    ) {
       return;
     }
 
@@ -279,8 +304,13 @@ const containsCallName = (node: ts.Node, names: Set<string>): boolean => {
   const visit = (candidate: ts.Node) => {
     if (found) return;
     if (ts.isCallExpression(candidate)) {
-      if (ts.isIdentifier(candidate.expression) && names.has(candidate.expression.text)) found = true;
-      if (ts.isPropertyAccessExpression(candidate.expression) && names.has(candidate.expression.name.text)) found = true;
+      if (ts.isIdentifier(candidate.expression) && names.has(candidate.expression.text))
+        found = true;
+      if (
+        ts.isPropertyAccessExpression(candidate.expression) &&
+        names.has(candidate.expression.name.text)
+      )
+        found = true;
     }
 
     ts.forEachChild(candidate, visit);
@@ -347,10 +377,18 @@ const noEffectForDerived: Rule = {
       if (statement.expression.operatorToken.kind !== ts.SyntaxKind.EqualsToken) return;
       if (!ts.isIdentifier(statement.expression.left)) return;
       if (containsCallName(statement.expression.right, new Set(["fetch"]))) return;
-      if (containsObjectName(statement.expression.right, new Set(["window", "document", "localStorage", "sessionStorage", "console"]))) return;
+      if (
+        containsObjectName(
+          statement.expression.right,
+          new Set(["window", "document", "localStorage", "sessionStorage", "console"]),
+        )
+      )
+        return;
 
       const position = getLineAndColumn(block, call.getStart(block.sourceFile));
-      diagnostics.push(createPerformanceDiagnostic(ctx, noEffectForDerived, position.line, position.column));
+      diagnostics.push(
+        createPerformanceDiagnostic(ctx, noEffectForDerived, position.line, position.column),
+      );
     });
 
     return diagnostics;
@@ -412,7 +450,8 @@ const noInlineObject: Rule = {
   name: "no-inline-object",
   category: "Performance",
   severity: "warning",
-  message: "Inline object or array literal in template expression causes re-creation on every render",
+  message:
+    "Inline object or array literal in template expression causes re-creation on every render",
   help: "Extract the value into a `$derived` or a module-level constant to avoid allocating a new reference each render cycle.",
   appliesTo: ["svelte"],
   cost: "low",
@@ -470,8 +509,10 @@ const noTransitionAll: Rule = {
   autofixable: true,
   docs: {
     summary: "Flags blanket CSS transitions inside Svelte components.",
-    whyItMatters: "transition: all expands animation work to unrelated properties and increases layout/paint cost.",
-    safeFix: "Keep the original timing function and duration, but replace all with opacity, transform.",
+    whyItMatters:
+      "transition: all expands animation work to unrelated properties and increases layout/paint cost.",
+    safeFix:
+      "Keep the original timing function and duration, but replace all with opacity, transform.",
   },
   check: (ctx: RuleContext): Diagnostic[] => {
     const diagnostics: Diagnostic[] = [];
@@ -515,7 +556,8 @@ const noLargeInlineListTransform: Rule = {
     const diagnostics: Diagnostic[] = [];
     const scriptMap = buildScriptLineMap(ctx.source);
     const styleMap = buildStyleLineMap(ctx.source);
-    const pattern = /\{[^}\n]*(?:\.\s*filter\([^}]+\)|\.\s*map\([^}]+\)|\.\s*sort\([^}]+\)){2,}[^}\n]*\}/;
+    const pattern =
+      /\{[^}\n]*(?:\.\s*filter\([^}]+\)|\.\s*map\([^}]+\)|\.\s*sort\([^}]+\)){2,}[^}\n]*\}/;
 
     for (let i = 0; i < ctx.lines.length; i++) {
       if (scriptMap[i] || styleMap[i]) continue;
@@ -557,8 +599,14 @@ const noRepeatedDerivedAllocation: Rule = {
 
         const visit = (node: ts.Node) => {
           if (allocatesCollection) return;
-          if (ts.isArrayLiteralExpression(node) || ts.isObjectLiteralExpression(node)) allocatesCollection = true;
-          if (ts.isNewExpression(node) && ts.isIdentifier(node.expression) && ["Map", "Set", "Array"].includes(node.expression.text)) allocatesCollection = true;
+          if (ts.isArrayLiteralExpression(node) || ts.isObjectLiteralExpression(node))
+            allocatesCollection = true;
+          if (
+            ts.isNewExpression(node) &&
+            ts.isIdentifier(node.expression) &&
+            ["Map", "Set", "Array"].includes(node.expression.text)
+          )
+            allocatesCollection = true;
           ts.forEachChild(node, visit);
         };
 
@@ -567,7 +615,14 @@ const noRepeatedDerivedAllocation: Rule = {
       }
 
       const position = getLineAndColumn(block, call.getStart(block.sourceFile));
-      diagnostics.push(createPerformanceDiagnostic(ctx, noRepeatedDerivedAllocation, position.line, position.column));
+      diagnostics.push(
+        createPerformanceDiagnostic(
+          ctx,
+          noRepeatedDerivedAllocation,
+          position.line,
+          position.column,
+        ),
+      );
     });
 
     return diagnostics;
@@ -584,7 +639,8 @@ const noBlockingSyncFsInHotCliPath: Rule = {
   cost: "low",
   docs: {
     summary: "Flags synchronous filesystem calls in hot CLI orchestration files.",
-    whyItMatters: "Repeated sync fs calls inflate latency and become visible on large repositories.",
+    whyItMatters:
+      "Repeated sync fs calls inflate latency and become visible on large repositories.",
     safeFix: "Share manifests/cache state or move repeated reads off the hottest execution path.",
   },
   check: (ctx: RuleContext): Diagnostic[] => {
@@ -593,7 +649,13 @@ const noBlockingSyncFsInHotCliPath: Rule = {
     if (!/(?:^|\/)(?:cli|scanner|hooks\.server|server)\.(ts|js)$/.test(ctx.filePath)) return [];
 
     const matches: Array<{ line: number; column: number }> = [];
-    const fsSyncMethods = new Set(["readFileSync", "readdirSync", "statSync", "lstatSync", "existsSync"]);
+    const fsSyncMethods = new Set([
+      "readFileSync",
+      "readdirSync",
+      "statSync",
+      "lstatSync",
+      "existsSync",
+    ]);
 
     for (const block of ctx.scriptBlocks) {
       walkSourceFile(block.sourceFile, (node) => {
@@ -602,7 +664,10 @@ const noBlockingSyncFsInHotCliPath: Rule = {
         if (!isIdentifierNamed(node.expression.expression, "fs")) return;
         if (!fsSyncMethods.has(node.expression.name.text)) return;
 
-        const { line, column } = getLineAndColumn(block, node.expression.getStart(block.sourceFile));
+        const { line, column } = getLineAndColumn(
+          block,
+          node.expression.getStart(block.sourceFile),
+        );
         matches.push({ line, column });
       });
     }
@@ -627,23 +692,25 @@ const preferLazyDeadcodePhase: Rule = {
   category: "Performance",
   severity: "warning",
   message: "Heavy dead-code analysis is enabled in watch mode",
-  help: "Prefer `watch.deadCode = \"off\"` or `\"lazy\"` for faster feedback loops unless you explicitly need full dead-code scans on each change.",
+  help: 'Prefer `watch.deadCode = "off"` or `"lazy"` for faster feedback loops unless you explicitly need full dead-code scans on each change.',
   appliesTo: ["script"],
   cost: "low",
   check: (ctx: RuleContext): Diagnostic[] => {
     if (ctx.filePath !== "svelte-doctor.config.json" && ctx.filePath !== "package.json") return [];
     if (!/["']deadCode["']\s*:\s*["']full["']/.test(ctx.source)) return [];
 
-    return [{
-      filePath: ctx.filePath,
-      rule: preferLazyDeadcodePhase.name,
-      severity: preferLazyDeadcodePhase.severity,
-      message: preferLazyDeadcodePhase.message,
-      help: preferLazyDeadcodePhase.help,
-      line: 1,
-      column: 1,
-      category: preferLazyDeadcodePhase.category,
-    }];
+    return [
+      {
+        filePath: ctx.filePath,
+        rule: preferLazyDeadcodePhase.name,
+        severity: preferLazyDeadcodePhase.severity,
+        message: preferLazyDeadcodePhase.message,
+        help: preferLazyDeadcodePhase.help,
+        line: 1,
+        column: 1,
+        category: preferLazyDeadcodePhase.category,
+      },
+    ];
   },
 };
 
@@ -680,11 +747,19 @@ const effectWithoutCleanup: Rule = {
     forEachRuneCall(ctx, "$effect", (call, block) => {
       const body = getFunctionBody(call.arguments[0]);
       if (!body) return;
-      if (!containsCallName(body, new Set(["addEventListener", "subscribe", "setInterval", "setTimeout"]))) return;
+      if (
+        !containsCallName(
+          body,
+          new Set(["addEventListener", "subscribe", "setInterval", "setTimeout"]),
+        )
+      )
+        return;
       if (hasReturnStatement(body)) return;
 
       const position = getLineAndColumn(block, call.getStart(block.sourceFile));
-      diagnostics.push(createPerformanceDiagnostic(ctx, effectWithoutCleanup, position.line, position.column));
+      diagnostics.push(
+        createPerformanceDiagnostic(ctx, effectWithoutCleanup, position.line, position.column),
+      );
     });
 
     return diagnostics;
@@ -706,12 +781,20 @@ const derivedWithSideEffect: Rule = {
       const target = getFunctionBody(call.arguments[0]) ?? call.arguments[0];
       if (!target) return;
 
-      const hasSideEffectCall = containsCallName(target, new Set(["fetch", "appendChild", "remove", "setItem", "removeItem"]));
-      const hasSideEffectObject = containsObjectName(target, new Set(["document", "window", "localStorage", "sessionStorage"]));
+      const hasSideEffectCall = containsCallName(
+        target,
+        new Set(["fetch", "appendChild", "remove", "setItem", "removeItem"]),
+      );
+      const hasSideEffectObject = containsObjectName(
+        target,
+        new Set(["document", "window", "localStorage", "sessionStorage"]),
+      );
       if (!hasSideEffectCall && !hasSideEffectObject) return;
 
       const position = getLineAndColumn(block, call.getStart(block.sourceFile));
-      diagnostics.push(createPerformanceDiagnostic(ctx, derivedWithSideEffect, position.line, position.column));
+      diagnostics.push(
+        createPerformanceDiagnostic(ctx, derivedWithSideEffect, position.line, position.column),
+      );
     });
 
     return diagnostics;
@@ -762,7 +845,8 @@ const noHydrationMismatchTemplateValues: Rule = {
     const diagnostics: Diagnostic[] = [];
     const scriptMap = buildScriptLineMap(ctx.source);
     const styleMap = buildStyleLineMap(ctx.source);
-    const pattern = /\{[^}\n]*(?:\bwindow\b|\bdocument\b|\blocalStorage\b|\bnavigator\b|Math\.random\s*\(|Date\.now\s*\(|crypto\.randomUUID\s*\(|typeof\s+window)[^}\n]*\}/;
+    const pattern =
+      /\{[^}\n]*(?:\bwindow\b|\bdocument\b|\blocalStorage\b|\bnavigator\b|Math\.random\s*\(|Date\.now\s*\(|crypto\.randomUUID\s*\(|typeof\s+window)[^}\n]*\}/;
 
     for (let i = 0; i < ctx.lines.length; i++) {
       if (scriptMap[i] || styleMap[i]) continue;
@@ -770,7 +854,9 @@ const noHydrationMismatchTemplateValues: Rule = {
       const match = pattern.exec(ctx.lines[i]);
       if (!match) continue;
 
-      diagnostics.push(createPerformanceDiagnostic(ctx, noHydrationMismatchTemplateValues, i + 1, match.index + 1));
+      diagnostics.push(
+        createPerformanceDiagnostic(ctx, noHydrationMismatchTemplateValues, i + 1, match.index + 1),
+      );
     }
 
     return diagnostics;
@@ -797,7 +883,9 @@ const noInlineEventHandler: Rule = {
       const match = pattern.exec(ctx.lines[i]);
       if (!match) continue;
 
-      diagnostics.push(createPerformanceDiagnostic(ctx, noInlineEventHandler, i + 1, match.index + 1));
+      diagnostics.push(
+        createPerformanceDiagnostic(ctx, noInlineEventHandler, i + 1, match.index + 1),
+      );
     }
 
     return diagnostics;
@@ -827,13 +915,23 @@ const noExpensiveDerived: Rule = {
         if (ts.isCallExpression(node)) {
           if (ts.isPropertyAccessExpression(node.expression)) {
             const method = node.expression.name.text;
-            if (method === "parse" && ts.isIdentifier(node.expression.expression) && node.expression.expression.text === "JSON") expensive = true;
+            if (
+              method === "parse" &&
+              ts.isIdentifier(node.expression.expression) &&
+              node.expression.expression.text === "JSON"
+            )
+              expensive = true;
             if (method === "sort") expensive = true;
             if (method === "filter") filterCount++;
           }
         }
 
-        if (ts.isNewExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "RegExp") expensive = true;
+        if (
+          ts.isNewExpression(node) &&
+          ts.isIdentifier(node.expression) &&
+          node.expression.text === "RegExp"
+        )
+          expensive = true;
         if (filterCount >= 2) expensive = true;
 
         ts.forEachChild(node, visit);
@@ -843,7 +941,9 @@ const noExpensiveDerived: Rule = {
       if (!expensive) return;
 
       const position = getLineAndColumn(block, call.getStart(block.sourceFile));
-      diagnostics.push(createPerformanceDiagnostic(ctx, noExpensiveDerived, position.line, position.column));
+      diagnostics.push(
+        createPerformanceDiagnostic(ctx, noExpensiveDerived, position.line, position.column),
+      );
     });
 
     return diagnostics;
@@ -866,7 +966,14 @@ const noHighSpecificity: Rule = {
         if (calculateSpecificityScore(item.selector) <= 130) continue;
 
         const position = getPosition(block.content, item.index);
-        diagnostics.push(createPerformanceDiagnostic(ctx, noHighSpecificity, block.startLine + position.line - 1, position.column));
+        diagnostics.push(
+          createPerformanceDiagnostic(
+            ctx,
+            noHighSpecificity,
+            block.startLine + position.line - 1,
+            position.column,
+          ),
+        );
       }
     }
 
@@ -890,7 +997,14 @@ const noDeepCssNesting: Rule = {
         if (selectorDepth(item.selector) < 5) continue;
 
         const position = getPosition(block.content, item.index);
-        diagnostics.push(createPerformanceDiagnostic(ctx, noDeepCssNesting, block.startLine + position.line - 1, position.column));
+        diagnostics.push(
+          createPerformanceDiagnostic(
+            ctx,
+            noDeepCssNesting,
+            block.startLine + position.line - 1,
+            position.column,
+          ),
+        );
       }
     }
 
@@ -914,7 +1028,14 @@ const noIdSelector: Rule = {
         if (!/#[\w-]+/.test(stripCssNoise(item.selector))) continue;
 
         const position = getPosition(block.content, item.index);
-        diagnostics.push(createPerformanceDiagnostic(ctx, noIdSelector, block.startLine + position.line - 1, position.column));
+        diagnostics.push(
+          createPerformanceDiagnostic(
+            ctx,
+            noIdSelector,
+            block.startLine + position.line - 1,
+            position.column,
+          ),
+        );
       }
     }
 
@@ -939,7 +1060,9 @@ const noImportantOverride: Rule = {
         const column = lines[i].indexOf("!important");
         if (column === -1) continue;
 
-        diagnostics.push(createPerformanceDiagnostic(ctx, noImportantOverride, block.startLine + i, column + 1));
+        diagnostics.push(
+          createPerformanceDiagnostic(ctx, noImportantOverride, block.startLine + i, column + 1),
+        );
       }
     }
 

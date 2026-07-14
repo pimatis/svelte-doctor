@@ -1,7 +1,6 @@
 import type { Diagnostic } from "../types.js";
 
-const normalizeWhitespace = (value: string): string =>
-  value.trim().replace(/\s+/g, " ");
+const normalizeWhitespace = (value: string): string => value.trim().replace(/\s+/g, " ");
 
 const normalizeDiagnosticMessage = (value: string): string =>
   normalizeWhitespace(value).toLowerCase();

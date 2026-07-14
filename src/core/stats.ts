@@ -1,7 +1,7 @@
 import path from "node:path";
 import { scan } from "./scanner.js";
 import { validateDirectory } from "../fs/validate.js";
-import type { Diagnostic, RuleCategory, ScanResult } from "../types.js";
+import type { RuleCategory, ScanResult } from "../types.js";
 
 export interface RuleFrequency {
   rule: string;

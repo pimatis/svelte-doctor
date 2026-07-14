@@ -15,8 +15,12 @@ export const migrateStatusCommand = new Command("migrate-status")
         return;
       }
 
-      logger.log(`  Migration progress: ${result.migratedFiles}/${result.totalFiles} files migrated`);
-      logger.log(`  Pending: ${result.pendingFiles}  Skipped scripts: ${result.skippedFiles}  ETA: ${result.estimatedMinutesRemaining} minutes`);
+      logger.log(
+        `  Migration progress: ${result.migratedFiles}/${result.totalFiles} files migrated`,
+      );
+      logger.log(
+        `  Pending: ${result.pendingFiles}  Skipped scripts: ${result.skippedFiles}  ETA: ${result.estimatedMinutesRemaining} minutes`,
+      );
       for (const category of result.categories) {
         logger.log(`  ${category.label}: ${category.pending} pending`);
       }

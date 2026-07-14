@@ -76,7 +76,11 @@ export const writeSarifReport = (
   return writeReport(targetPath, JSON.stringify(report, null, 2), rootDirectory);
 };
 
-export const writeReport = (targetPath: string, content: string, rootDirectory?: string): string => {
+export const writeReport = (
+  targetPath: string,
+  content: string,
+  rootDirectory?: string,
+): string => {
   if (rootDirectory) {
     return writeFileAtomicSafe(rootDirectory, targetPath, content, {
       mode: 0o600,

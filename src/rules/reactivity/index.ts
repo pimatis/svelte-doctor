@@ -28,7 +28,9 @@ const noUnnecessaryState: Rule = {
       if (!stateMatch) continue;
 
       // make sure this is $state( not $state.snapshot( or $state.is(
-      const afterDollarState = lines[i].slice((stateMatch.index ?? 0) + stateMatch[0].indexOf("$state") + 6).trimStart();
+      const afterDollarState = lines[i]
+        .slice((stateMatch.index ?? 0) + stateMatch[0].indexOf("$state") + 6)
+        .trimStart();
       if (afterDollarState.startsWith(".")) continue;
 
       stateVars.push({
@@ -54,11 +56,16 @@ const noUnnecessaryState: Rule = {
       const reassignMatches = nonCommentSource.match(reassignPattern);
 
       // compound assignment: varName += 1, varName -= 1, varName *= 2, etc.
-      const compoundPattern = new RegExp(`\\b${escapedName}\\s*(?:\\+|-|\\*|\\/|%|\\*\\*|&|\\||\\^|<<|>>|>>>)=`, "g");
+      const compoundPattern = new RegExp(
+        `\\b${escapedName}\\s*(?:\\+|-|\\*|\\/|%|\\*\\*|&|\\||\\^|<<|>>|>>>)=`,
+        "g",
+      );
       const compoundMatches = nonCommentSource.match(compoundPattern);
 
       // increment/decrement: varName++ or varName-- or ++varName or --varName
-      const incDecPattern = new RegExp(`\\b${escapedName}\\s*(?:\\+\\+|--)|\\.\\+\\+${escapedName}\\b|--${escapedName}\\b`);
+      const incDecPattern = new RegExp(
+        `\\b${escapedName}\\s*(?:\\+\\+|--)|\\.\\+\\+${escapedName}\\b|--${escapedName}\\b`,
+      );
       const hasIncDec = incDecPattern.test(nonCommentSource);
 
       // array/object mutation methods
@@ -68,7 +75,9 @@ const noUnnecessaryState: Rule = {
       const hasMutation = mutationPattern.test(nonCommentSource);
 
       // property writes: varName.prop = or varName[expr] =
-      const propWritePattern = new RegExp(`\\b${escapedName}\\s*(?:\\.[\\w.]+|\\[[^\\]]+\\])\\s*=[^=]`);
+      const propWritePattern = new RegExp(
+        `\\b${escapedName}\\s*(?:\\.[\\w.]+|\\[[^\\]]+\\])\\s*=[^=]`,
+      );
       const hasPropWrite = propWritePattern.test(nonCommentSource);
 
       // the declaration itself counts as one match in reassign pattern
@@ -140,9 +149,7 @@ const noDerivedSideEffect: Rule = {
       const startLine = precedingSource.split("\n").length;
 
       const lastNewlineBefore = precedingSource.lastIndexOf("\n");
-      const column = lastNewlineBefore === -1
-        ? match.index + 1
-        : match.index - lastNewlineBefore;
+      const column = lastNewlineBefore === -1 ? match.index + 1 : match.index - lastNewlineBefore;
 
       for (const pattern of sideEffectPatterns) {
         if (!pattern.test(block)) continue;
@@ -172,7 +179,8 @@ const preferRunes: Rule = {
   name: "prefer-runes",
   category: "State & Reactivity",
   severity: "warning",
-  message: "Svelte store (`writable`/`readable`/`derived` from `svelte/store`) detected — consider using runes.",
+  message:
+    "Svelte store (`writable`/`readable`/`derived` from `svelte/store`) detected — consider using runes.",
   help: "In Svelte 5, `$state` replaces `writable`, `$derived` replaces `derived`, and fine-grained reactivity makes stores unnecessary for most cases",
   check: (ctx) => {
     if (!ctx.projectInfo.usesRunes) return [];
@@ -212,7 +220,11 @@ const noUnwrittenStore: Rule = {
   help: "A `writable` that is only read should be a `readable` store or Svelte 5 `$state`. Run `svelte-doctor dead-stores` for a full cross-file report",
   appliesTo: ["all"],
   check: (ctx) => {
-    if (!ctx.filePath.endsWith(".svelte") && !ctx.filePath.endsWith(".ts") && !ctx.filePath.endsWith(".js")) {
+    if (
+      !ctx.filePath.endsWith(".svelte") &&
+      !ctx.filePath.endsWith(".ts") &&
+      !ctx.filePath.endsWith(".js")
+    ) {
       return [];
     }
 

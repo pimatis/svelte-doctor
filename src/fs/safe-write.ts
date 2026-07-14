@@ -21,11 +21,7 @@ const isInsideRoot = (root: string, target: string): boolean => {
   return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
 };
 
-const assertNoSymlinkAncestors = (
-  root: string,
-  target: string,
-  message: string,
-): void => {
+const assertNoSymlinkAncestors = (root: string, target: string, message: string): void => {
   let current = path.dirname(target);
 
   while (current !== root) {
@@ -65,7 +61,7 @@ export const prepareSafeFileTarget = (
       assertInsideRoot(rootReal, realTarget, options.pathMessage);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new Error(options.pathMessage);
+        throw new Error(options.pathMessage, { cause: error });
       }
       throw error;
     }
@@ -102,7 +98,10 @@ export const writeFileAtomicSafe = (
   options: SafeWriteOptions,
 ): string => {
   const target = prepareSafeFileTarget(rootDirectory, targetPath, options);
-  const tmpPath = path.join(path.dirname(target), `.${path.basename(target)}.${process.pid}.${randomUUID()}.tmp`);
+  const tmpPath = path.join(
+    path.dirname(target),
+    `.${path.basename(target)}.${process.pid}.${randomUUID()}.tmp`,
+  );
 
   try {
     fs.writeFileSync(tmpPath, contents, {
@@ -115,7 +114,9 @@ export const writeFileAtomicSafe = (
   } catch (error) {
     try {
       fs.unlinkSync(tmpPath);
-    } catch {}
+    } catch {
+      /* cleanup best-effort */
+    }
     throw error;
   }
 };

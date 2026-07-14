@@ -9,8 +9,14 @@ const buildScriptLineMap = (source: string): boolean[] => {
 
   for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i].trim();
-    if (/^<script[\s>]/.test(trimmed)) { inside = true; continue; }
-    if (trimmed === "</script>") { inside = false; continue; }
+    if (/^<script[\s>]/.test(trimmed)) {
+      inside = true;
+      continue;
+    }
+    if (trimmed === "</script>") {
+      inside = false;
+      continue;
+    }
     map[i] = inside;
   }
 
@@ -45,7 +51,7 @@ const imgMissingAlt: Rule = {
   category: "Accessibility",
   severity: "warning",
   message: "`<img>` element is missing an `alt` attribute",
-  help: "Add descriptive alt text: `<img alt=\"description\" />`. For decorative images use `alt=\"\"`. Dynamic bindings like `{alt}` or `alt={altVar}` are accepted.",
+  help: 'Add descriptive alt text: `<img alt="description" />`. For decorative images use `alt=""`. Dynamic bindings like `{alt}` or `alt={altVar}` are accepted.',
   check: (ctx) => {
     if (!ctx.filePath.endsWith(".svelte")) return [];
 
@@ -94,7 +100,7 @@ const clickNeedsKeyboard: Rule = {
   category: "Accessibility",
   severity: "warning",
   message: "Click handler on non-interactive element needs keyboard support",
-  help: "Add an `onkeydown` handler and `role=\"button\"` + `tabindex=\"0\"` for non-interactive elements with click handlers. Or better: use a `<button>` instead.",
+  help: 'Add an `onkeydown` handler and `role="button"` + `tabindex="0"` for non-interactive elements with click handlers. Or better: use a `<button>` instead.',
   check: (ctx) => {
     if (!ctx.filePath.endsWith(".svelte")) return [];
 
@@ -115,9 +121,7 @@ const clickNeedsKeyboard: Rule = {
       const elementText = collectElementText(lines, i);
 
       // must have a click handler — supports both Svelte 4 on:click and Svelte 5 onclick
-      const hasClick =
-        /\bonclick\s*=/.test(elementText) ||
-        /\bon:click\b/.test(elementText);
+      const hasClick = /\bonclick\s*=/.test(elementText) || /\bon:click\b/.test(elementText);
 
       if (!hasClick) continue;
 
@@ -218,8 +222,4 @@ const anchorNoContent: Rule = {
   },
 };
 
-export const accessibilityRules: Rule[] = [
-  imgMissingAlt,
-  clickNeedsKeyboard,
-  anchorNoContent,
-];
+export const accessibilityRules: Rule[] = [imgMissingAlt, clickNeedsKeyboard, anchorNoContent];

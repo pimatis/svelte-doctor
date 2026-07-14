@@ -2,11 +2,7 @@ import { spawn } from "node:child_process";
 
 const CLIPBOARD_TIMEOUT_MS = 1_500;
 
-const runClipboardCommand = (
-  command: string,
-  args: string[],
-  text: string,
-): Promise<boolean> =>
+const runClipboardCommand = (command: string, args: string[], text: string): Promise<boolean> =>
   new Promise((resolve) => {
     const child = spawn(command, args, {
       stdio: ["pipe", "ignore", "ignore"],

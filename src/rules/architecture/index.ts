@@ -9,8 +9,14 @@ const buildScriptLineMap = (source: string): boolean[] => {
 
   for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i].trim();
-    if (/^<script[\s>]/.test(trimmed)) { inside = true; continue; }
-    if (trimmed === "</script>") { inside = false; continue; }
+    if (/^<script[\s>]/.test(trimmed)) {
+      inside = true;
+      continue;
+    }
+    if (trimmed === "</script>") {
+      inside = false;
+      continue;
+    }
     map[i] = inside;
   }
 
@@ -44,16 +50,18 @@ const noGiantComponent: Rule = {
 
     if (lineCount <= 300) return [];
 
-    return [{
-      filePath: ctx.filePath,
-      rule: "no-giant-component",
-      severity: "warning",
-      message: `Component has ${lineCount} meaningful lines (limit: 300). Consider breaking it into smaller components.`,
-      help: "Large components are harder to maintain and test. Extract logical sections into child components or shared utilities.",
-      line: 1,
-      column: 1,
-      category: "Architecture",
-    }];
+    return [
+      {
+        filePath: ctx.filePath,
+        rule: "no-giant-component",
+        severity: "warning",
+        message: `Component has ${lineCount} meaningful lines (limit: 300). Consider breaking it into smaller components.`,
+        help: "Large components are harder to maintain and test. Extract logical sections into child components or shared utilities.",
+        line: 1,
+        column: 1,
+        category: "Architecture",
+      },
+    ];
   },
 };
 
@@ -78,8 +86,14 @@ const noDeepNesting: Rule = {
     for (let i = 0; i < lines.length; i++) {
       const trimmed = lines[i].trim();
 
-      if (/^<style[\s>]/.test(trimmed)) { insideStyle = true; continue; }
-      if (trimmed === "</style>") { insideStyle = false; continue; }
+      if (/^<style[\s>]/.test(trimmed)) {
+        insideStyle = true;
+        continue;
+      }
+      if (trimmed === "</style>") {
+        insideStyle = false;
+        continue;
+      }
 
       // only count nesting in template markup — skip script and style blocks
       if (scriptMap[i] || insideStyle) continue;
@@ -137,7 +151,8 @@ const noConsole: Rule = {
     const lines = ctx.source.split("\n");
 
     // covers all commonly misused console methods
-    const consolePattern = /\bconsole\.(log|debug|warn|error|info|table|dir|trace|group|groupEnd|time|timeEnd)\s*\(/;
+    const consolePattern =
+      /\bconsole\.(log|debug|warn|error|info|table|dir|trace|group|groupEnd|time|timeEnd)\s*\(/;
 
     for (let i = 0; i < lines.length; i++) {
       const trimmed = lines[i].trimStart();
@@ -168,7 +183,7 @@ const noMultiScript: Rule = {
   category: "Architecture",
   severity: "warning",
   message: "Multiple <script> blocks detected.",
-  help: "A .svelte file should have at most one instance <script> and optionally one <script context=\"module\"> or <script module>. Merge duplicates.",
+  help: 'A .svelte file should have at most one instance <script> and optionally one <script context="module"> or <script module>. Merge duplicates.',
   check: (ctx): Diagnostic[] => {
     if (!ctx.filePath.endsWith(".svelte")) return [];
 
@@ -205,7 +220,7 @@ const noMultiScript: Rule = {
         rule: "no-multi-script",
         severity: "warning",
         message: `Found ${instanceScriptLocations.length} instance <script> blocks — expected at most 1.`,
-        help: "Merge duplicate <script> blocks into a single one. Use <script context=\"module\"> (Svelte 4) or <script module> (Svelte 5) only for module-level exports.",
+        help: 'Merge duplicate <script> blocks into a single one. Use <script context="module"> (Svelte 4) or <script module> (Svelte 5) only for module-level exports.',
         line: instanceScriptLocations[i],
         column: 1,
         category: "Architecture",

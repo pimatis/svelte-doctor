@@ -1,4 +1,4 @@
-import type { Rule, Diagnostic, RuleContext } from "../../types.js";
+import type { Rule, Diagnostic } from "../../types.js";
 
 // builds a line-index → boolean map in a single O(n) pass
 // true means the line is inside an instance <script> block
@@ -21,41 +21,6 @@ const buildScriptLineMap = (source: string): boolean[] => {
   }
 
   return map;
-};
-
-// shared helper — always constructs a fresh RegExp per call so no shared lastIndex state
-// between rule invocations (global-flag regex on a module-level variable would carry
-// lastIndex across files and silently skip matches)
-const scanLines = (
-  ctx: RuleContext,
-  rule: Pick<Rule, "name" | "severity" | "message" | "help" | "category">,
-  patternSource: string,
-  patternFlags = "",
-): Diagnostic[] => {
-  const diagnostics: Diagnostic[] = [];
-  const lines = ctx.source.split("\n");
-  const pattern = new RegExp(patternSource, patternFlags);
-
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i].trimStart();
-    if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
-
-    const match = pattern.exec(lines[i]);
-    if (!match) continue;
-
-    diagnostics.push({
-      filePath: ctx.filePath,
-      rule: rule.name,
-      severity: rule.severity,
-      message: rule.message,
-      help: rule.help,
-      line: i + 1,
-      column: match.index + 1,
-      category: rule.category,
-    });
-  }
-
-  return diagnostics;
 };
 
 const noLegacyReactive: Rule = {
@@ -117,7 +82,8 @@ const noLegacyLifecycle: Rule = {
     const diagnostics: Diagnostic[] = [];
     const lines = ctx.source.split("\n");
     // matches any of the four lifecycle functions in an import from "svelte"
-    const pattern = /import\s+\{[^}]*(onMount|onDestroy|beforeUpdate|afterUpdate)[^}]*\}\s+from\s+['"]svelte['"]/;
+    const pattern =
+      /import\s+\{[^}]*(onMount|onDestroy|beforeUpdate|afterUpdate)[^}]*\}\s+from\s+['"]svelte['"]/;
 
     for (let i = 0; i < lines.length; i++) {
       const trimmed = lines[i].trimStart();
@@ -325,7 +291,8 @@ const noOnDirective: Rule = {
   autofixable: true,
   docs: {
     summary: "Flags legacy on:event directives.",
-    whyItMatters: "Svelte 5 encourages DOM-style event attributes and drops legacy directive syntax.",
+    whyItMatters:
+      "Svelte 5 encourages DOM-style event attributes and drops legacy directive syntax.",
     safeFix: "Rewrite on:event to onevent when there are no modifiers.",
   },
   check: (ctx) => {

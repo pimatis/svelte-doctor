@@ -42,7 +42,10 @@ test("detectPackageManager respects explicit Bun and lockfile-based heuristics",
 
 test("parseLatestVersion validates registry payloads", () => {
   assert.equal(parseLatestVersion({ "dist-tags": { latest: "1.2.3" } }), "1.2.3");
-  assert.throws(() => parseLatestVersion({ "dist-tags": { latest: "next" } }), /valid dist-tags\.latest/);
+  assert.throws(
+    () => parseLatestVersion({ "dist-tags": { latest: "next" } }),
+    /valid dist-tags\.latest/,
+  );
   assert.throws(() => parseLatestVersion(null), /valid JSON object/);
 });
 
@@ -78,8 +81,14 @@ test("runInstallCommand reports failed commands and missing binaries", async () 
     };
   };
 
-  const failed = await runInstallCommand(["bun", "add", "-g", "svelte-doctor@latest"], spawnClose());
-  const missing = await runInstallCommand(["bun", "add", "-g", "svelte-doctor@latest"], spawnError());
+  const failed = await runInstallCommand(
+    ["bun", "add", "-g", "svelte-doctor@latest"],
+    spawnClose(),
+  );
+  const missing = await runInstallCommand(
+    ["bun", "add", "-g", "svelte-doctor@latest"],
+    spawnError(),
+  );
 
   assert.deepEqual(failed, { ok: false, status: "command-failed" });
   assert.deepEqual(missing, { ok: false, status: "missing-binary" });

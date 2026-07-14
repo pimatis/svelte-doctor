@@ -6,10 +6,7 @@ const isDeadCodeMode = (value: unknown): value is DeadCodeMode =>
   value === "off" || value === "lazy" || value === "full";
 
 const isVerificationLevel = (value: unknown): value is VerificationLevel =>
-  value === "diagnostics" ||
-  value === "typecheck" ||
-  value === "tests" ||
-  value === "full";
+  value === "diagnostics" || value === "typecheck" || value === "tests" || value === "full";
 
 // validates and returns only known keys to prevent prototype pollution
 const sanitizeConfig = (raw: unknown): SvelteDoctorConfig | null => {
@@ -42,9 +39,12 @@ const sanitizeConfig = (raw: unknown): SvelteDoctorConfig | null => {
   if (typeof obj.reports === "object" && obj.reports !== null) {
     const reports = obj.reports as Record<string, unknown>;
     const nextReports: NonNullable<SvelteDoctorConfig["reports"]> = {};
-    if (typeof reports.html === "string" && reports.html.length > 0) nextReports.html = reports.html;
-    if (typeof reports.junit === "string" && reports.junit.length > 0) nextReports.junit = reports.junit;
-    if (typeof reports.markdown === "string" && reports.markdown.length > 0) nextReports.markdown = reports.markdown;
+    if (typeof reports.html === "string" && reports.html.length > 0)
+      nextReports.html = reports.html;
+    if (typeof reports.junit === "string" && reports.junit.length > 0)
+      nextReports.junit = reports.junit;
+    if (typeof reports.markdown === "string" && reports.markdown.length > 0)
+      nextReports.markdown = reports.markdown;
     if (Object.keys(nextReports).length > 0) result.reports = nextReports;
   }
 
@@ -61,6 +61,31 @@ const sanitizeConfig = (raw: unknown): SvelteDoctorConfig | null => {
       if (rules.length > 0) result.ignore.rules = rules;
       if (files.length > 0) result.ignore.files = files;
     }
+  }
+
+  if (typeof obj.plugins === "object" && obj.plugins !== null) {
+    const plugins = obj.plugins as Record<string, unknown>;
+    const nextPlugins: NonNullable<SvelteDoctorConfig["plugins"]> = {};
+    if (typeof plugins.enabled === "boolean") nextPlugins.enabled = plugins.enabled;
+    if (typeof plugins.autoDiscoverNpm === "boolean")
+      nextPlugins.autoDiscoverNpm = plugins.autoDiscoverNpm;
+    if (Array.isArray(plugins.include)) {
+      const include = plugins.include.filter(
+        (v): v is string => typeof v === "string" && v.length > 0,
+      );
+      if (include.length > 0) nextPlugins.include = include;
+    }
+    if (Array.isArray(plugins.exclude)) {
+      const exclude = plugins.exclude.filter(
+        (v): v is string => typeof v === "string" && v.length > 0,
+      );
+      if (exclude.length > 0) nextPlugins.exclude = exclude;
+    }
+    if (Array.isArray(plugins.local)) {
+      const local = plugins.local.filter((v): v is string => typeof v === "string" && v.length > 0);
+      if (local.length > 0) nextPlugins.local = local;
+    }
+    if (Object.keys(nextPlugins).length > 0) result.plugins = nextPlugins;
   }
 
   return result;

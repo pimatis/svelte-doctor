@@ -10,5 +10,10 @@ export const watchCommand = new Command("watch")
   .argument("[directory]", "project directory", ".")
   .option("--dead-code <mode>", "dead code mode: off, lazy, or full", parseDeadCodeMode, "off")
   .action(async (directory: string, flags: { deadCode: DeadCodeMode }) => {
-    try { await watch(path.resolve(directory), flags.deadCode); } catch (error) { if (error instanceof Error) logger.error(`  Error: ${error.message}`); process.exit(1); }
+    try {
+      await watch(path.resolve(directory), flags.deadCode);
+    } catch (error) {
+      if (error instanceof Error) logger.error(`  Error: ${error.message}`);
+      process.exit(1);
+    }
   });

@@ -16,7 +16,8 @@ export const testGapsCommand = new Command("test-gaps")
       }
       logger.log(`  Test coverage gaps: ${result.gaps.length}/${result.sourceFiles} source files`);
       for (const gap of result.gaps) {
-        const critical = gap.criticalReasons.length > 0 ? ` (${gap.criticalReasons.join(", ")})` : "";
+        const critical =
+          gap.criticalReasons.length > 0 ? ` (${gap.criticalReasons.join(", ")})` : "";
         logger.log(`  ${gap.sourceFile}${critical}`);
       }
     } catch (error) {

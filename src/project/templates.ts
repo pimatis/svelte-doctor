@@ -1,6 +1,9 @@
 export type CiPlatform = "github-actions" | "gitlab-ci" | "circle-ci";
 
-export const getCiTemplate = (platform: CiPlatform, minScore: number): { path: string; content: string } => {
+export const getCiTemplate = (
+  platform: CiPlatform,
+  minScore: number,
+): { path: string; content: string } => {
   if (platform === "gitlab-ci") {
     return {
       path: ".gitlab-ci.yml",

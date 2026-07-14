@@ -23,8 +23,9 @@ export const DEPRECATED_PACKAGES: Record<string, string> = {
   "svelte-routing": "Use SvelteKit's built-in routing or @sveltejs/kit",
   "svelte-spa-router": "Use SvelteKit's built-in routing",
   "svelte-navigator": "Use SvelteKit's built-in routing",
-  "sapper": "Sapper is deprecated so migrate to SvelteKit",
-  "svelte-preprocess": "Svelte 5 has built-in TypeScript support; use vitePreprocess from @sveltejs/vite-plugin-svelte",
+  sapper: "Sapper is deprecated so migrate to SvelteKit",
+  "svelte-preprocess":
+    "Svelte 5 has built-in TypeScript support; use vitePreprocess from @sveltejs/vite-plugin-svelte",
   "@rollup/plugin-svelte": "Use @sveltejs/vite-plugin-svelte with Vite instead of Rollup",
   "rollup-plugin-svelte": "Use @sveltejs/vite-plugin-svelte with Vite instead of Rollup",
   "svelte-loader": "Use @sveltejs/vite-plugin-svelte with Vite instead of Webpack",
@@ -35,7 +36,7 @@ export const SVELTE5_INCOMPATIBLE: Record<string, string> = {
   "svelte-forms-lib": "Not updated for Svelte 5 runes so use superforms or custom solution",
   "svelte-simple-modal": "Uses legacy slot API so find a Svelte 5 compatible modal or build one",
   "svelte-materialify": "Abandoned so use Skeleton UI or shadcn-svelte",
-  "smelte": "Abandoned so use Skeleton UI or shadcn-svelte",
+  smelte: "Abandoned so use Skeleton UI or shadcn-svelte",
   "svelte-material-ui": "Check for Svelte 5 compatible version",
   "svelte-headlessui": "Check for Svelte 5 compatible version",
   "carbon-components-svelte": "Check for Svelte 5 compatible version",
@@ -43,11 +44,11 @@ export const SVELTE5_INCOMPATIBLE: Record<string, string> = {
 };
 
 export const BETTER_ALTERNATIVES: Record<string, string> = {
-  "axios": "Use native fetch() since it is built into all modern runtimes",
+  axios: "Use native fetch() since it is built into all modern runtimes",
   "node-fetch": "Use native fetch() since it is built into Node 18+ and Bun",
-  "moment": "Use date-fns or dayjs since moment is 300kb+ and deprecated",
-  "classnames": "Use clsx since it is smaller and faster",
-  "uuid": "Use crypto.randomUUID() since it is built into all modern runtimes",
+  moment: "Use date-fns or dayjs since moment is 300kb+ and deprecated",
+  classnames: "Use clsx since it is smaller and faster",
+  uuid: "Use crypto.randomUUID() since it is built into all modern runtimes",
 };
 
 const readPackageJson = (dir: string): PackageJson => {
@@ -229,7 +230,9 @@ const printSummaryBox = (result: DepCheckResult) => {
   const issueDetail = parts.length > 0 ? ` (${parts.join(", ")})` : "";
 
   logger.log(pc.bold("  ┌─────────────────────────────────────────────────┐"));
-  logger.log(pc.bold("  │") + "  Dependency Health" + "                              " + pc.bold("│"));
+  logger.log(
+    pc.bold("  │") + "  Dependency Health" + "                              " + pc.bold("│"),
+  );
   logger.log(pc.bold("  │") + "                                                 " + pc.bold("│"));
 
   const totalLine = `  Total deps: ${result.totalDeps}`;

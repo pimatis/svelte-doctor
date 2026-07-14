@@ -12,7 +12,13 @@ const STATUS_ICONS: Record<string, string> = {
   na: highlighter.dim("−"),
 };
 
-const printDoctorReport = (checks: DoctorCheckResult[], passed: number, warnings: number, failed: number, notApplicable: number) => {
+const printDoctorReport = (
+  checks: DoctorCheckResult[],
+  passed: number,
+  warnings: number,
+  failed: number,
+  notApplicable: number,
+) => {
   logger.break();
   logger.log(`  ${highlighter.bold("svelte-doctor doctor")} v${VERSION}`);
   logger.break();
@@ -51,24 +57,38 @@ export const doctorCommand = new Command("doctor")
       }
 
       if (flags.json) {
-        logger.log(JSON.stringify({
-          version: VERSION,
-          directory: resolvedDir,
-          checks: result.checks,
-          summary: {
-            passed: result.passed,
-            warnings: result.warnings,
-            failed: result.failed,
-            notApplicable: result.notApplicable,
-          },
-        }, null, 2));
+        logger.log(
+          JSON.stringify(
+            {
+              version: VERSION,
+              directory: resolvedDir,
+              checks: result.checks,
+              summary: {
+                passed: result.passed,
+                warnings: result.warnings,
+                failed: result.failed,
+                notApplicable: result.notApplicable,
+              },
+            },
+            null,
+            2,
+          ),
+        );
         return;
       }
 
-      printDoctorReport(result.checks, result.passed, result.warnings, result.failed, result.notApplicable);
+      printDoctorReport(
+        result.checks,
+        result.passed,
+        result.warnings,
+        result.failed,
+        result.notApplicable,
+      );
     } catch (error) {
       if (flags.json) {
-        logger.log(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }));
+        logger.log(
+          JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+        );
         process.exit(1);
         return;
       }

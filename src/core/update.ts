@@ -1,5 +1,10 @@
 import { spawn } from "node:child_process";
-import { NPM_REGISTRY_PACKAGE_URL, PACKAGE_NAME, UPDATE_CHECK_TIMEOUT_MS, VERSION } from "../constants.js";
+import {
+  NPM_REGISTRY_PACKAGE_URL,
+  PACKAGE_NAME,
+  UPDATE_CHECK_TIMEOUT_MS,
+  VERSION,
+} from "../constants.js";
 import type { PackageManager, UpdateOptions, UpdateResult } from "../types.js";
 import { resolvePackageManager } from "./runtime.js";
 
@@ -18,11 +23,13 @@ export const parseLatestVersion = (data: unknown): string => {
     throw new Error("Registry response is not a valid JSON object");
   }
 
-  const latest = (data as {
-    "dist-tags"?: {
-      latest?: unknown;
-    };
-  })["dist-tags"]?.latest;
+  const latest = (
+    data as {
+      "dist-tags"?: {
+        latest?: unknown;
+      };
+    }
+  )["dist-tags"]?.latest;
 
   if (typeof latest !== "string" || !/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(latest)) {
     throw new Error("Registry response is missing a valid dist-tags.latest version");
@@ -51,12 +58,12 @@ export const fetchLatestVersion = async (fetchImpl: FetchLike = fetch): Promise<
     return parseLatestVersion(await response.json());
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      throw new Error(`Registry request timed out after ${UPDATE_CHECK_TIMEOUT_MS}ms`);
+      throw new Error(`Registry request timed out after ${UPDATE_CHECK_TIMEOUT_MS}ms`, {
+        cause: error,
+      });
     }
 
-    throw error instanceof Error
-      ? error
-      : new Error("Failed to fetch latest package version");
+    throw error instanceof Error ? error : new Error("Failed to fetch latest package version");
   } finally {
     clearTimeout(timeout);
   }

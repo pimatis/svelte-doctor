@@ -5,11 +5,15 @@ import { runStats } from "../src/core/stats.ts";
 
 test("stats returns project metrics", async () => {
   const project = createProject({
-    "package.json": JSON.stringify({
-      name: "test-app",
-      type: "module",
-      dependencies: { svelte: "^5.0.0" },
-    }, null, 2),
+    "package.json": JSON.stringify(
+      {
+        name: "test-app",
+        type: "module",
+        dependencies: { svelte: "^5.0.0" },
+      },
+      null,
+      2,
+    ),
     "src/App.svelte": "<button>hello</button>\n",
   });
 
@@ -29,11 +33,15 @@ test("stats returns project metrics", async () => {
 
 test("stats respects top count limit", async () => {
   const project = createProject({
-    "package.json": JSON.stringify({
-      name: "test-app",
-      type: "module",
-      dependencies: { svelte: "^5.0.0" },
-    }, null, 2),
+    "package.json": JSON.stringify(
+      {
+        name: "test-app",
+        type: "module",
+        dependencies: { svelte: "^5.0.0" },
+      },
+      null,
+      2,
+    ),
     "src/App.svelte": "<button>hello</button>\n",
   });
 
@@ -43,8 +51,5 @@ test("stats respects top count limit", async () => {
 });
 
 test("stats throws for invalid directory", async () => {
-  await assert.rejects(
-    () => runStats("/nonexistent/path"),
-    /not found|not a directory/i,
-  );
+  await assert.rejects(() => runStats("/nonexistent/path"), /not found|not a directory/i);
 });

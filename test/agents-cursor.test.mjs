@@ -10,6 +10,21 @@ test("Cursor agent uses print stream mode with workspace", () => {
   assert.equal(agent.command, "agent");
   assert.equal(agent.usePromptAsArg, true);
   assert.equal(typeof agent.formatStreamingOutput, "function");
-  assert.deepEqual(agent.getSpawnArgs?.("/repo", "safe"), ["--print", "--workspace", "/repo", "--output-format", "stream-json", "--stream-partial-output"]);
-  assert.deepEqual(agent.getSpawnArgs?.("/repo", "unsafe"), ["--print", "--workspace", "/repo", "--output-format", "stream-json", "--stream-partial-output", "--trust"]);
+  assert.deepEqual(agent.getSpawnArgs?.("/repo", "safe"), [
+    "--print",
+    "--workspace",
+    "/repo",
+    "--output-format",
+    "stream-json",
+    "--stream-partial-output",
+  ]);
+  assert.deepEqual(agent.getSpawnArgs?.("/repo", "unsafe"), [
+    "--print",
+    "--workspace",
+    "/repo",
+    "--output-format",
+    "stream-json",
+    "--stream-partial-output",
+    "--trust",
+  ]);
 });

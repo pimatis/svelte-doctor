@@ -17,11 +17,15 @@ test("config-view returns not-found when no config exists", () => {
 test("config-view reads standalone config file", () => {
   const project = createProject({
     "package.json": JSON.stringify({ name: "test-app" }, null, 2),
-    "svelte-doctor.config.json": JSON.stringify({
-      lint: true,
-      deadCode: false,
-      ignore: { rules: ["no-console"] },
-    }, null, 2),
+    "svelte-doctor.config.json": JSON.stringify(
+      {
+        lint: true,
+        deadCode: false,
+        ignore: { rules: ["no-console"] },
+      },
+      null,
+      2,
+    ),
   });
 
   const result = viewConfig(project);
@@ -34,10 +38,14 @@ test("config-view reads standalone config file", () => {
 
 test("config-view reads package.json svelte-doctor key", () => {
   const project = createProject({
-    "package.json": JSON.stringify({
-      name: "test-app",
-      "svelte-doctor": { lint: false, cache: true },
-    }, null, 2),
+    "package.json": JSON.stringify(
+      {
+        name: "test-app",
+        "svelte-doctor": { lint: false, cache: true },
+      },
+      null,
+      2,
+    ),
   });
 
   const result = viewConfig(project);
@@ -49,10 +57,14 @@ test("config-view reads package.json svelte-doctor key", () => {
 
 test("config-view prefers standalone config over package.json", () => {
   const project = createProject({
-    "package.json": JSON.stringify({
-      name: "test-app",
-      "svelte-doctor": { lint: false },
-    }, null, 2),
+    "package.json": JSON.stringify(
+      {
+        name: "test-app",
+        "svelte-doctor": { lint: false },
+      },
+      null,
+      2,
+    ),
     "svelte-doctor.config.json": JSON.stringify({ lint: true }, null, 2),
   });
 
@@ -63,8 +75,5 @@ test("config-view prefers standalone config over package.json", () => {
 });
 
 test("config-view throws for invalid directory", () => {
-  assert.throws(
-    () => viewConfig("/nonexistent/path"),
-    /not found|not a directory/i,
-  );
+  assert.throws(() => viewConfig("/nonexistent/path"), /not found|not a directory/i);
 });

@@ -42,10 +42,7 @@ const hasGitignorePattern = (source: string, entry: string): boolean => {
 // Replaces a directory-only ignore line (e.g. .svelte-doctor) with the
 // wildcard form (e.g. .svelte-doctor/*) so negation patterns inside the
 // directory continue to work.
-const replaceDirectoryIgnore = (
-  source: string,
-  entry: string,
-): string | null => {
+const replaceDirectoryIgnore = (source: string, entry: string): string | null => {
   const normalizedEntry = normalizeGitignorePattern(entry);
   if (!normalizedEntry || !normalizedEntry.endsWith("/*")) return null;
 
@@ -99,9 +96,7 @@ export const ensureProjectGitignoreEntry = (
       return { updated: true, created: false };
     }
 
-    const next = source.endsWith("\n")
-      ? `${source}${entry}\n`
-      : `${source}\n${entry}\n`;
+    const next = source.endsWith("\n") ? `${source}${entry}\n` : `${source}\n${entry}\n`;
     fs.writeFileSync(gitignorePath, next, { encoding: "utf-8", mode: 0o644 });
     ensuredRoots.add(normalizedRoot);
     return { updated: true, created: false };

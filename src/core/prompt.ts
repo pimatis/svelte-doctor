@@ -75,7 +75,9 @@ const orderCategories = (categories: Iterable<string>): string[] => {
   const all = new Set(categories);
   return [
     ...CATEGORY_ORDER.filter((category) => all.has(category)),
-    ...[...all].filter((category) => !CATEGORY_ORDER.includes(category as typeof CATEGORY_ORDER[number])),
+    ...[...all].filter(
+      (category) => !CATEGORY_ORDER.includes(category as (typeof CATEGORY_ORDER)[number]),
+    ),
   ];
 };
 
@@ -104,7 +106,9 @@ export const formatDiagnosticsForPrompt = (
     lines.push(FIX_PROMPT.trim(), "");
     lines.push("## Allowed workspace", "");
     lines.push(`- Root: ${redactSecrets(options.directory ?? ".")}`);
-    lines.push(`- Unsafe agent execution explicitly enabled: ${options.unsafeAgentExec ? "yes" : "no"}`);
+    lines.push(
+      `- Unsafe agent execution explicitly enabled: ${options.unsafeAgentExec ? "yes" : "no"}`,
+    );
     lines.push(`- Max diagnostics in this batch: ${selectedDiagnostics.length}`);
     lines.push("", "## Diagnostics", "");
   } else {
@@ -127,9 +131,10 @@ export const formatDiagnosticsForPrompt = (
     lines.push(`### ${category} (${group.length} issue${group.length === 1 ? "" : "s"})`, "");
 
     for (const diagnostic of group) {
-      const location = diagnostic.line > 0
-        ? `${diagnostic.filePath}:${diagnostic.line}:${diagnostic.column}`
-        : diagnostic.filePath;
+      const location =
+        diagnostic.line > 0
+          ? `${diagnostic.filePath}:${diagnostic.line}:${diagnostic.column}`
+          : diagnostic.filePath;
 
       lines.push(`[${diagnostic.severity.toUpperCase()}] ${diagnostic.rule}`);
       lines.push(`  Location : ${redactSecrets(location)}`);
@@ -154,17 +159,25 @@ export const formatDiagnosticsAsRawText = (
 ): string => {
   const selectedDiagnostics = diagnostics.slice(0, maxDiagnostics ?? diagnostics.length);
 
-  return selectedDiagnostics.map((diagnostic) => {
-    const location = diagnostic.line > 0
-      ? `${diagnostic.filePath}:${diagnostic.line}:${diagnostic.column}`
-      : diagnostic.filePath;
+  return (
+    selectedDiagnostics
+      .map((diagnostic) => {
+        const location =
+          diagnostic.line > 0
+            ? `${diagnostic.filePath}:${diagnostic.line}:${diagnostic.column}`
+            : diagnostic.filePath;
 
-    return [
-      `${diagnostic.severity.toUpperCase()} ${diagnostic.rule}`,
-      `Category: ${diagnostic.category}`,
-      `Location: ${redactSecrets(location)}`,
-      `Problem: ${redactSecrets(diagnostic.message)}`,
-      diagnostic.help ? `Fix: ${redactSecrets(diagnostic.help)}` : "",
-    ].filter(Boolean).join("\n");
-  }).join("\n\n").trimEnd() + "\n";
+        return [
+          `${diagnostic.severity.toUpperCase()} ${diagnostic.rule}`,
+          `Category: ${diagnostic.category}`,
+          `Location: ${redactSecrets(location)}`,
+          `Problem: ${redactSecrets(diagnostic.message)}`,
+          diagnostic.help ? `Fix: ${redactSecrets(diagnostic.help)}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
+      })
+      .join("\n\n")
+      .trimEnd() + "\n"
+  );
 };

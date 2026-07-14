@@ -11,17 +11,22 @@ import { discoverWorkspaces } from "../src/project/workspaces.ts";
 import { runUpgrade } from "../src/core/upgrade.ts";
 import { runAudit } from "../src/core/audit.ts";
 
-const createSvelteKitProject = (files) => createProject({
-  "package.json": JSON.stringify({
-    name: "kit-app",
-    type: "module",
-    dependencies: {
-      svelte: "^5.0.0",
-      "@sveltejs/kit": "^2.0.0",
-    },
-  }, null, 2),
-  ...files,
-});
+const createSvelteKitProject = (files) =>
+  createProject({
+    "package.json": JSON.stringify(
+      {
+        name: "kit-app",
+        type: "module",
+        dependencies: {
+          svelte: "^5.0.0",
+          "@sveltejs/kit": "^2.0.0",
+        },
+      },
+      null,
+      2,
+    ),
+    ...files,
+  });
 
 test("validateDirectory rejects symlinked project roots", () => {
   const project = createProject({
@@ -39,12 +44,16 @@ test("validateDirectory rejects symlinked project roots", () => {
 
 test("project readers refuse symlinked package.json files", () => {
   const source = createProject({
-    "package.json": JSON.stringify({
-      name: "external-app",
-      type: "module",
-      dependencies: { svelte: "^5.0.0" },
-      scripts: { test: "echo unsafe" },
-    }, null, 2),
+    "package.json": JSON.stringify(
+      {
+        name: "external-app",
+        type: "module",
+        dependencies: { svelte: "^5.0.0" },
+        scripts: { test: "echo unsafe" },
+      },
+      null,
+      2,
+    ),
   });
   const project = fs.mkdtempSync(path.join(os.tmpdir(), "svelte-doctor-symlink-package-"));
   fs.symlinkSync(path.join(source, "package.json"), path.join(project, "package.json"));
@@ -55,7 +64,11 @@ test("project readers refuse symlinked package.json files", () => {
 
 test("workspace discovery refuses symlinked root package.json files", () => {
   const source = createProject({
-    "package.json": JSON.stringify({ name: "workspace-source", workspaces: ["packages/*"] }, null, 2),
+    "package.json": JSON.stringify(
+      { name: "workspace-source", workspaces: ["packages/*"] },
+      null,
+      2,
+    ),
   });
   const project = fs.mkdtempSync(path.join(os.tmpdir(), "svelte-doctor-symlink-workspace-"));
   fs.symlinkSync(path.join(source, "package.json"), path.join(project, "package.json"));
@@ -72,10 +85,14 @@ test("workspace discovery skips out-of-root and symlinked workspace directories"
     "package.json": JSON.stringify({ name: "linked-workspace" }, null, 2),
   });
   const project = createProject({
-    "package.json": JSON.stringify({
-      name: "workspace-root",
-      workspaces: [`../${outsideName}`, "packages/*", "linked"],
-    }, null, 2),
+    "package.json": JSON.stringify(
+      {
+        name: "workspace-root",
+        workspaces: [`../${outsideName}`, "packages/*", "linked"],
+      },
+      null,
+      2,
+    ),
     "packages/safe/package.json": JSON.stringify({ name: "safe-workspace" }, null, 2),
   });
 
@@ -86,7 +103,10 @@ test("workspace discovery skips out-of-root and symlinked workspace directories"
 
   try {
     const workspaces = discoverWorkspaces(project);
-    assert.deepEqual(workspaces.map((workspace) => workspace.name), ["safe-workspace"]);
+    assert.deepEqual(
+      workspaces.map((workspace) => workspace.name),
+      ["safe-workspace"],
+    );
   } finally {
     fs.rmSync(outsideLink, { force: true });
     fs.rmSync(workspaceLink, { force: true });
@@ -118,7 +138,10 @@ export const load = () => ({
   });
 
   const result = await runAudit(project);
-  assert.equal(result.securityDiagnostics.some((diagnostic) => diagnostic.rule === "no-public-env-secrets"), true);
+  assert.equal(
+    result.securityDiagnostics.some((diagnostic) => diagnostic.rule === "no-public-env-secrets"),
+    true,
+  );
 });
 
 test("audit detects bracket public env secret access without noisy auth/key substrings", async () => {
@@ -134,7 +157,9 @@ export const load = () => ({
   });
 
   const result = await runAudit(project);
-  const publicEnvDiagnostics = result.securityDiagnostics.filter((diagnostic) => diagnostic.rule === "no-public-env-secrets");
+  const publicEnvDiagnostics = result.securityDiagnostics.filter(
+    (diagnostic) => diagnostic.rule === "no-public-env-secrets",
+  );
   assert.equal(publicEnvDiagnostics.length, 1);
 });
 
@@ -153,7 +178,10 @@ export const load = () => {
   });
 
   const result = await runAudit(project);
-  assert.equal(result.securityDiagnostics.some((diagnostic) => diagnostic.rule === "no-server-secret-leak"), true);
+  assert.equal(
+    result.securityDiagnostics.some((diagnostic) => diagnostic.rule === "no-server-secret-leak"),
+    true,
+  );
 });
 
 test("audit detects private dynamic env object leaks from server responses", async () => {
@@ -168,5 +196,8 @@ export const GET = () => json({
   });
 
   const result = await runAudit(project);
-  assert.equal(result.securityDiagnostics.some((diagnostic) => diagnostic.rule === "no-server-secret-leak"), true);
+  assert.equal(
+    result.securityDiagnostics.some((diagnostic) => diagnostic.rule === "no-server-secret-leak"),
+    true,
+  );
 });

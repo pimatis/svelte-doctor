@@ -116,7 +116,9 @@ export const printSummary = (
 
   logger.break();
   logger.log(pc.bold("  ┌─────────────────────────────────────────────────┐"));
-  logger.log(pc.bold("  │") + "  Svelte Doctor" + pc.dim("  (svelte-doctor)") + pc.bold("           │"));
+  logger.log(
+    pc.bold("  │") + "  Svelte Doctor" + pc.dim("  (svelte-doctor)") + pc.bold("           │"),
+  );
   logger.log(pc.bold("  │") + "                                                 " + pc.bold("│"));
 
   const scoreDisplay = `  Score: ${colorizeByScore(scoreResult.score)} / ${PERFECT_SCORE}  ${colorLabel(scoreResult.score, scoreResult.label)}`;
@@ -127,8 +129,10 @@ export const printSummary = (
   logger.log(pc.bold("  │") + "                                                 " + pc.bold("│"));
 
   const parts: string[] = [];
-  if (errorCount > 0) parts.push(highlighter.error(`✗ ${errorCount} error${errorCount === 1 ? "" : "s"}`));
-  if (warningCount > 0) parts.push(highlighter.warn(`⚠ ${warningCount} warning${warningCount === 1 ? "" : "s"}`));
+  if (errorCount > 0)
+    parts.push(highlighter.error(`✗ ${errorCount} error${errorCount === 1 ? "" : "s"}`));
+  if (warningCount > 0)
+    parts.push(highlighter.warn(`⚠ ${warningCount} warning${warningCount === 1 ? "" : "s"}`));
   parts.push(pc.dim(`${affectedFiles}/${sourceFileCount} files`));
   if (meta && meta.suppressedCount > 0) parts.push(pc.dim(`${meta.suppressedCount} suppressed`));
   if (meta && meta.fixableCount > 0) parts.push(pc.dim(`${meta.fixableCount} fixable`));
@@ -141,9 +145,7 @@ export const printSummary = (
   logger.log(pc.bold("  └─────────────────────────────────────────────────┘"));
 };
 
-export const printCategoryBreakdown = (
-  categoryBreakdown: ScoreResult["categoryBreakdown"],
-) => {
+export const printCategoryBreakdown = (categoryBreakdown: ScoreResult["categoryBreakdown"]) => {
   const categories = Object.entries(categoryBreakdown)
     .sort(([, a], [, b]) => (b?.penalty ?? 0) - (a?.penalty ?? 0))
     .slice(0, 5);
@@ -156,8 +158,10 @@ export const printCategoryBreakdown = (
     if (!stats) continue;
 
     const parts: string[] = [];
-    if (stats.errors > 0) parts.push(highlighter.error(`${stats.errors} error${stats.errors === 1 ? "" : "s"}`));
-    if (stats.warnings > 0) parts.push(highlighter.warn(`${stats.warnings} warning${stats.warnings === 1 ? "" : "s"}`));
+    if (stats.errors > 0)
+      parts.push(highlighter.error(`${stats.errors} error${stats.errors === 1 ? "" : "s"}`));
+    if (stats.warnings > 0)
+      parts.push(highlighter.warn(`${stats.warnings} warning${stats.warnings === 1 ? "" : "s"}`));
     parts.push(pc.dim(`penalty ${stats.penalty.toFixed(1)}`));
     logger.dim(`    ${sanitize(category)}: ${parts.join("  ")}`);
   }

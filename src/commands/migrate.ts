@@ -31,7 +31,9 @@ export const migrateCommand = new Command("migrate")
       await migrate(path.resolve(directory), options);
     } catch (error) {
       if (flags.json) {
-        logger.log(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }));
+        logger.log(
+          JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+        );
         process.exit(1);
         return;
       }

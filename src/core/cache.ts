@@ -13,11 +13,9 @@ import { ensureProjectGitignoreEntry } from "../project/gitignore.js";
 // Cache lives under .svelte-doctor so it stays local to the target project.
 // We keep the path helpers tiny and centralized because scan, watch, and
 // dead-code reuse the same on-disk state.
-const getCacheDir = (directory: string): string =>
-  path.join(directory, CACHE_DIR);
+const getCacheDir = (directory: string): string => path.join(directory, CACHE_DIR);
 
-const getCachePath = (directory: string): string =>
-  path.join(getCacheDir(directory), CACHE_FILE);
+const getCachePath = (directory: string): string => path.join(getCacheDir(directory), CACHE_FILE);
 
 // We refuse symlinked cache directories for the same reason we skip symlinked
 // source/config files elsewhere in the project: cache writes must never escape
@@ -56,7 +54,11 @@ export const loadScanCache = (directory: string): ScanCacheData => {
     }
 
     const parsed = JSON.parse(fs.readFileSync(cachePath, "utf-8")) as ScanCacheData;
-    if (parsed.version !== SCAN_CACHE_VERSION || typeof parsed.files !== "object" || parsed.files === null) {
+    if (
+      parsed.version !== SCAN_CACHE_VERSION ||
+      typeof parsed.files !== "object" ||
+      parsed.files === null
+    ) {
       return { version: SCAN_CACHE_VERSION, files: {} };
     }
 
@@ -81,13 +83,17 @@ export const saveScanCache = (directory: string, cache: ScanCacheData): void => 
       symlinkFileMessage: "Refusing to write cache through symlinked file.",
       symlinkDirectoryMessage: "Refusing to write cache through symlinked directory.",
     });
-  } catch {}
+  } catch {
+    /* write failed, skip cache */
+  }
 };
 
 // We use file size + mtime as a cheap signature. It is not cryptographic and
 // does not try to be perfect; it is just a fast enough invalidation signal for
 // a local developer cache.
-export const getFileStatSignature = (filePath: string): Pick<ScanCacheEntry, "mtimeMs" | "size"> | null => {
+export const getFileStatSignature = (
+  filePath: string,
+): Pick<ScanCacheEntry, "mtimeMs" | "size"> | null => {
   try {
     const stat = fs.statSync(filePath);
     return { mtimeMs: stat.mtimeMs, size: stat.size };
@@ -139,7 +145,9 @@ export const pruneCacheToManifest = (
   manifest: ProjectFileManifest,
 ): void => {
   const active = new Set(
-    [...manifest.svelteFiles, ...manifest.scriptFiles].map((file) => path.relative(directory, file).replaceAll(path.sep, "/")),
+    [...manifest.svelteFiles, ...manifest.scriptFiles].map((file) =>
+      path.relative(directory, file).replaceAll(path.sep, "/"),
+    ),
   );
 
   for (const key of Object.keys(cache.files)) {

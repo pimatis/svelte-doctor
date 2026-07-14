@@ -5,11 +5,15 @@ import { runAudit } from "../src/core/audit.ts";
 
 test("audit returns security diagnostics and score", async () => {
   const project = createProject({
-    "package.json": JSON.stringify({
-      name: "test-app",
-      type: "module",
-      dependencies: { svelte: "^5.0.0" },
-    }, null, 2),
+    "package.json": JSON.stringify(
+      {
+        name: "test-app",
+        type: "module",
+        dependencies: { svelte: "^5.0.0" },
+      },
+      null,
+      2,
+    ),
     "src/App.svelte": "<button>hello</button>\n",
   });
 
@@ -25,11 +29,15 @@ test("audit returns security diagnostics and score", async () => {
 
 test("audit detects unsafe html", async () => {
   const project = createProject({
-    "package.json": JSON.stringify({
-      name: "test-app",
-      type: "module",
-      dependencies: { svelte: "^5.0.0" },
-    }, null, 2),
+    "package.json": JSON.stringify(
+      {
+        name: "test-app",
+        type: "module",
+        dependencies: { svelte: "^5.0.0" },
+      },
+      null,
+      2,
+    ),
     "src/App.svelte": `<script>
   let content = "<b>bold</b>";
 </script>
@@ -42,8 +50,5 @@ test("audit detects unsafe html", async () => {
 });
 
 test("audit throws for invalid directory", async () => {
-  await assert.rejects(
-    () => runAudit("/nonexistent/path"),
-    /not found|not a directory/i,
-  );
+  await assert.rejects(() => runAudit("/nonexistent/path"), /not found|not a directory/i);
 });

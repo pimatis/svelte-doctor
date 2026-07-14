@@ -81,7 +81,9 @@ export const buildPackSmokeCommand = (
       cleanup: () => {
         try {
           fs.rmSync(outputDir, { recursive: true, force: true });
-        } catch {}
+        } catch {
+          /* cleanup best-effort */
+        }
       },
     };
   }

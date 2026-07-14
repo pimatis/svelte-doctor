@@ -225,11 +225,12 @@ test("doctor summary counts match checks", () => {
 test("doctor exits with code 1 when there are failures", () => {
   const project = createProject({});
   assert.throws(
-    () => execFileSync("node", [cliPath, "doctor", "."], {
-      cwd: project,
-      encoding: "utf-8",
-      env: { ...process.env, FORCE_COLOR: "0" },
-    }),
+    () =>
+      execFileSync("node", [cliPath, "doctor", "."], {
+        cwd: project,
+        encoding: "utf-8",
+        env: { ...process.env, FORCE_COLOR: "0" },
+      }),
     (err) => err.status === 1,
   );
 });

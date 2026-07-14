@@ -31,11 +31,15 @@ const runCli = (cwd, args) =>
 
 const createTransitionAllProject = () =>
   createProject({
-    "package.json": JSON.stringify({
-      name: "transition-fixture",
-      type: "module",
-      dependencies: { svelte: "^5.0.0" },
-    }, null, 2),
+    "package.json": JSON.stringify(
+      {
+        name: "transition-fixture",
+        type: "module",
+        dependencies: { svelte: "^5.0.0" },
+      },
+      null,
+      2,
+    ),
     "src/App.svelte": `<style>\n.button { transition: all 0.2s ease; }\n</style>\n<button>hello</button>\n`,
   });
 
@@ -74,11 +78,15 @@ test("check --fix shows before/after comparison", () => {
 
 test("check --fix reports no auto-fixable issues for clean project", () => {
   const project = createProject({
-    "package.json": JSON.stringify({
-      name: "clean",
-      type: "module",
-      dependencies: { svelte: "^5.0.0" },
-    }, null, 2),
+    "package.json": JSON.stringify(
+      {
+        name: "clean",
+        type: "module",
+        dependencies: { svelte: "^5.0.0" },
+      },
+      null,
+      2,
+    ),
     "src/App.svelte": `<script>let count = 0;</script>\n<button onclick={() => count++}>{count}</button>\n`,
   });
 
@@ -89,7 +97,9 @@ test("check --fix reports no auto-fixable issues for clean project", () => {
 test("check --fix --json includes fix info in output", () => {
   const project = createTransitionAllProject();
 
-  const result = JSON.parse(runCli(project, ["check", ".", "--fix", "--json", "--no-dead-code", "--no-cache"]));
+  const result = JSON.parse(
+    runCli(project, ["check", ".", "--fix", "--json", "--no-dead-code", "--no-cache"]),
+  );
 
   assert.notEqual(result.fix, undefined);
   assert.notEqual(result.fix.deterministic, undefined);
@@ -107,7 +117,14 @@ test("check --fix --json includes fix info in output", () => {
 test("check --fix --score outputs final score only", () => {
   const project = createTransitionAllProject();
 
-  const output = runCli(project, ["check", ".", "--fix", "--score", "--no-dead-code", "--no-cache"]).trim();
+  const output = runCli(project, [
+    "check",
+    ".",
+    "--fix",
+    "--score",
+    "--no-dead-code",
+    "--no-cache",
+  ]).trim();
   const score = parseInt(output, 10);
   assert.ok(score >= 0 && score <= 100);
 });
@@ -115,7 +132,9 @@ test("check --fix --score outputs final score only", () => {
 test("check without --fix does not interfere with normal output", () => {
   const project = createTransitionAllProject();
 
-  const result = JSON.parse(runCli(project, ["check", ".", "--json", "--no-dead-code", "--no-cache"]));
+  const result = JSON.parse(
+    runCli(project, ["check", ".", "--json", "--no-dead-code", "--no-cache"]),
+  );
   assert.equal(result.fix, undefined);
   assert.notEqual(result.score, undefined);
   assert.ok(result.diagnostics.length > 0);
@@ -123,15 +142,26 @@ test("check without --fix does not interfere with normal output", () => {
 
 test("check --fix --errors-only only fixes error diagnostics", () => {
   const project = createProject({
-    "package.json": JSON.stringify({
-      name: "errors-only-fixture",
-      type: "module",
-      dependencies: { svelte: "^5.0.0" },
-    }, null, 2),
+    "package.json": JSON.stringify(
+      {
+        name: "errors-only-fixture",
+        type: "module",
+        dependencies: { svelte: "^5.0.0" },
+      },
+      null,
+      2,
+    ),
     "src/App.svelte": `<script>\n  let count = 0;\n</script>\n\n<style>\n.button { transition: all 0.2s ease; }\n</style>\n\n<button onclick={() => count++}>{count}</button>\n`,
   });
 
-  const output = runCli(project, ["check", ".", "--fix", "--errors-only", "--no-dead-code", "--no-cache"]);
+  const output = runCli(project, [
+    "check",
+    ".",
+    "--fix",
+    "--errors-only",
+    "--no-dead-code",
+    "--no-cache",
+  ]);
   // Transition-all is a warning, not an error in the rule system
   // so --errors-only should skip it
   assert.match(output, /No auto-fixable issues found/);

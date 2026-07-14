@@ -27,7 +27,10 @@ test("resolveExportPath rejects escapes and absolute paths", () => {
   });
 
   assert.throws(() => resolveExportPath(project, "../outside.txt"), /must stay inside/);
-  assert.throws(() => resolveExportPath(project, path.join(path.sep, "tmp", "outside.txt")), /must stay inside/);
+  assert.throws(
+    () => resolveExportPath(project, path.join(path.sep, "tmp", "outside.txt")),
+    /must stay inside/,
+  );
 });
 
 test("writeExportFile rejects symlinked targets and parents", () => {
@@ -43,7 +46,10 @@ test("writeExportFile rejects symlinked targets and parents", () => {
   fs.symlinkSync(path.dirname(outsideFile), symlinkDir);
 
   assert.throws(() => writeExportFile(project, "linked.txt", "content"), /symlinked file/);
-  assert.throws(() => writeExportFile(project, "linked-dir/output.txt", "content"), /symlinked directory/);
+  assert.throws(
+    () => writeExportFile(project, "linked-dir/output.txt", "content"),
+    /symlinked directory/,
+  );
 });
 
 test("exportDiagnosticsForAi writes confined files inside the project root", async () => {

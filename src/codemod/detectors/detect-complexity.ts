@@ -13,7 +13,8 @@ export const detectComplexity = (source: string): ComplexityDetection => {
 
   if (/\$:\s*\([^)]*\}\s*=/.test(source)) reasons.push("destructuring reactive assignment");
   if (/\bbind:this\b/.test(source)) reasons.push("bind:this requires bindable review");
-  if (/\bbeforeUpdate\b|\bafterUpdate\b/.test(source)) reasons.push("tick lifecycle requires $effect.pre review");
+  if (/\bbeforeUpdate\b|\bafterUpdate\b/.test(source))
+    reasons.push("tick lifecycle requires $effect.pre review");
 
   if (reasons.length > 0) return { level: "review", reasons: [...new Set(reasons)] };
   return { level: "auto", reasons: [] };

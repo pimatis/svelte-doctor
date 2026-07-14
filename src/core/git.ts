@@ -64,10 +64,7 @@ const readGitFileList = (directory: string, args: string[]): string[] =>
     .map((line) => line.trim())
     .filter(Boolean);
 
-export const getSelectedGitFiles = (
-  directory: string,
-  options: GitSelectionOptions,
-): string[] => {
+export const getSelectedGitFiles = (directory: string, options: GitSelectionOptions): string[] => {
   if (!options.changed && !options.staged && !options.since) {
     return [];
   }
@@ -76,15 +73,30 @@ export const getSelectedGitFiles = (
 
   let relativeFiles: string[] = [];
   if (options.staged) {
-    relativeFiles = readGitFileList(directory, ["diff", "--cached", "--name-only", "--diff-filter=ACMR"]);
+    relativeFiles = readGitFileList(directory, [
+      "diff",
+      "--cached",
+      "--name-only",
+      "--diff-filter=ACMR",
+    ]);
   } else {
     if (options.since) {
       const safeRef = verifyGitCommitRef(directory, options.since);
 
-      relativeFiles = readGitFileList(directory, ["diff", "--name-only", "--diff-filter=ACMR", `${safeRef}...HEAD`]);
+      relativeFiles = readGitFileList(directory, [
+        "diff",
+        "--name-only",
+        "--diff-filter=ACMR",
+        `${safeRef}...HEAD`,
+      ]);
     }
     if (!options.since) {
-      relativeFiles = readGitFileList(directory, ["diff", "--name-only", "--diff-filter=ACMR", "HEAD"]);
+      relativeFiles = readGitFileList(directory, [
+        "diff",
+        "--name-only",
+        "--diff-filter=ACMR",
+        "HEAD",
+      ]);
     }
   }
 

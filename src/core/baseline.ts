@@ -76,9 +76,10 @@ export const filterBaselineDiagnostics = (
   if (!baseline) return { diagnostics, suppressedCount: 0 };
 
   const fingerprints = new Set(baseline.entries.map((entry) => entry.fingerprint));
-  const visible = diagnostics.filter((diagnostic) => !fingerprints.has(
-    diagnostic.fingerprint ?? createDiagnosticFingerprint(diagnostic),
-  ));
+  const visible = diagnostics.filter(
+    (diagnostic) =>
+      !fingerprints.has(diagnostic.fingerprint ?? createDiagnosticFingerprint(diagnostic)),
+  );
 
   return {
     diagnostics: visible,

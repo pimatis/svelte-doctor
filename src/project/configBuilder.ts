@@ -1,4 +1,10 @@
-import type { DeadCodeMode, FailOn, Framework, RuleCategory, SvelteDoctorConfig } from "../types.js";
+import type {
+  DeadCodeMode,
+  FailOn,
+  Framework,
+  RuleCategory,
+  SvelteDoctorConfig,
+} from "../types.js";
 
 export interface InitConfigOptions {
   framework: Framework;
@@ -10,7 +16,12 @@ export interface InitConfigOptions {
   minScore: number;
 }
 
-export const buildConfig = (options: InitConfigOptions): SvelteDoctorConfig & { rules?: { categories: RuleCategory[] }; ci?: { failOn: FailOn; minScore: number } } => ({
+export const buildConfig = (
+  options: InitConfigOptions,
+): SvelteDoctorConfig & {
+  rules?: { categories: RuleCategory[] };
+  ci?: { failOn: FailOn; minScore: number };
+} => ({
   lint: true,
   deadCode: options.deadCodeMode !== "off",
   cache: true,

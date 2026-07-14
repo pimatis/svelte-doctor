@@ -18,7 +18,11 @@ export interface TextEdit {
   text: string;
 }
 
-export const createNoopResult = (content: string): CodemodResult => ({ content, changes: [], warnings: [] });
+export const createNoopResult = (content: string): CodemodResult => ({
+  content,
+  changes: [],
+  warnings: [],
+});
 
 export const createResult = (
   content: string,
@@ -30,7 +34,11 @@ export const createResult = (
   return { content, changes, warnings };
 };
 
-export const mergeResult = (content: string, changes: CodemodChange[], warnings: CodemodWarning[]): CodemodResult => ({
+export const mergeResult = (
+  content: string,
+  changes: CodemodChange[],
+  warnings: CodemodWarning[],
+): CodemodResult => ({
   content,
   changes,
   warnings,
@@ -98,7 +106,13 @@ export const getScriptKind = (openTag: string): ts.ScriptKind => {
 };
 
 export const parseScript = (script: ScriptBlock): ts.SourceFile =>
-  ts.createSourceFile("component.ts", script.content, ts.ScriptTarget.Latest, true, getScriptKind(script.openTag));
+  ts.createSourceFile(
+    "component.ts",
+    script.content,
+    ts.ScriptTarget.Latest,
+    true,
+    getScriptKind(script.openTag),
+  );
 
 export const applyTextEdits = (source: string, edits: TextEdit[]): string => {
   const sorted = [...edits].sort((a, b) => b.start - a.start);
@@ -111,8 +125,11 @@ export const applyTextEdits = (source: string, edits: TextEdit[]): string => {
   return next;
 };
 
-export const replaceInstanceScript = (source: string, script: ScriptBlock, nextContent: string): string =>
-  source.slice(0, script.contentStart) + nextContent + source.slice(script.contentEnd);
+export const replaceInstanceScript = (
+  source: string,
+  script: ScriptBlock,
+  nextContent: string,
+): string => source.slice(0, script.contentStart) + nextContent + source.slice(script.contentEnd);
 
 export const isLikelyInsideString = (source: string, index: number): boolean => {
   const before = source.slice(0, index);

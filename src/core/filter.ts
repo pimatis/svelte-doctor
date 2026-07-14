@@ -10,9 +10,8 @@ const matchesPattern = (filePath: string, pattern: string): boolean => {
   // * matches any chars except a slash
   // first replace ** (escaped as \*\*) then single * (escaped as \*)
   const withGlobs = escaped.replace(/\*/g, "\x00");
-  const regexSource = withGlobs
-    .replace(/\x00\x00/g, ".*")
-    .replace(/\x00/g, "[^/]*");
+  // eslint-disable-next-line no-control-regex
+  const regexSource = withGlobs.replace(/\x00\x00/g, ".*").replace(/\x00/g, "[^/]*");
 
   try {
     const regex = new RegExp(`^${regexSource}$`);

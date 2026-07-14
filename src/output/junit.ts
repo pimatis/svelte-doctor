@@ -24,8 +24,12 @@ export const buildJunitReport = (
 
   for (const diagnostic of diagnostics) {
     const tag = diagnostic.severity === "error" ? "error" : "failure";
-    lines.push(`    <testcase name="${escapeXml(diagnostic.rule)}" classname="${escapeXml(diagnostic.filePath)}" file="${escapeXml(diagnostic.filePath)}" line="${Math.max(1, diagnostic.line)}" column="${Math.max(1, diagnostic.column)}">`);
-    lines.push(`      <${tag} message="${escapeXml(diagnostic.message)}" type="${escapeXml(diagnostic.category)}">${escapeXml(diagnostic.help)}</${tag}>`);
+    lines.push(
+      `    <testcase name="${escapeXml(diagnostic.rule)}" classname="${escapeXml(diagnostic.filePath)}" file="${escapeXml(diagnostic.filePath)}" line="${Math.max(1, diagnostic.line)}" column="${Math.max(1, diagnostic.column)}">`,
+    );
+    lines.push(
+      `      <${tag} message="${escapeXml(diagnostic.message)}" type="${escapeXml(diagnostic.category)}">${escapeXml(diagnostic.help)}</${tag}>`,
+    );
     lines.push(`    </testcase>`);
   }
 

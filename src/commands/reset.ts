@@ -42,7 +42,7 @@ const deleteFiles = (fullPaths: string[], dryRun: boolean): DeletedEntry[] => {
   const deleted: DeletedEntry[] = [];
 
   for (const fullPath of fullPaths) {
-    let size = 0;
+    let size: number;
     try {
       size = fs.statSync(fullPath).size;
     } catch {
@@ -76,9 +76,10 @@ const printResetReport = (deleted: DeletedEntry[], dryRun: boolean, dirWasRemove
 
   let totalBytes = 0;
   for (const entry of deleted) {
-    const sizeKB = entry.sizeBytes >= 1024
-      ? `${(entry.sizeBytes / 1024).toFixed(1)} KB`
-      : `${entry.sizeBytes} B`;
+    const sizeKB =
+      entry.sizeBytes >= 1024
+        ? `${(entry.sizeBytes / 1024).toFixed(1)} KB`
+        : `${entry.sizeBytes} B`;
     const prefix = dryRun ? highlighter.warn("⟳") : highlighter.success("✓");
     logger.log(`  ${prefix} ${entry.relativePath} (${sizeKB})`);
     totalBytes += entry.sizeBytes;
@@ -89,10 +90,10 @@ const printResetReport = (deleted: DeletedEntry[], dryRun: boolean, dirWasRemove
   }
 
   logger.break();
-  const totalKB = totalBytes >= 1024
-    ? `${(totalBytes / 1024).toFixed(1)} KB`
-    : `${totalBytes} B`;
-  logger.log(`  ${dryRun ? "Would clean" : "Cleaned"} ${deleted.length} file${deleted.length === 1 ? "" : "s"} (${totalKB} total)`);
+  const totalKB = totalBytes >= 1024 ? `${(totalBytes / 1024).toFixed(1)} KB` : `${totalBytes} B`;
+  logger.log(
+    `  ${dryRun ? "Would clean" : "Cleaned"} ${deleted.length} file${deleted.length === 1 ? "" : "s"} (${totalKB} total)`,
+  );
   logger.break();
 };
 
@@ -148,22 +149,30 @@ export const resetCommand = new Command("reset")
       }
 
       if (flags.json) {
-        logger.log(JSON.stringify({
-          version: VERSION,
-          directory: resolveDir,
-          dryRun,
-          deleted,
-          dirWasRemoved,
-          totalFiles: deleted.length,
-          totalBytes: deleted.reduce((s, e) => s + e.sizeBytes, 0),
-        }, null, 2));
+        logger.log(
+          JSON.stringify(
+            {
+              version: VERSION,
+              directory: resolveDir,
+              dryRun,
+              deleted,
+              dirWasRemoved,
+              totalFiles: deleted.length,
+              totalBytes: deleted.reduce((s, e) => s + e.sizeBytes, 0),
+            },
+            null,
+            2,
+          ),
+        );
         return;
       }
 
       printResetReport(deleted, dryRun, dirWasRemoved);
     } catch (error) {
       if (flags.json) {
-        logger.log(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }));
+        logger.log(
+          JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+        );
         process.exit(1);
         return;
       }

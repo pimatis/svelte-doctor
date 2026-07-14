@@ -1,4 +1,10 @@
-import type { Diagnostic, ProjectInfo, ScanMeta, ScoreHistoryEntry, ScoreResult } from "../types.js";
+import type {
+  Diagnostic,
+  ProjectInfo,
+  ScanMeta,
+  ScoreHistoryEntry,
+  ScoreResult,
+} from "../types.js";
 
 const escapeMarkdown = (value: string): string =>
   value.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\|/g, "\\|");
@@ -47,18 +53,26 @@ export const buildMarkdownReport = (
   ];
 
   for (const [category, entry] of Object.entries(score.categoryBreakdown)) {
-    lines.push(`| ${escapeMarkdown(category)} | ${entry.count} | ${entry.errors} | ${entry.warnings} | ${entry.penalty.toFixed(1)} |`);
+    lines.push(
+      `| ${escapeMarkdown(category)} | ${entry.count} | ${entry.errors} | ${entry.warnings} | ${entry.penalty.toFixed(1)} |`,
+    );
   }
 
   lines.push("", "## Diagnostics", "");
 
   for (const [category, items] of groupByCategory(diagnostics)) {
-    lines.push(`<details open>`, `<summary>${escapeMarkdown(category)} (${items.length})</summary>`, "");
+    lines.push(
+      `<details open>`,
+      `<summary>${escapeMarkdown(category)} (${items.length})</summary>`,
+      "",
+    );
 
     for (const diagnostic of items) {
       const location = `${diagnostic.filePath}:${diagnostic.line}:${diagnostic.column}`;
       const fixable = diagnostic.fixable ? " — fixable: ✓" : "";
-      lines.push(`- [ ] ${severityBadge(diagnostic.severity)} **${escapeMarkdown(diagnostic.rule)}** \`${escapeMarkdown(location)}\` — ${escapeMarkdown(diagnostic.message)}${fixable}`);
+      lines.push(
+        `- [ ] ${severityBadge(diagnostic.severity)} **${escapeMarkdown(diagnostic.rule)}** \`${escapeMarkdown(location)}\` — ${escapeMarkdown(diagnostic.message)}${fixable}`,
+      );
     }
 
     lines.push("", "</details>", "");

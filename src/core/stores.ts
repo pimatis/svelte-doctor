@@ -75,26 +75,21 @@ const DECL_VAR =
   /(?:(export)\s+)?(?:const|let)\s+(\w+)\s*(?::[^=\n]+?)?\s*=\s*\b(writable|readable|derived)\b\s*(?:<[^>]*>)?\s*\(/g;
 const DECL_FIELD =
   /(?:(?:public|private|protected|readonly|static)\s+)+(\w+)\s*(?::[^=\n]+?)?\s*=\s*\b(writable|readable|derived)\b\s*(?:<[^>]*>)?\s*\(/g;
-const DECL_DEFAULT =
-  /export\s+default\s+\b(writable|readable|derived)\b\s*(?:<[^>]*>)?\s*\(/g;
+const DECL_DEFAULT = /export\s+default\s+\b(writable|readable|derived)\b\s*(?:<[^>]*>)?\s*\(/g;
 
 const WRITE_DIRECT = /(?<![\w.$])(\w+)\s*\.\s*(set|update)\s*\(/g;
 const WRITE_THIS = /\bthis\s*\.\s*(\w+)\s*\.\s*(set|update)\s*\(/g;
-const WRITE_AUTO =
-  /\$([A-Za-z_]\w*)\s*(?:=(?!=)|\+\+|--|(?:[-+*/%&|^])=)/g;
+const WRITE_AUTO = /\$([A-Za-z_]\w*)\s*(?:=(?!=)|\+\+|--|(?:[-+*/%&|^])=)/g;
 
-const READ_AUTO =
-  /\$([A-Za-z_]\w*)(?!\s*(?:=(?!=)|\+\+|--|(?:[-+*/%&|^])=))/g;
+const READ_AUTO = /\$([A-Za-z_]\w*)(?!\s*(?:=(?!=)|\+\+|--|(?:[-+*/%&|^])=))/g;
 const READ_SUBSCRIBE = /(?<![\w.$])(\w+)\s*\.\s*subscribe\s*\(/g;
 const READ_SUBSCRIBE_THIS = /\bthis\s*\.\s*(\w+)\s*\.\s*subscribe\s*\(/g;
 const READ_GET = /(?<![\w.$])get\s*\(\s*(\w+)\s*\)/g;
 
 const IMPORT_PATTERN =
   /import\s+(?:([^,\s{]+)\s*(?:,\s*)?)?(?:\s*\{([^}]*)\})?\s*(?:\*\s+as\s+(\w+))?\s*from\s*["']([^"']+)["']/g;
-const REEXPORT_NAMED =
-  /export\s+\{([^}]*)\}\s*from\s*["']([^"']+)["']/g;
-const REEXPORT_WILDCARD =
-  /export\s+\*\s*from\s*["']([^"']+)["']/g;
+const REEXPORT_NAMED = /export\s+\{([^}]*)\}\s*from\s*["']([^"']+)["']/g;
+const REEXPORT_WILDCARD = /export\s+\*\s*from\s*["']([^"']+)["']/g;
 
 const SCRIPT_RANGE = /<script\b[^>]*>([\s\S]*?)<\/script>/g;
 const HTML_COMMENT = /<!--[\s\S]*?-->/g;
@@ -202,9 +197,7 @@ const prepareSource = (filePath: string, source: string, stripStrings: boolean):
   }
 
   let masked = chars.join("");
-  masked = masked.replace(HTML_COMMENT, (full) =>
-    full.replace(/[^\n]/g, " "),
-  );
+  masked = masked.replace(HTML_COMMENT, (full) => full.replace(/[^\n]/g, " "));
 
   return masked;
 };
@@ -217,7 +210,10 @@ const buildLineOffsets = (source: string): number[] => {
   return offsets;
 };
 
-const lineColumnFromIndex = (offsets: number[], index: number): { line: number; column: number } => {
+const lineColumnFromIndex = (
+  offsets: number[],
+  index: number,
+): { line: number; column: number } => {
   let lo = 0;
   let hi = offsets.length - 1;
   while (lo < hi) {
@@ -234,9 +230,7 @@ const snippetFromLine = (lines: string[], line: number): string => {
   return text.trim().slice(0, 120);
 };
 
-const parseNamedBindings = (
-  raw: string,
-): { local: string; remote: string }[] => {
+const parseNamedBindings = (raw: string): { local: string; remote: string }[] => {
   const bindings: { local: string; remote: string }[] = [];
   for (const part of raw.split(",")) {
     const trimmed = part.trim();
@@ -279,7 +273,7 @@ const collectDeclarations = (
       kind,
       snippet: snippetFromLine(snippetLines, line),
     });
-  }
+  };
 
   let match: RegExpExecArray | null;
 
@@ -323,7 +317,7 @@ const collectWrites = (
       via,
       snippet: snippetFromLine(snippetLines, line),
     });
-  }
+  };
 
   WRITE_DIRECT.lastIndex = 0;
   while ((match = WRITE_DIRECT.exec(prepared)) !== null) {
@@ -366,7 +360,7 @@ const collectReads = (
       kind,
       snippet: snippetFromLine(snippetLines, line),
     });
-  }
+  };
 
   if (isSvelte) {
     READ_AUTO.lastIndex = 0;
@@ -405,7 +399,7 @@ const collectImports = (
 ): void => {
   const imports = new Map<string, ImportBinding>();
   const reExports = new Map<string, ImportBinding>();
-  let wildcards: string[] = [];
+  const wildcards: string[] = [];
 
   const absFile = path.resolve(directory, filePath);
   let match: RegExpExecArray | null;
@@ -474,7 +468,12 @@ const resolveDeclaration = (
 
   const importBinding = index.importsByFile.get(file)?.get(name);
   if (importBinding && importBinding.sourceNode) {
-    const resolved = resolveDeclaration(index, importBinding.sourceNode, importBinding.remoteName, depth + 1);
+    const resolved = resolveDeclaration(
+      index,
+      importBinding.sourceNode,
+      importBinding.remoteName,
+      depth + 1,
+    );
     if (resolved) return resolved;
   }
 

@@ -1,6 +1,13 @@
 import path from "node:path";
 import { Command } from "commander";
-import { installHook, listHooks, removeHook, type HookMode, type HookStatus, type HookType } from "../core/install-hook.js";
+import {
+  installHook,
+  listHooks,
+  removeHook,
+  type HookMode,
+  type HookStatus,
+  type HookType,
+} from "../core/install-hook.js";
 import { logger, highlighter, sanitize } from "../output/logger.js";
 import { parseFailOn, parsePositiveInt } from "./utils.js";
 import type { FailOn } from "../types.js";
@@ -33,7 +40,11 @@ const printStatuses = (directory: string, statuses: HookStatus[]): void => {
       logger.warn(line);
       continue;
     }
-    if (status.action === "installed" || status.action === "updated" || status.action === "removed") {
+    if (
+      status.action === "installed" ||
+      status.action === "updated" ||
+      status.action === "removed"
+    ) {
       logger.success(line);
       continue;
     }
@@ -54,40 +65,54 @@ export const installHookCommand = new Command("install-hook")
   .option("--remove", "remove svelte-doctor managed hooks")
   .option("--list", "list hook installation status")
   .option("--json", "output machine-readable JSON")
-  .action((directory: string, flags: { prePush?: boolean; mode: HookMode; failOn: FailOn; minScore: string; force?: boolean; remove?: boolean; list?: boolean; json?: boolean }) => {
-    try {
-      const resolvedDir = path.resolve(directory);
-      const hookTypes = resolveHookTypes(flags.prePush);
-      const minScore = parsePositiveInt(flags.minScore, "min score");
-      let statuses: HookStatus[] = [];
+  .action(
+    (
+      directory: string,
+      flags: {
+        prePush?: boolean;
+        mode: HookMode;
+        failOn: FailOn;
+        minScore: string;
+        force?: boolean;
+        remove?: boolean;
+        list?: boolean;
+        json?: boolean;
+      },
+    ) => {
+      try {
+        const resolvedDir = path.resolve(directory);
+        const hookTypes = resolveHookTypes(flags.prePush);
+        const minScore = parsePositiveInt(flags.minScore, "min score");
+        let statuses: HookStatus[] = [];
 
-      if (flags.list) {
-        statuses = listHooks(resolvedDir);
+        if (flags.list) {
+          statuses = listHooks(resolvedDir);
+        }
+
+        if (!flags.list && flags.remove) {
+          statuses = removeHook(resolvedDir, hookTypes);
+        }
+
+        if (!flags.list && !flags.remove) {
+          statuses = installHook(resolvedDir, {
+            hookTypes,
+            mode: flags.mode,
+            failOn: flags.failOn,
+            minScore,
+            force: flags.force ?? false,
+          });
+        }
+
+        if (flags.json) {
+          logger.log(JSON.stringify(statuses, null, 2));
+          return;
+        }
+
+        printStatuses(resolvedDir, statuses);
+        if (statuses.some((status) => status.action === "conflict")) process.exitCode = 1;
+      } catch (error) {
+        if (error instanceof Error) logger.error(`  Error: ${error.message}`);
+        process.exit(1);
       }
-
-      if (!flags.list && flags.remove) {
-        statuses = removeHook(resolvedDir, hookTypes);
-      }
-
-      if (!flags.list && !flags.remove) {
-        statuses = installHook(resolvedDir, {
-          hookTypes,
-          mode: flags.mode,
-          failOn: flags.failOn,
-          minScore,
-          force: flags.force ?? false,
-        });
-      }
-
-      if (flags.json) {
-        logger.log(JSON.stringify(statuses, null, 2));
-        return;
-      }
-
-      printStatuses(resolvedDir, statuses);
-      if (statuses.some((status) => status.action === "conflict")) process.exitCode = 1;
-    } catch (error) {
-      if (error instanceof Error) logger.error(`  Error: ${error.message}`);
-      process.exit(1);
-    }
-  });
+    },
+  );

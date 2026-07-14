@@ -13,7 +13,10 @@ export const storeTransform: CodemodTransform = {
       content: source,
       changes: [],
       warnings: [
-        { stage: "store", message: "svelte/store migration needs manual review for shared stores and subscriptions" },
+        {
+          stage: "store",
+          message: "svelte/store migration needs manual review for shared stores and subscriptions",
+        },
       ],
     };
   },

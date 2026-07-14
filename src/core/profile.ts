@@ -33,14 +33,10 @@ const DOM_NODE_TYPES = new Set([
   "RenderTag",
 ]);
 
-const STRUCTURAL_TYPES = new Set([
-  "IfBlock",
-  "EachBlock",
-  "AwaitBlock",
-  "KeyBlock",
-]);
+const STRUCTURAL_TYPES = new Set(["IfBlock", "EachBlock", "AwaitBlock", "KeyBlock"]);
 
-const countPattern = (source: string, pattern: RegExp): number => source.match(pattern)?.length ?? 0;
+const countPattern = (source: string, pattern: RegExp): number =>
+  source.match(pattern)?.length ?? 0;
 
 const walkAst = (node: unknown, visitor: (node: Record<string, unknown>) => void): void => {
   if (!node || typeof node !== "object") return;
@@ -59,7 +55,9 @@ const walkAst = (node: unknown, visitor: (node: Record<string, unknown>) => void
   }
 };
 
-const analyzeAst = (ast: unknown): { domNodes: number; structuralBlocks: number; eventHandlers: number } => {
+const analyzeAst = (
+  ast: unknown,
+): { domNodes: number; structuralBlocks: number; eventHandlers: number } => {
   let domNodes = 0;
   let structuralBlocks = 0;
   let eventHandlers = 0;
@@ -69,7 +67,8 @@ const analyzeAst = (ast: unknown): { domNodes: number; structuralBlocks: number;
     if (DOM_NODE_TYPES.has(type)) domNodes++;
     if (STRUCTURAL_TYPES.has(type)) structuralBlocks++;
     if (type === "OnDirective" || type === "EventHandler") eventHandlers++;
-    if (type === "Attribute" && typeof node.name === "string" && /^on/.test(node.name)) eventHandlers++;
+    if (type === "Attribute" && typeof node.name === "string" && /^on/.test(node.name))
+      eventHandlers++;
   });
 
   return { domNodes, structuralBlocks, eventHandlers };
@@ -79,7 +78,10 @@ const calculateReactiveDependencies = (source: string, compiledSource: string): 
   const runeCount = countPattern(source, /\$(?:state|derived|effect|props)\s*(?:\(|<)/g);
   const legacyReactiveCount = countPattern(source, /^\s*\$:\s+/gm);
   const storeSubscriptions = countPattern(source, /\$[A-Za-z_][\w$]*/g);
-  const compiledSignals = countPattern(compiledSource, /\$\.(?:derived|effect|mutable_state|state|set|get)\b/g);
+  const compiledSignals = countPattern(
+    compiledSource,
+    /\$\.(?:derived|effect|mutable_state|state|set|get)\b/g,
+  );
   return runeCount + legacyReactiveCount + storeSubscriptions + Math.ceil(compiledSignals / 2);
 };
 
@@ -108,16 +110,29 @@ const calculateProfile = (file: string, relativeFile: string): RenderProfileEntr
   const reactiveDependencies = calculateReactiveDependencies(source, compiledSource);
   const transitions = countPattern(source, /\b(?:transition|animate|in|out):[A-Za-z]/g);
   const bindings = countPattern(source, /\bbind:[A-Za-z]/g);
-  const conditionals = astMetrics.structuralBlocks + countPattern(source, /{#(?:if|each|await|key)\b/g);
-  const eventHandlers = astMetrics.eventHandlers + countPattern(source, /\son[a-zA-Z]+\s*=|\son:[a-zA-Z]+/g);
+  const conditionals =
+    astMetrics.structuralBlocks + countPattern(source, /{#(?:if|each|await|key)\b/g);
+  const eventHandlers =
+    astMetrics.eventHandlers + countPattern(source, /\son[a-zA-Z]+\s*=|\son:[a-zA-Z]+/g);
   const compiledBytes = Buffer.byteLength(compiledSource || source, "utf-8");
   const hydrationComplexity = Math.round(
-    domNodes * 1.4 + conditionals * 4 + transitions * 3 + bindings * 3 + reactiveDependencies * 1.5 + compiledBytes / 2048,
+    domNodes * 1.4 +
+      conditionals * 4 +
+      transitions * 3 +
+      bindings * 3 +
+      reactiveDependencies * 1.5 +
+      compiledBytes / 2048,
   );
   const rerenderRisk = Math.round(
-    reactiveDependencies * 3 + bindings * 4 + eventHandlers * 1.5 + conditionals * 2 + domNodes * 0.35,
+    reactiveDependencies * 3 +
+      bindings * 4 +
+      eventHandlers * 1.5 +
+      conditionals * 2 +
+      domNodes * 0.35,
   );
-  const cost = Math.round(domNodes * 2 + reactiveDependencies * 4 + hydrationComplexity * 1.5 + rerenderRisk * 1.25);
+  const cost = Math.round(
+    domNodes * 2 + reactiveDependencies * 4 + hydrationComplexity * 1.5 + rerenderRisk * 1.25,
+  );
 
   return {
     file: relativeFile,

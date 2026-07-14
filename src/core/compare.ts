@@ -29,7 +29,10 @@ export interface CompareResult {
 const createWorktree = (directory: string, ref: string): string => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "svelte-doctor-compare-"));
   try {
-    execFileSync("git", ["worktree", "add", "--detach", tmpDir, ref], { cwd: directory, stdio: "ignore" });
+    execFileSync("git", ["worktree", "add", "--detach", tmpDir, ref], {
+      cwd: directory,
+      stdio: "ignore",
+    });
   } catch (error) {
     fs.rmSync(tmpDir, { recursive: true, force: true });
     throw error;
@@ -39,12 +42,16 @@ const createWorktree = (directory: string, ref: string): string => {
 
 const removeWorktree = (directory: string, worktreePath: string): void => {
   try {
-    execFileSync("git", ["worktree", "remove", "--force", worktreePath], { cwd: directory, stdio: "ignore" });
-  } catch {}
+    execFileSync("git", ["worktree", "remove", "--force", worktreePath], {
+      cwd: directory,
+      stdio: "ignore",
+    });
+  } catch {
+    /* cleanup best-effort */
+  }
 };
 
-const diagnosticKey = (d: Diagnostic): string =>
-  `${d.rule}::${d.filePath}::${d.line}::${d.column}`;
+const diagnosticKey = (d: Diagnostic): string => `${d.rule}::${d.filePath}::${d.line}::${d.column}`;
 
 const scanRef = async (directory: string, ref: string): Promise<CompareRefResult> => {
   const safeRef = verifyGitCommitRef(directory, ref);

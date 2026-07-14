@@ -61,18 +61,26 @@
     "check": "tsc --noEmit",
     "prepack": "bun run build",
     "typecheck": "tsc --noEmit",
-    "test": "bun run build && bun test test"
+    "test": "bun run build && bun test test",
+    "lint": "eslint src/",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "commander": "^15.0.0",
-    "knip": "^6.24.0",
+    "knip": "^6.26.0",
     "ora": "^9.4.1",
     "picocolors": "^1.1.1",
     "svelte": "^5.56.4",
     "typescript": "^6.0.3"
   },
   "devDependencies": {
-    "tsdown": "^0.22.3",
-    "@types/node": "^26.1.0"
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.1.1",
+    "eslint": "^10.7.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.5",
+    "tsdown": "^0.22.7",
+    "typescript-eslint": "^8.64.0"
   }
 }

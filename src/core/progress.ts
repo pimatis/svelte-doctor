@@ -26,7 +26,11 @@ const CATEGORY_PATTERNS = [
   { key: "slots", label: "slots", pattern: /<\/?slot(?:\s|>|\/)/ },
   { key: "event-directives", label: "event directives", pattern: /\son:[a-zA-Z]+/ },
   { key: "event-dispatcher", label: "event dispatcher", pattern: /\bcreateEventDispatcher\b/ },
-  { key: "lifecycle", label: "legacy lifecycle", pattern: /\b(?:onMount|onDestroy|beforeUpdate|afterUpdate)\b/ },
+  {
+    key: "lifecycle",
+    label: "legacy lifecycle",
+    pattern: /\b(?:onMount|onDestroy|beforeUpdate|afterUpdate)\b/,
+  },
   { key: "let-directives", label: "let directives", pattern: /\slet:[a-zA-Z]+/ },
   { key: "stores", label: "store usage", pattern: /from\s+["']svelte\/store["']/ },
   { key: "class-directives", label: "class directives", pattern: /\sclass:[a-zA-Z]+/ },
@@ -42,9 +46,9 @@ export const getMigrationStatus = (directory: string): MigrationStatusResult => 
 
   for (const file of manifest.svelteFiles) {
     const source = fs.readFileSync(file, "utf-8");
-    const pending = CATEGORY_PATTERNS
-      .filter((category) => category.pattern.test(source))
-      .map((category) => category.key);
+    const pending = CATEGORY_PATTERNS.filter((category) => category.pattern.test(source)).map(
+      (category) => category.key,
+    );
 
     if (pending.length === 0) continue;
 

@@ -2,7 +2,6 @@ import { Command } from "commander";
 import { runPrCheck } from "../core/pr-check.js";
 import { logger } from "../output/logger.js";
 import { parseFailOn, parsePrPlatform, parsePositiveInt } from "./utils.js";
-import type { FailOn } from "../types.js";
 
 export const prCheckCommand = new Command("pr-check")
   .description("Analyze changed files for a PR or local branch diff")
@@ -19,9 +18,19 @@ export const prCheckCommand = new Command("pr-check")
   .option("--token <env-var>", "token environment variable name", "GITHUB_TOKEN")
   .action(async (directory: string, flags: Record<string, unknown>) => {
     try {
-      await runPrCheck(directory, { ...flags, minScore: parsePositiveInt(flags.minScore as string, "min score") });
+      await runPrCheck(directory, {
+        ...flags,
+        minScore: parsePositiveInt(flags.minScore as string, "min score"),
+      });
     } catch (error) {
-      if (flags.json) { logger.log(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" })); process.exit(1); return; }
-      if (error instanceof Error) logger.error(`  Error: ${error.message}`); process.exit(1);
+      if (flags.json) {
+        logger.log(
+          JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+        );
+        process.exit(1);
+        return;
+      }
+      if (error instanceof Error) logger.error(`  Error: ${error.message}`);
+      process.exit(1);
     }
   });

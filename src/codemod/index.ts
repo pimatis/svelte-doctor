@@ -28,7 +28,11 @@ export const codemodTransforms: CodemodTransform[] = [
   svelteOptionsTransform,
 ];
 
-export const runCodemod = (source: string, options: CodemodOptions = {}, filePath?: string): CodemodResult => {
+export const runCodemod = (
+  source: string,
+  options: CodemodOptions = {},
+  filePath?: string,
+): CodemodResult => {
   const transforms = options.stage
     ? codemodTransforms.filter((transform) => transform.name === options.stage)
     : codemodTransforms;

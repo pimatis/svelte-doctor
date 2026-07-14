@@ -33,6 +33,8 @@ import { renderProfileCommand } from "./commands/profile.js";
 import { installHookCommand } from "./commands/install-hook.js";
 import { whereUsedCommand } from "./commands/where-used.js";
 import { deadStoresCommand } from "./commands/dead-stores.js";
+import { pluginsCommand } from "./commands/plugins.js";
+import { registryCommand } from "./commands/registry.js";
 
 const program = new Command()
   .name("svelte-doctor")
@@ -71,11 +73,15 @@ program
   .addCommand(renderProfileCommand)
   .addCommand(installHookCommand)
   .addCommand(whereUsedCommand)
-  .addCommand(deadStoresCommand);
+  .addCommand(deadStoresCommand)
+  .addCommand(pluginsCommand)
+  .addCommand(registryCommand);
 
 const main = async () => {
   const args = process.argv.slice(2);
-  const hasGlobalFlag = args.some((arg) => arg === "--help" || arg === "-h" || arg === "--version" || arg === "-v");
+  const hasGlobalFlag = args.some(
+    (arg) => arg === "--help" || arg === "-h" || arg === "--version" || arg === "-v",
+  );
   const subcommands = program.commands.map((cmd) => cmd.name());
   const firstArg = args.find((arg) => !arg.startsWith("-"));
   // commander exposes a built-in "help" subcommand (svelte-doctor help <command>)

@@ -66,7 +66,10 @@ const buildLineOffsets = (source: string): number[] => {
 };
 
 // compute 1-based line and column for a character offset via binary search
-const lineColumnFromIndex = (index: number, offsets: number[]): { line: number; column: number } => {
+const lineColumnFromIndex = (
+  index: number,
+  offsets: number[],
+): { line: number; column: number } => {
   let lo = 0;
   let hi = offsets.length - 1;
   while (lo < hi) {
@@ -93,7 +96,8 @@ const extractRenderAnnotation = (snippet: string): string => {
   const attrMatch = attrs.match(/(\w+)\s*=\s*"([^"]*)"/);
   if (!attrMatch) return "";
   const [, key, value] = attrMatch;
-  if (["class", "style", "id", "on", "bind", "use", "transition", "animate", "let"].includes(key)) return "";
+  if (["class", "style", "id", "on", "bind", "use", "transition", "animate", "let"].includes(key))
+    return "";
   return `${key}="${value}"`;
 };
 
@@ -102,12 +106,19 @@ const isInsideDirectory = (directory: string, target: string): boolean => {
   return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
 };
 
-const escapeDotValue = (value: string): string => value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
+const escapeDotValue = (value: string): string => value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
 // resolve a resolved base path to the first existing project node,
 // trying common extensions and index files
 const resolveBaseToNode = (base: string, directory: string): string | null => {
-  const candidates = [base, `${base}.svelte`, `${base}.ts`, `${base}.js`, path.join(base, "index.ts"), path.join(base, "index.js")];
+  const candidates = [
+    base,
+    `${base}.svelte`,
+    `${base}.ts`,
+    `${base}.js`,
+    path.join(base, "index.ts"),
+    path.join(base, "index.js"),
+  ];
 
   for (const candidate of candidates) {
     if (!isInsideDirectory(directory, candidate)) continue;
@@ -132,9 +143,13 @@ const resolveImport = (directory: string, fromFile: string, specifier: string): 
 
 // resolve a non-relative alias specifier ($lib/..., @/...) against the alias map
 // alias targets are relative to the project root, not the importing file
-const resolveAliased = (directory: string, specifier: string, aliases: AliasEntry[]): string | null => {
+const resolveAliased = (
+  directory: string,
+  specifier: string,
+  aliases: AliasEntry[],
+): string | null => {
   for (const alias of aliases) {
-    let resolvedBase: string | null = null;
+    let resolvedBase: string | null;
 
     if (alias.hasWildcard) {
       const prefix = alias.pattern.slice(0, -1);
@@ -183,7 +198,10 @@ export const buildAliasMap = (directory: string): AliasEntry[] => {
     const stat = fs.lstatSync(pkgPath);
     if (!stat.isSymbolicLink() && stat.isFile()) {
       const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8")) as Record<string, unknown>;
-      const deps = { ...(pkg.dependencies as Record<string, string>), ...(pkg.devDependencies as Record<string, string>) };
+      const deps = {
+        ...(pkg.dependencies as Record<string, string>),
+        ...(pkg.devDependencies as Record<string, string>),
+      };
       if (deps && deps["@sveltejs/kit"]) {
         addAlias("$lib", "./src/lib");
         addAlias("$lib/*", "./src/lib/*");
@@ -270,21 +288,42 @@ const collectEdgesWithLocations = (
       const target = resolveSpecifier(directory, file, match[1], aliases);
       if (!target || !nodeSet.has(target)) continue;
       const { line, column } = lineColumnFromIndex(match.index ?? 0, offsets);
-      edges.push({ from, to: target, type: "import", line, column, snippet: snippetFromLine(source, line) });
+      edges.push({
+        from,
+        to: target,
+        type: "import",
+        line,
+        column,
+        snippet: snippetFromLine(source, line),
+      });
     }
 
     for (const match of source.matchAll(REEXPORT_PATTERN)) {
       const target = resolveSpecifier(directory, file, match[1], aliases);
       if (!target || !nodeSet.has(target)) continue;
       const { line, column } = lineColumnFromIndex(match.index ?? 0, offsets);
-      edges.push({ from, to: target, type: "import", line, column, snippet: snippetFromLine(source, line) });
+      edges.push({
+        from,
+        to: target,
+        type: "import",
+        line,
+        column,
+        snippet: snippetFromLine(source, line),
+      });
     }
 
     for (const match of source.matchAll(DYNAMIC_IMPORT_PATTERN)) {
       const target = resolveSpecifier(directory, file, match[1], aliases);
       if (!target || !nodeSet.has(target)) continue;
       const { line, column } = lineColumnFromIndex(match.index ?? 0, offsets);
-      edges.push({ from, to: target, type: "import", line, column, snippet: snippetFromLine(source, line) });
+      edges.push({
+        from,
+        to: target,
+        type: "import",
+        line,
+        column,
+        snippet: snippetFromLine(source, line),
+      });
     }
 
     if (!from.endsWith(".svelte")) continue;
@@ -293,7 +332,14 @@ const collectEdgesWithLocations = (
       const target = componentByName.get(name);
       if (!target || target === from) continue;
       const { line, column } = lineColumnFromIndex(match.index ?? 0, offsets);
-      edges.push({ from, to: target, type: "render", line, column, snippet: snippetFromLine(source, line) });
+      edges.push({
+        from,
+        to: target,
+        type: "render",
+        line,
+        column,
+        snippet: snippetFromLine(source, line),
+      });
     }
   }
 
@@ -307,8 +353,9 @@ interface GraphData {
   rawEdges: GraphEdge[];
 }
 
-const dedupeEdges = (edges: GraphEdge[]): GraphEdge[] =>
-  [...new Map(edges.map((edge) => [`${edge.from}|${edge.to}|${edge.type}`, edge])).values()];
+const dedupeEdges = (edges: GraphEdge[]): GraphEdge[] => [
+  ...new Map(edges.map((edge) => [`${edge.from}|${edge.to}|${edge.type}`, edge])).values(),
+];
 
 const buildGraphData = (directory: string): GraphData => {
   validateDirectory(directory);
@@ -324,7 +371,14 @@ const buildGraphData = (directory: string): GraphData => {
   }
 
   const aliases = buildAliasMap(directory);
-  const rawEdges = collectEdgesWithLocations(directory, files, nodes, nodeSet, componentByName, aliases);
+  const rawEdges = collectEdgesWithLocations(
+    directory,
+    files,
+    nodes,
+    nodeSet,
+    componentByName,
+    aliases,
+  );
 
   return { nodes, rawEdges };
 };
@@ -337,7 +391,10 @@ export const buildDependencyGraph = (directory: string): DependencyGraph => {
 
 // resolve a user query ("Button" or "src/lib/Button.svelte") to a node path
 // returns null when the component cannot be found or is ambiguous
-export const findComponent = (graph: DependencyGraph, query: string): {
+export const findComponent = (
+  graph: DependencyGraph,
+  query: string,
+): {
   componentFile: string;
   componentName: string;
   ambiguous: string[];
@@ -353,12 +410,24 @@ export const findComponent = (graph: DependencyGraph, query: string): {
 
   // basename match, e.g. "Button" -> "src/lib/Button.svelte"
   if (!normalizedQuery.includes("/") && !normalizedQuery.startsWith(".")) {
-    const matches = graph.nodes.filter((node) => path.basename(node) === `${normalizedQuery}.svelte` || path.basename(node, ".svelte") === normalizedQuery);
+    const matches = graph.nodes.filter(
+      (node) =>
+        path.basename(node) === `${normalizedQuery}.svelte` ||
+        path.basename(node, ".svelte") === normalizedQuery,
+    );
     if (matches.length === 0) return null;
     if (matches.length === 1) {
-      return { componentFile: matches[0], componentName: path.basename(matches[0], ".svelte"), ambiguous: [] };
+      return {
+        componentFile: matches[0],
+        componentName: path.basename(matches[0], ".svelte"),
+        ambiguous: [],
+      };
     }
-    return { componentFile: matches[0], componentName: path.basename(matches[0], ".svelte"), ambiguous: matches };
+    return {
+      componentFile: matches[0],
+      componentName: path.basename(matches[0], ".svelte"),
+      ambiguous: matches,
+    };
   }
 
   // fallback: match basename of provided path against any node
@@ -366,17 +435,31 @@ export const findComponent = (graph: DependencyGraph, query: string): {
   const matches = graph.nodes.filter((node) => path.basename(node) === basename);
   if (matches.length === 0) return null;
   if (matches.length === 1) {
-    return { componentFile: matches[0], componentName: path.basename(matches[0], ".svelte"), ambiguous: [] };
+    return {
+      componentFile: matches[0],
+      componentName: path.basename(matches[0], ".svelte"),
+      ambiguous: [],
+    };
   }
-  return { componentFile: matches[0], componentName: path.basename(matches[0], ".svelte"), ambiguous: matches };
+  return {
+    componentFile: matches[0],
+    componentName: path.basename(matches[0], ".svelte"),
+    ambiguous: matches,
+  };
 };
 
 // strip terminal control characters from untrusted strings before display
+/* eslint-disable no-control-regex */
 const stripControlChars = (value: string): string =>
   value.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+/* eslint-enable no-control-regex */
 
 // query where a component is used (or what it uses, depending on direction)
-export const whereUsed = (directory: string, query: string, options: WhereUsedOptions = {}): WhereUsedResult => {
+export const whereUsed = (
+  directory: string,
+  query: string,
+  options: WhereUsedOptions = {},
+): WhereUsedResult => {
   const { nodes, rawEdges } = buildGraphData(directory);
   const graph: DependencyGraph = { nodes, edges: dedupeEdges(rawEdges), cycles: [] };
   const resolved = findComponent(graph, query);
@@ -384,7 +467,9 @@ export const whereUsed = (directory: string, query: string, options: WhereUsedOp
     throw new Error(`Component "${stripControlChars(query)}" not found in ${directory}`);
   }
   if (resolved.ambiguous.length > 1) {
-    throw new Error(`Multiple components match "${stripControlChars(query)}". Disambiguate with the full path:\n${resolved.ambiguous.map((node) => `  - ${node}`).join("\n")}`);
+    throw new Error(
+      `Multiple components match "${stripControlChars(query)}". Disambiguate with the full path:\n${resolved.ambiguous.map((node) => `  - ${node}`).join("\n")}`,
+    );
   }
 
   const direction = options.direction ?? "used-by";
@@ -431,7 +516,9 @@ export interface WhereUsedTreeNode {
   children: WhereUsedTreeNode[];
 }
 
-const buildRenderAdjacency = (graph: DependencyGraph): { forward: Map<string, GraphEdge[]>; reverse: Set<string> } => {
+const buildRenderAdjacency = (
+  graph: DependencyGraph,
+): { forward: Map<string, GraphEdge[]>; reverse: Set<string> } => {
   const forward = new Map<string, GraphEdge[]>();
   const reverse = new Set<string>();
   for (const node of graph.nodes) forward.set(node, []);
@@ -443,7 +530,11 @@ const buildRenderAdjacency = (graph: DependencyGraph): { forward: Map<string, Gr
   return { forward, reverse };
 };
 
-export const buildWhereUsedTree = (directory: string, query: string, scope?: string): WhereUsedTreeNode[] => {
+export const buildWhereUsedTree = (
+  directory: string,
+  query: string,
+  scope?: string,
+): WhereUsedTreeNode[] => {
   const { nodes, rawEdges } = buildGraphData(directory);
   const graph: DependencyGraph = { nodes, edges: dedupeEdges(rawEdges), cycles: [] };
   const resolved = findComponent(graph, query);
@@ -451,7 +542,9 @@ export const buildWhereUsedTree = (directory: string, query: string, scope?: str
     throw new Error(`Component "${stripControlChars(query)}" not found in ${directory}`);
   }
   if (resolved.ambiguous.length > 1) {
-    throw new Error(`Multiple components match "${stripControlChars(query)}". Disambiguate with the full path:\n${resolved.ambiguous.map((node) => `  - ${node}`).join("\n")}`);
+    throw new Error(
+      `Multiple components match "${stripControlChars(query)}". Disambiguate with the full path:\n${resolved.ambiguous.map((node) => `  - ${node}`).join("\n")}`,
+    );
   }
 
   const scopePrefix = scope ? toPosix(scope).replace(/\/$/, "") : null;
@@ -464,7 +557,9 @@ export const buildWhereUsedTree = (directory: string, query: string, scope?: str
     if (!renderedNodes.has(node)) return true;
     if (!scopePrefix) return false;
     // when scoped, a node rendered only from outside the scope is still a root
-    return !graph.edges.some((edge) => edge.type === "render" && edge.to === node && edge.from.startsWith(scopePrefix));
+    return !graph.edges.some(
+      (edge) => edge.type === "render" && edge.to === node && edge.from.startsWith(scopePrefix),
+    );
   };
 
   // depth-limited DFS that tracks the current path to avoid cycles
@@ -514,7 +609,10 @@ export const formatWhereUsedAsTree = (roots: WhereUsedTreeNode[], targetFile: st
     const connector = isRoot ? "" : isLast ? "└── " : "├── ";
     const annotation = node.annotation ? ` (${stripControlChars(node.annotation)})` : "";
     const fileLabel = stripControlChars(node.file);
-    const label = node.file === targetFile ? `${targetName}${annotation || " (target)"}` : `${fileLabel}${annotation}`;
+    const label =
+      node.file === targetFile
+        ? `${targetName}${annotation || " (target)"}`
+        : `${fileLabel}${annotation}`;
     lines.push(`${prefix}${connector}${label}`);
 
     const childPrefix = isRoot ? "" : prefix + (isLast ? "    " : "│   ");
@@ -536,7 +634,9 @@ export const formatGraphAsDot = (graph: DependencyGraph): string => {
     lines.push(`  "${escapeDotValue(node)}";`);
   }
   for (const edge of graph.edges) {
-    lines.push(`  "${escapeDotValue(edge.from)}" -> "${escapeDotValue(edge.to)}" [label="${edge.type}"];`);
+    lines.push(
+      `  "${escapeDotValue(edge.from)}" -> "${escapeDotValue(edge.to)}" [label="${edge.type}"];`,
+    );
   }
   lines.push("}");
   return lines.join("\n");
@@ -544,7 +644,9 @@ export const formatGraphAsDot = (graph: DependencyGraph): string => {
 
 export const formatGraphAsAscii = (graph: DependencyGraph): string => {
   const lines = graph.nodes.map((node) => {
-    const targets = graph.edges.filter((edge) => edge.from === node).map((edge) => `${edge.to} (${edge.type})`);
+    const targets = graph.edges
+      .filter((edge) => edge.from === node)
+      .map((edge) => `${edge.to} (${edge.type})`);
     return `${node}${targets.length > 0 ? ` -> ${targets.join(", ")}` : ""}`;
   });
   if (graph.cycles.length > 0) {

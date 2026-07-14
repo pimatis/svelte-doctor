@@ -16,15 +16,19 @@ test("validate returns not-found when no config exists", () => {
 test("validate returns valid for correct config", () => {
   const project = createProject({
     "package.json": JSON.stringify({ name: "test-app" }, null, 2),
-    "svelte-doctor.config.json": JSON.stringify({
-      lint: true,
-      deadCode: false,
-      cache: true,
-      watch: { deadCode: "lazy" },
-      fix: { verifyLevel: "diagnostics", maxFiles: 50 },
-      reports: { html: ".svelte-doctor/report.html" },
-      ignore: { rules: ["no-console"], files: ["src/legacy/"] },
-    }, null, 2),
+    "svelte-doctor.config.json": JSON.stringify(
+      {
+        lint: true,
+        deadCode: false,
+        cache: true,
+        watch: { deadCode: "lazy" },
+        fix: { verifyLevel: "diagnostics", maxFiles: 50 },
+        reports: { html: ".svelte-doctor/report.html" },
+        ignore: { rules: ["no-console"], files: ["src/legacy/"] },
+      },
+      null,
+      2,
+    ),
   });
 
   const result = validateConfigFile(project);
@@ -35,10 +39,14 @@ test("validate returns valid for correct config", () => {
 test("validate detects unknown top-level keys", () => {
   const project = createProject({
     "package.json": JSON.stringify({ name: "test-app" }, null, 2),
-    "svelte-doctor.config.json": JSON.stringify({
-      lint: true,
-      unknownKey: "value",
-    }, null, 2),
+    "svelte-doctor.config.json": JSON.stringify(
+      {
+        lint: true,
+        unknownKey: "value",
+      },
+      null,
+      2,
+    ),
   });
 
   const result = validateConfigFile(project);
@@ -49,14 +57,18 @@ test("validate detects unknown top-level keys", () => {
 test("validate detects invalid types", () => {
   const project = createProject({
     "package.json": JSON.stringify({ name: "test-app" }, null, 2),
-    "svelte-doctor.config.json": JSON.stringify({
-      lint: "yes",
-      deadCode: 1,
-      watch: "lazy",
-      fix: [],
-      reports: null,
-      ignore: "src/**",
-    }, null, 2),
+    "svelte-doctor.config.json": JSON.stringify(
+      {
+        lint: "yes",
+        deadCode: 1,
+        watch: "lazy",
+        fix: [],
+        reports: null,
+        ignore: "src/**",
+      },
+      null,
+      2,
+    ),
   });
 
   const result = validateConfigFile(project);
@@ -72,10 +84,14 @@ test("validate detects invalid types", () => {
 test("validate detects invalid nested collections", () => {
   const project = createProject({
     "package.json": JSON.stringify({ name: "test-app" }, null, 2),
-    "svelte-doctor.config.json": JSON.stringify({
-      reports: { html: "" },
-      ignore: { rules: ["no-console", 123], files: ["src/**", ""] },
-    }, null, 2),
+    "svelte-doctor.config.json": JSON.stringify(
+      {
+        reports: { html: "" },
+        ignore: { rules: ["no-console", 123], files: ["src/**", ""] },
+      },
+      null,
+      2,
+    ),
   });
 
   const result = validateConfigFile(project);
@@ -88,10 +104,14 @@ test("validate detects invalid nested collections", () => {
 test("validate detects invalid enum values", () => {
   const project = createProject({
     "package.json": JSON.stringify({ name: "test-app" }, null, 2),
-    "svelte-doctor.config.json": JSON.stringify({
-      watch: { deadCode: "invalid" },
-      fix: { verifyLevel: "invalid" },
-    }, null, 2),
+    "svelte-doctor.config.json": JSON.stringify(
+      {
+        watch: { deadCode: "invalid" },
+        fix: { verifyLevel: "invalid" },
+      },
+      null,
+      2,
+    ),
   });
 
   const result = validateConfigFile(project);
@@ -112,8 +132,5 @@ test("validate detects invalid JSON syntax", () => {
 });
 
 test("validate throws for invalid directory", () => {
-  assert.throws(
-    () => validateConfigFile("/nonexistent/path"),
-    /not found|not a directory/i,
-  );
+  assert.throws(() => validateConfigFile("/nonexistent/path"), /not found|not a directory/i);
 });

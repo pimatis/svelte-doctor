@@ -3,10 +3,7 @@ import path from "node:path";
 import pc from "picocolors";
 import { writeFileAtomicSafe } from "../fs/safe-write.js";
 import { logger, highlighter, sanitize } from "../output/logger.js";
-import {
-  GITIGNORE_SVELTE_DOCTOR_ENTRY,
-  VERSION,
-} from "../constants.js";
+import { GITIGNORE_SVELTE_DOCTOR_ENTRY, VERSION } from "../constants.js";
 import { ensureProjectGitignoreEntry } from "../project/gitignore.js";
 import type { ScoreHistoryEntry } from "../types.js";
 
@@ -18,8 +15,7 @@ const MAX_BAR_COLUMNS = 60;
 
 type ScoreEntry = ScoreHistoryEntry;
 
-const getHistoryDir = (directory: string): string =>
-  path.join(directory, HISTORY_DIR);
+const getHistoryDir = (directory: string): string => path.join(directory, HISTORY_DIR);
 
 const getHistoryPath = (directory: string): string =>
   path.join(directory, HISTORY_DIR, HISTORY_FILE);
@@ -89,9 +85,8 @@ export const saveScoreHistory = (directory: string, entry: ScoreEntry): void => 
     history.push(entry);
 
     // trim oldest entries when exceeding the cap
-    const trimmed = history.length > MAX_ENTRIES
-      ? history.slice(history.length - MAX_ENTRIES)
-      : history;
+    const trimmed =
+      history.length > MAX_ENTRIES ? history.slice(history.length - MAX_ENTRIES) : history;
 
     const finalPath = getHistoryPath(directory);
 
@@ -101,7 +96,9 @@ export const saveScoreHistory = (directory: string, entry: ScoreEntry): void => 
       symlinkFileMessage: "Refusing to write history through symlinked file.",
       symlinkDirectoryMessage: "Refusing to write history through symlinked directory.",
     });
-  } catch {}
+  } catch {
+    /* corrupted entry, skip */
+  }
 };
 
 const getBarColor = (score: number, bar: string): string => {
@@ -113,7 +110,20 @@ const getBarColor = (score: number, bar: string): string => {
 const formatDateLabel = (timestamp: string): string => {
   try {
     const date = new Date(timestamp);
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const months = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
     return `${months[date.getMonth()]} ${date.getDate()}`;
   } catch {
     return "???";
@@ -171,9 +181,8 @@ export const printTrend = (directory: string, last: number): void => {
     for (let i = 0; i < entries.length; i++) {
       const normalizedScore = entries[i].score;
       const barChar = normalizedScore >= threshold ? "██" : "  ";
-      const colored = normalizedScore >= threshold
-        ? getBarColor(normalizedScore, barChar)
-        : barChar;
+      const colored =
+        normalizedScore >= threshold ? getBarColor(normalizedScore, barChar) : barChar;
 
       const padding = " ".repeat(colWidth - 2);
       rowContent += colored + padding;
@@ -210,7 +219,9 @@ export const printTrend = (directory: string, last: number): void => {
   const worstScoreColored = getBarColor(worstScore, String(worstScore));
 
   logger.log(`  Latest: ${latestScoreColored} (${sanitize(latest.label)}) ${trendArrow}`);
-  logger.log(`  Best:   ${bestScoreColored} (${sanitize(bestEntry.label)})  Worst: ${worstScoreColored} (${sanitize(worstEntry.label)})`);
+  logger.log(
+    `  Best:   ${bestScoreColored} (${sanitize(bestEntry.label)})  Worst: ${worstScoreColored} (${sanitize(worstEntry.label)})`,
+  );
   logger.log(`  Runs:   ${history.length} over ${getDaySpan(history)}`);
   logger.break();
 };

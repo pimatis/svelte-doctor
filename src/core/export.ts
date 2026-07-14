@@ -4,10 +4,7 @@ import { writeFileAtomicSafe } from "../fs/safe-write.js";
 import type { CopyOptions, CopyResult, Diagnostic } from "../types.js";
 import { sanitize } from "../output/logger.js";
 import { copyToClipboard } from "../output/clipboard.js";
-import {
-  formatDiagnosticsAsRawText,
-  formatDiagnosticsForPrompt,
-} from "./prompt.js";
+import { formatDiagnosticsAsRawText, formatDiagnosticsForPrompt } from "./prompt.js";
 
 const selectDiagnostics = (diagnostics: Diagnostic[], options: CopyOptions): Diagnostic[] => {
   const filtered = options.errorsOnly
@@ -17,7 +14,11 @@ const selectDiagnostics = (diagnostics: Diagnostic[], options: CopyOptions): Dia
   return filtered.slice(0, limit);
 };
 
-const buildExportBody = (directory: string, diagnostics: Diagnostic[], options: CopyOptions): string => {
+const buildExportBody = (
+  directory: string,
+  diagnostics: Diagnostic[],
+  options: CopyOptions,
+): string => {
   if (options.format === "raw") {
     return formatDiagnosticsAsRawText(diagnostics, diagnostics.length);
   }

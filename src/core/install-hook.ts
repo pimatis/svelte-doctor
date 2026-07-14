@@ -78,7 +78,12 @@ export const resolveExecutable = (directory: string): string => {
   return "bunx";
 };
 
-export const buildHookContent = (mode: HookMode = "staged", failOn: FailOn = "error", minScore = 0, executable = "bunx"): string => {
+export const buildHookContent = (
+  mode: HookMode = "staged",
+  failOn: FailOn = "error",
+  minScore = 0,
+  executable = "bunx",
+): string => {
   let modeArg = "";
   if (mode === "staged") modeArg = " --staged";
   if (mode === "changed") modeArg = " --changed";
@@ -112,7 +117,13 @@ export const writeHookFile = (
   const existing = readHook(hookPath);
 
   if (existing !== null && !isSvelteDoctorHook(existing) && !force) {
-    return getStatus(hookType, manager, "conflict", hookPath, "Existing hook is not managed by svelte-doctor. Use --force to overwrite.");
+    return getStatus(
+      hookType,
+      manager,
+      "conflict",
+      hookPath,
+      "Existing hook is not managed by svelte-doctor. Use --force to overwrite.",
+    );
   }
 
   const action: HookAction = existing === null ? "installed" : "updated";
@@ -123,15 +134,33 @@ export const writeHookFile = (
     symlinkDirectoryMessage: "Refusing to write hook through symlinked directory.",
   });
   fs.chmodSync(hookPath, 0o755);
-  return getStatus(hookType, manager, action, hookPath, action === "installed" ? "Hook installed." : "Hook updated.");
+  return getStatus(
+    hookType,
+    manager,
+    action,
+    hookPath,
+    action === "installed" ? "Hook installed." : "Hook updated.",
+  );
 };
 
-export const removeHookFile = (directory: string, manager: HookManager, hookType: HookType): HookStatus => {
+export const removeHookFile = (
+  directory: string,
+  manager: HookManager,
+  hookType: HookType,
+): HookStatus => {
   const resolvedDir = path.resolve(directory);
   const hookPath = path.join(getHookDir(resolvedDir, manager), hookType);
   const existing = readHook(hookPath);
-  if (existing === null) return getStatus(hookType, manager, "missing", hookPath, "Hook file does not exist.");
-  if (!isSvelteDoctorHook(existing)) return getStatus(hookType, manager, "skipped", hookPath, "Hook is not managed by svelte-doctor.");
+  if (existing === null)
+    return getStatus(hookType, manager, "missing", hookPath, "Hook file does not exist.");
+  if (!isSvelteDoctorHook(existing))
+    return getStatus(
+      hookType,
+      manager,
+      "skipped",
+      hookPath,
+      "Hook is not managed by svelte-doctor.",
+    );
   fs.rmSync(hookPath, { force: true });
   return getStatus(hookType, manager, "removed", hookPath, "Hook removed.");
 };
@@ -141,12 +170,21 @@ export const installHook = (directory: string, options: InstallHookOptions = {})
   const manager = detectHookManager(resolvedDir);
   const hookTypes = normalizeHookTypes(options.hookTypes);
   if (!manager) {
-    return hookTypes.map((hookType) => getStatus(hookType, null, "skipped", null, "No supported hook manager found."));
+    return hookTypes.map((hookType) =>
+      getStatus(hookType, null, "skipped", null, "No supported hook manager found."),
+    );
   }
 
   const executable = resolveExecutable(resolvedDir);
-  const content = buildHookContent(options.mode ?? "staged", options.failOn ?? "error", options.minScore ?? 0, executable);
-  return hookTypes.map((hookType) => writeHookFile(resolvedDir, manager, hookType, content, options.force ?? false));
+  const content = buildHookContent(
+    options.mode ?? "staged",
+    options.failOn ?? "error",
+    options.minScore ?? 0,
+    executable,
+  );
+  return hookTypes.map((hookType) =>
+    writeHookFile(resolvedDir, manager, hookType, content, options.force ?? false),
+  );
 };
 
 export const removeHook = (directory: string, hookTypes?: HookType[]): HookStatus[] => {
@@ -154,7 +192,9 @@ export const removeHook = (directory: string, hookTypes?: HookType[]): HookStatu
   const manager = detectHookManager(resolvedDir);
   const normalizedHookTypes = normalizeHookTypes(hookTypes);
   if (!manager) {
-    return normalizedHookTypes.map((hookType) => getStatus(hookType, null, "skipped", null, "No supported hook manager found."));
+    return normalizedHookTypes.map((hookType) =>
+      getStatus(hookType, null, "skipped", null, "No supported hook manager found."),
+    );
   }
   return normalizedHookTypes.map((hookType) => removeHookFile(resolvedDir, manager, hookType));
 };
@@ -164,14 +204,24 @@ export const listHooks = (directory: string): HookStatus[] => {
   const manager = detectHookManager(resolvedDir);
   const hookTypes: HookType[] = ["pre-commit", "pre-push"];
   if (!manager) {
-    return hookTypes.map((hookType) => getStatus(hookType, null, "missing", null, "No supported hook manager found."));
+    return hookTypes.map((hookType) =>
+      getStatus(hookType, null, "missing", null, "No supported hook manager found."),
+    );
   }
 
   return hookTypes.map((hookType) => {
     const hookPath = path.join(getHookDir(resolvedDir, manager), hookType);
     const existing = readHook(hookPath);
-    if (existing === null) return getStatus(hookType, manager, "missing", hookPath, "Hook file does not exist.");
-    if (!isSvelteDoctorHook(existing)) return getStatus(hookType, manager, "skipped", hookPath, "Hook is not managed by svelte-doctor.");
+    if (existing === null)
+      return getStatus(hookType, manager, "missing", hookPath, "Hook file does not exist.");
+    if (!isSvelteDoctorHook(existing))
+      return getStatus(
+        hookType,
+        manager,
+        "skipped",
+        hookPath,
+        "Hook is not managed by svelte-doctor.",
+      );
     return getStatus(hookType, manager, "installed", hookPath, "svelte-doctor hook is installed.");
   });
 };

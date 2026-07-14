@@ -21,7 +21,11 @@ export interface PrCheckOptions {
 }
 
 const git = (directory: string, args: string[]): string =>
-  execFileSync("git", args, { cwd: directory, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  execFileSync("git", args, {
+    cwd: directory,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
 
 const listChangedFiles = (directory: string, base: string, head: string): string[] =>
   git(directory, ["diff", "--name-only", `${base}...${head}`])
@@ -41,7 +45,14 @@ const diffDiagnostics = (baseDiagnostics: Diagnostic[], headDiagnostics: Diagnos
   };
 };
 
-const buildMarkdown = (baseRef: string, headRef: string, baseScore: number, headScore: number, newIssues: Diagnostic[], fixedIssues: Diagnostic[]): string => {
+const buildMarkdown = (
+  baseRef: string,
+  headRef: string,
+  baseScore: number,
+  headScore: number,
+  newIssues: Diagnostic[],
+  fixedIssues: Diagnostic[],
+): string => {
   const baseErrors = newIssues.filter((diagnostic) => diagnostic.severity === "error").length;
   const delta = headScore - baseScore;
   const lines = [
@@ -55,12 +66,22 @@ const buildMarkdown = (baseRef: string, headRef: string, baseScore: number, head
     "### 🚨 New Issues in this PR",
     "| File | Rule | Severity | Line |",
     "|------|------|:--------:|:----:|",
-    ...newIssues.slice(0, 50).map((diagnostic) => `| \`${diagnostic.filePath}\` | \`${diagnostic.rule}\` | ${diagnostic.severity} | ${diagnostic.line} |`),
+    ...newIssues
+      .slice(0, 50)
+      .map(
+        (diagnostic) =>
+          `| \`${diagnostic.filePath}\` | \`${diagnostic.rule}\` | ${diagnostic.severity} | ${diagnostic.line} |`,
+      ),
     "",
     "### ✅ Fixed Issues",
     "| File | Rule | Line |",
     "|------|------|:----:|",
-    ...fixedIssues.slice(0, 50).map((diagnostic) => `| \`${diagnostic.filePath}\` | \`${diagnostic.rule}\` | ${diagnostic.line} |`),
+    ...fixedIssues
+      .slice(0, 50)
+      .map(
+        (diagnostic) =>
+          `| \`${diagnostic.filePath}\` | \`${diagnostic.rule}\` | ${diagnostic.line} |`,
+      ),
   ];
   if (newIssues.length === 0) lines.splice(10, 0, "| — | — | — | — |");
   if (fixedIssues.length === 0) lines.push("| — | — | — |");
@@ -79,25 +100,53 @@ const validatePullRequestNumber = (pr: string | undefined): string | null => {
 const postGithubComment = (directory: string, pr: string | undefined, body: string): void => {
   const safePr = validatePullRequestNumber(pr);
   if (!safePr) return;
-  execFileSync("gh", ["pr", "comment", safePr, "--body", body], { cwd: directory, stdio: "inherit" });
+  execFileSync("gh", ["pr", "comment", safePr, "--body", body], {
+    cwd: directory,
+    stdio: "inherit",
+  });
 };
 
 const postGithubReview = (directory: string, pr: string | undefined, body: string): void => {
   const safePr = validatePullRequestNumber(pr);
   if (!safePr) return;
-  execFileSync("gh", ["pr", "review", safePr, "--comment", "--body", body], { cwd: directory, stdio: "inherit" });
+  execFileSync("gh", ["pr", "review", safePr, "--comment", "--body", body], {
+    cwd: directory,
+    stdio: "inherit",
+  });
 };
 
-const setGithubStatus = (directory: string, headSha: string, state: "success" | "failure", description: string): void => {
+const setGithubStatus = (
+  directory: string,
+  headSha: string,
+  state: "success" | "failure",
+  description: string,
+): void => {
   const repo = git(directory, ["config", "--get", "remote.origin.url"])
     .replace(/^git@github.com:/, "")
     .replace(/^https:\/\/github.com\//, "")
     .replace(/\.git$/, "");
   if (!repo.includes("/")) return;
-  execFileSync("gh", ["api", `repos/${repo}/statuses/${headSha}`, "-f", `state=${state}`, "-f", "context=svelte-doctor", "-f", `description=${description}`], { cwd: directory, stdio: "ignore" });
+  execFileSync(
+    "gh",
+    [
+      "api",
+      `repos/${repo}/statuses/${headSha}`,
+      "-f",
+      `state=${state}`,
+      "-f",
+      "context=svelte-doctor",
+      "-f",
+      `description=${description}`,
+    ],
+    { cwd: directory, stdio: "ignore" },
+  );
 };
 
-const withGitWorktree = async <T>(directory: string, ref: string, run: (worktree: string) => Promise<T>): Promise<T> => {
+const withGitWorktree = async <T>(
+  directory: string,
+  ref: string,
+  run: (worktree: string) => Promise<T>,
+): Promise<T> => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "svelte-doctor-pr-"));
   try {
     git(directory, ["worktree", "add", "--detach", "--quiet", tempRoot, ref]);
@@ -112,10 +161,12 @@ const withGitWorktree = async <T>(directory: string, ref: string, run: (worktree
 };
 
 const scanRef = async (directory: string, ref: string, relativeFiles: string[]) =>
-  withGitWorktree(directory, ref, async (worktree) => scan(worktree, {
-    quiet: true,
-    targetFiles: relativeFiles.map((file) => path.join(worktree, file)),
-  }));
+  withGitWorktree(directory, ref, async (worktree) =>
+    scan(worktree, {
+      quiet: true,
+      targetFiles: relativeFiles.map((file) => path.join(worktree, file)),
+    }),
+  );
 
 export const runPrCheck = async (directory: string, options: PrCheckOptions): Promise<void> => {
   const resolvedDir = path.resolve(directory);
@@ -126,7 +177,14 @@ export const runPrCheck = async (directory: string, options: PrCheckOptions): Pr
   const baseResult = await scanRef(resolvedDir, baseRef, changedFiles);
   const headResult = await scanRef(resolvedDir, headRef, changedFiles);
   const diff = diffDiagnostics(baseResult.diagnostics, headResult.diagnostics);
-  const markdown = buildMarkdown(baseRef, headRef, baseResult.scoreResult.score, headResult.scoreResult.score, diff.newIssues, diff.fixedIssues);
+  const markdown = buildMarkdown(
+    baseRef,
+    headRef,
+    baseResult.scoreResult.score,
+    headResult.scoreResult.score,
+    diff.newIssues,
+    diff.fixedIssues,
+  );
   const result = {
     base: baseResult.scoreResult.score,
     head: headResult.scoreResult.score,
@@ -134,9 +192,11 @@ export const runPrCheck = async (directory: string, options: PrCheckOptions): Pr
     newIssues: diff.newIssues,
     fixedIssues: diff.fixedIssues,
   };
-  const failed = headResult.scoreResult.score < (options.minScore ?? 0) ||
-    options.failOn === "warning" && diff.newIssues.length > 0 ||
-    (options.failOn ?? "error") === "error" && diff.newIssues.some((diagnostic) => diagnostic.severity === "error");
+  const failed =
+    headResult.scoreResult.score < (options.minScore ?? 0) ||
+    (options.failOn === "warning" && diff.newIssues.length > 0) ||
+    ((options.failOn ?? "error") === "error" &&
+      diff.newIssues.some((diagnostic) => diagnostic.severity === "error"));
 
   if (options.json) {
     logger.log(JSON.stringify(result, null, 2));
@@ -148,8 +208,22 @@ export const runPrCheck = async (directory: string, options: PrCheckOptions): Pr
     logger.log(markdown);
     logger.break();
   }
-  if (options.comment && (options.platform === "github" || options.platform === "auto" || !options.platform)) postGithubComment(resolvedDir, options.pr, markdown);
-  if (options.inline && (options.platform === "github" || options.platform === "auto" || !options.platform)) postGithubReview(resolvedDir, options.pr, markdown);
-  if (options.comment || options.inline) setGithubStatus(resolvedDir, headSha, failed ? "failure" : "success", failed ? "svelte-doctor found PR issues" : "svelte-doctor PR check passed");
+  if (
+    options.comment &&
+    (options.platform === "github" || options.platform === "auto" || !options.platform)
+  )
+    postGithubComment(resolvedDir, options.pr, markdown);
+  if (
+    options.inline &&
+    (options.platform === "github" || options.platform === "auto" || !options.platform)
+  )
+    postGithubReview(resolvedDir, options.pr, markdown);
+  if (options.comment || options.inline)
+    setGithubStatus(
+      resolvedDir,
+      headSha,
+      failed ? "failure" : "success",
+      failed ? "svelte-doctor found PR issues" : "svelte-doctor PR check passed",
+    );
   if (failed) process.exitCode = 1;
 };

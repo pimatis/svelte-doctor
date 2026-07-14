@@ -6,14 +6,19 @@ import { createProject } from "./helpers.mjs";
 import { fixNoEffectForDerived, fixNoUnnecessaryState } from "../src/core/fixers.ts";
 import { runApply } from "../src/core/apply.ts";
 
-const createSvelteProject = (files) => createProject({
-  "package.json": JSON.stringify({
-    name: "autofix-fixture",
-    type: "module",
-    dependencies: { svelte: "^5.0.0" },
-  }, null, 2),
-  ...files,
-});
+const createSvelteProject = (files) =>
+  createProject({
+    "package.json": JSON.stringify(
+      {
+        name: "autofix-fixture",
+        type: "module",
+        dependencies: { svelte: "^5.0.0" },
+      },
+      null,
+      2,
+    ),
+    ...files,
+  });
 
 test("fixNoEffectForDerived converts single-assignment effect to $derived", () => {
   const source = `<script>
@@ -273,7 +278,10 @@ let name = $state("hello");
 
   const result = await runApply(project, { write: true });
   assert.ok(result.changedFiles > 0, "should have changed files");
-  assert.ok(result.appliedRules.includes("no-unnecessary-state"), "should apply no-unnecessary-state");
+  assert.ok(
+    result.appliedRules.includes("no-unnecessary-state"),
+    "should apply no-unnecessary-state",
+  );
 
   const content = fs.readFileSync(path.join(project, "src/App.svelte"), "utf-8");
   assert.match(content, /let count = 0;/);

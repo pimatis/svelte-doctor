@@ -3,12 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { validateDirectory } from "../fs/validate.js";
 import { validateConfigFile } from "../core/validate-config.js";
-import { readPackageScripts, resolvePackageManager } from "../core/runtime.js";
-import {
-  CACHE_DIR,
-  CACHE_FILE,
-  GITIGNORE_SVELTE_DOCTOR_ENTRY,
-} from "../constants.js";
+import { resolvePackageManager } from "../core/runtime.js";
+import { CACHE_DIR, CACHE_FILE, GITIGNORE_SVELTE_DOCTOR_ENTRY } from "../constants.js";
 import type { ValidateConfigResult } from "../core/validate-config.js";
 
 export type DoctorStatus = "pass" | "warning" | "fail" | "na";
@@ -41,9 +37,7 @@ const readPackageJson = (dir: string): Record<string, unknown> | null => {
   }
 };
 
-const parseSemver = (
-  version: string,
-): { major: number; minor: number; patch: number } | null => {
+const parseSemver = (version: string): { major: number; minor: number; patch: number } | null => {
   const match = /^v?(\d+)\.(\d+)\.(\d+)/.exec(version.trim());
   if (!match) return null;
   return {
@@ -67,8 +61,7 @@ const checkNodeVersion = async (_dir: string): Promise<DoctorCheckResult> => {
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
   const ownPkg = readPackageJson(path.resolve(currentDir, ".."));
   const required = (ownPkg as Record<string, unknown> | null)?.engines as
-    | Record<string, string>
-    | undefined;
+    Record<string, string> | undefined;
   const requiredNode = required?.node ?? ">=22.18.0";
   const current = process.version;
 
@@ -89,9 +82,7 @@ const checkNodeVersion = async (_dir: string): Promise<DoctorCheckResult> => {
   };
 };
 
-const checkSvelteDependency = async (
-  dir: string,
-): Promise<DoctorCheckResult> => {
+const checkSvelteDependency = async (dir: string): Promise<DoctorCheckResult> => {
   const pkg = readPackageJson(dir);
   if (!pkg) {
     return {
@@ -155,8 +146,7 @@ const checkSvelteConfig = async (dir: string): Promise<DoctorCheckResult> => {
   }
 
   const content = fs.readFileSync(foundPath, "utf-8");
-  const hasPreprocess =
-    content.includes("preprocess") || content.includes("vitePreprocess");
+  const hasPreprocess = content.includes("preprocess") || content.includes("vitePreprocess");
 
   if (hasPreprocess) {
     return {
@@ -205,8 +195,7 @@ const checkTsconfig = async (dir: string): Promise<DoctorCheckResult> => {
   }
 
   const obj = raw as Record<string, unknown>;
-  const hasCompilerOptions =
-    obj && typeof obj === "object" && "compilerOptions" in obj;
+  const hasCompilerOptions = obj && typeof obj === "object" && "compilerOptions" in obj;
   const hasExtends = obj && typeof obj === "object" && "extends" in obj;
 
   if (hasCompilerOptions) {
@@ -248,15 +237,11 @@ const checkNodeModules = async (dir: string): Promise<DoctorCheckResult> => {
     const entries = fs
       .readdirSync(nodeModulesPath)
       .filter((e) => !e.startsWith(".") && !e.startsWith("@"));
-    const scopedDirs = fs
-      .readdirSync(nodeModulesPath)
-      .filter((e) => e.startsWith("@"));
+    const scopedDirs = fs.readdirSync(nodeModulesPath).filter((e) => e.startsWith("@"));
     let scopedCount = 0;
     for (const scoped of scopedDirs) {
       try {
-        scopedCount += fs.readdirSync(
-          path.join(nodeModulesPath, scoped),
-        ).length;
+        scopedCount += fs.readdirSync(path.join(nodeModulesPath, scoped)).length;
       } catch {
         // skip
       }
@@ -288,9 +273,7 @@ const checkNodeModules = async (dir: string): Promise<DoctorCheckResult> => {
   }
 };
 
-const checkConfigValidation = async (
-  dir: string,
-): Promise<DoctorCheckResult> => {
+const checkConfigValidation = async (dir: string): Promise<DoctorCheckResult> => {
   const result: ValidateConfigResult = validateConfigFile(dir);
 
   if (result.status === "valid") {
@@ -311,9 +294,7 @@ const checkConfigValidation = async (
     };
   }
 
-  const issueMessages = result.issues
-    .map((i) => `${i.field}: ${i.message}`)
-    .join("; ");
+  const issueMessages = result.issues.map((i) => `${i.field}: ${i.message}`).join("; ");
   return {
     name: "Config Validation",
     status: "fail",
@@ -423,9 +404,7 @@ const checkCacheStatus = async (dir: string): Promise<DoctorCheckResult> => {
     const files = raw?.files as Record<string, unknown> | undefined;
     const entryCount = files ? Object.keys(files).length : 0;
     const sizeKB = Math.round(stat.size / 1024);
-    const ageDays = Math.round(
-      (Date.now() - stat.mtimeMs) / MILLISECONDS_PER_DAY,
-    );
+    const ageDays = Math.round((Date.now() - stat.mtimeMs) / MILLISECONDS_PER_DAY);
 
     if (entryCount === 0) {
       return {

@@ -1,4 +1,10 @@
-import type { Diagnostic, ProjectInfo, ScanMeta, ScoreHistoryEntry, ScoreResult } from "../types.js";
+import type {
+  Diagnostic,
+  ProjectInfo,
+  ScanMeta,
+  ScoreHistoryEntry,
+  ScoreResult,
+} from "../types.js";
 
 const escapeHtml = (value: string): string => {
   let output = "";
@@ -9,7 +15,8 @@ const escapeHtml = (value: string): string => {
     if (char === ">") output += "&gt;";
     if (char === '"') output += "&quot;";
     if (char === "'") output += "&#39;";
-    if (char !== "&" && char !== "<" && char !== ">" && char !== '"' && char !== "'") output += char;
+    if (char !== "&" && char !== "<" && char !== ">" && char !== '"' && char !== "'")
+      output += char;
   }
 
   return output;
@@ -24,29 +31,38 @@ const getHeatLevel = (count: number, max: number): "low" | "medium" | "high" => 
 };
 
 const categoryBars = (score: ScoreResult): string =>
-  Object.entries(score.categoryBreakdown).map(([category, entry]) => {
-    const width = Math.min(100, Math.max(4, entry.count * 8));
-    return `<div class="bar-row"><span>${escapeHtml(category)}</span><div class="bar"><i style="width:${width}%"></i></div><b>${entry.count}</b></div>`;
-  }).join("");
+  Object.entries(score.categoryBreakdown)
+    .map(([category, entry]) => {
+      const width = Math.min(100, Math.max(4, entry.count * 8));
+      return `<div class="bar-row"><span>${escapeHtml(category)}</span><div class="bar"><i style="width:${width}%"></i></div><b>${entry.count}</b></div>`;
+    })
+    .join("");
 
 const fileHeatmap = (diagnostics: Diagnostic[]): string => {
   const counts = new Map<string, number>();
-  for (const diagnostic of diagnostics) counts.set(diagnostic.filePath, (counts.get(diagnostic.filePath) ?? 0) + 1);
+  for (const diagnostic of diagnostics)
+    counts.set(diagnostic.filePath, (counts.get(diagnostic.filePath) ?? 0) + 1);
   const max = Math.max(0, ...counts.values());
 
-  return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).map(([filePath, count]) =>
-    `<div class="heat-item heat-${getHeatLevel(count, max)}"><span>${escapeHtml(filePath)}</span><b>${count}</b></div>`,
-  ).join("");
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(
+      ([filePath, count]) =>
+        `<div class="heat-item heat-${getHeatLevel(count, max)}"><span>${escapeHtml(filePath)}</span><b>${count}</b></div>`,
+    )
+    .join("");
 };
 
 const trendPoints = (history: ScoreHistoryEntry[]): string => {
   const entries = history.slice(-20);
   if (entries.length === 0) return "";
-  return entries.map((entry, index) => {
-    const x = entries.length === 1 ? 0 : (index / (entries.length - 1)) * 100;
-    const y = 100 - Math.max(0, Math.min(100, entry.score));
-    return `${x.toFixed(2)},${y.toFixed(2)}`;
-  }).join(" ");
+  return entries
+    .map((entry, index) => {
+      const x = entries.length === 1 ? 0 : (index / (entries.length - 1)) * 100;
+      const y = 100 - Math.max(0, Math.min(100, entry.score));
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(" ");
 };
 
 export const buildHtmlReport = (
@@ -58,13 +74,23 @@ export const buildHtmlReport = (
 ): string => {
   const errors = diagnostics.filter((diagnostic) => diagnostic.severity === "error").length;
   const warnings = diagnostics.filter((diagnostic) => diagnostic.severity === "warning").length;
-  const rows = diagnostics.map((diagnostic) => `
+  const rows = diagnostics
+    .map(
+      (diagnostic) => `
     <tr data-category="${escapeHtml(diagnostic.category)}" data-severity="${diagnostic.severity}" data-file="${escapeHtml(diagnostic.filePath)}">
       <td>${escapeHtml(diagnostic.rule)}</td><td><span class="pill ${diagnostic.severity}">${diagnostic.severity}</span></td><td>${escapeHtml(diagnostic.category)}</td>
       <td>${escapeHtml(diagnostic.filePath)}:${diagnostic.line}:${diagnostic.column}</td><td>${escapeHtml(diagnostic.message)}</td><td>${diagnostic.fixable ? "✓" : ""}</td>
-    </tr>`).join("");
-  const categoryOptions = Array.from(new Set(diagnostics.map((diagnostic) => diagnostic.category))).sort().map((category) => `<option>${escapeHtml(category)}</option>`).join("");
-  const fileOptions = Array.from(new Set(diagnostics.map((diagnostic) => diagnostic.filePath))).sort().map((filePath) => `<option>${escapeHtml(filePath)}</option>`).join("");
+    </tr>`,
+    )
+    .join("");
+  const categoryOptions = Array.from(new Set(diagnostics.map((diagnostic) => diagnostic.category)))
+    .sort()
+    .map((category) => `<option>${escapeHtml(category)}</option>`)
+    .join("");
+  const fileOptions = Array.from(new Set(diagnostics.map((diagnostic) => diagnostic.filePath)))
+    .sort()
+    .map((filePath) => `<option>${escapeHtml(filePath)}</option>`)
+    .join("");
   const points = trendPoints(history);
 
   return `<!doctype html>

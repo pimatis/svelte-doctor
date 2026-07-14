@@ -6,11 +6,15 @@ import { runCompare } from "../src/core/compare.ts";
 
 const createGitProject = () => {
   const project = createProject({
-    "package.json": JSON.stringify({
-      name: "test-app",
-      type: "module",
-      dependencies: { svelte: "^5.0.0" },
-    }, null, 2),
+    "package.json": JSON.stringify(
+      {
+        name: "test-app",
+        type: "module",
+        dependencies: { svelte: "^5.0.0" },
+      },
+      null,
+      2,
+    ),
     "src/App.svelte": "<button>hello</button>\n",
   });
 
@@ -53,26 +57,21 @@ test("compare detects new issues when code degrades", async () => {
   execFileSync("git", ["commit", "-m", "add secret"], { cwd: project, stdio: "ignore" });
 
   const result = await runCompare(project, "HEAD~1", "HEAD");
-  assert.ok(result.head.score <= result.base.score || result.newErrors.length > 0 || result.newWarnings.length >= 0);
+  assert.ok(
+    result.head.score <= result.base.score ||
+      result.newErrors.length > 0 ||
+      result.newWarnings.length >= 0,
+  );
 });
 
 test("compare throws for invalid git ref", async () => {
   const project = createGitProject();
 
-  await assert.rejects(
-    () => runCompare(project, "", "HEAD"),
-    /cannot be empty/i,
-  );
+  await assert.rejects(() => runCompare(project, "", "HEAD"), /cannot be empty/i);
 
-  await assert.rejects(
-    () => runCompare(project, "HEAD\r", "HEAD"),
-    /cannot contain newlines/i,
-  );
+  await assert.rejects(() => runCompare(project, "HEAD\r", "HEAD"), /cannot contain newlines/i);
 
-  await assert.rejects(
-    () => runCompare(project, "--help", "HEAD"),
-    /cannot start with a dash/i,
-  );
+  await assert.rejects(() => runCompare(project, "--help", "HEAD"), /cannot start with a dash/i);
 });
 
 test("compare throws for invalid directory", async () => {

@@ -1,6 +1,13 @@
 import ts from "typescript";
 import type { CodemodTransform } from "../types.js";
-import { applyTextEdits, createNoopResult, createResult, getInstanceScript, parseScript, replaceInstanceScript } from "../utils.js";
+import {
+  applyTextEdits,
+  createNoopResult,
+  createResult,
+  getInstanceScript,
+  parseScript,
+  replaceInstanceScript,
+} from "../utils.js";
 
 interface PropInfo {
   name: string;
@@ -17,7 +24,8 @@ const skipLeadingNewlines = (source: string, start: number): number => {
 };
 
 const getPropInfo = (node: ts.VariableStatement, source: string): PropInfo | null => {
-  const hasExport = node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) === true;
+  const hasExport =
+    node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) === true;
   if (!hasExport) return null;
   if (node.declarationList.declarations.length !== 1) return null;
 
@@ -52,7 +60,9 @@ export const exportLetTransform: CodemodTransform = {
 
     if (props.length === 0) return createNoopResult(source);
 
-    const typeEntries = props.filter((prop) => prop.typeText).map((prop) => `${prop.name}: ${prop.typeText}`);
+    const typeEntries = props
+      .filter((prop) => prop.typeText)
+      .map((prop) => `${prop.name}: ${prop.typeText}`);
     const typeSuffix = typeEntries.length > 0 ? `: { ${typeEntries.join("; ")} }` : "";
     const destructure = props
       .map((prop) => {
@@ -71,6 +81,10 @@ export const exportLetTransform: CodemodTransform = {
     }));
     const nextScript = applyTextEdits(script.content, edits).replace(/\n{3,}/g, "\n\n");
 
-    return createResult(replaceInstanceScript(source, script, nextScript), "export-let", "export let -> $props()");
+    return createResult(
+      replaceInstanceScript(source, script, nextScript),
+      "export-let",
+      "export let -> $props()",
+    );
   },
 };

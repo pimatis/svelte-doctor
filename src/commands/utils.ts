@@ -2,7 +2,13 @@ import path from "node:path";
 import { highlighter, sanitize } from "../output/logger.js";
 import { getSelectedGitFiles } from "../core/git.js";
 import { discoverWorkspaces, findWorkspace } from "../project/workspaces.js";
-import type { DeadCodeMode, FailOn, PackageManager, VerificationLevel, WorkspaceInfo } from "../types.js";
+import type {
+  DeadCodeMode,
+  FailOn,
+  PackageManager,
+  VerificationLevel,
+  WorkspaceInfo,
+} from "../types.js";
 
 export type CliCiPlatform = "github-actions" | "gitlab-ci" | "circle-ci";
 export type CliPrPlatform = "github" | "gitlab" | "bitbucket" | "auto";
@@ -16,7 +22,8 @@ export const parseDeadCodeMode = (value: string): DeadCodeMode => {
 };
 
 export const parseVerifyLevel = (value: string): VerificationLevel => {
-  if (value === "diagnostics" || value === "typecheck" || value === "tests" || value === "full") return value;
+  if (value === "diagnostics" || value === "typecheck" || value === "tests" || value === "full")
+    return value;
   throw new Error(`Invalid verify level "${value}". Use diagnostics, typecheck, tests, or full.`);
 };
 
@@ -46,7 +53,8 @@ export const parseCiPlatform = (value: string): CliCiPlatform => {
 };
 
 export const parsePrPlatform = (value: string): CliPrPlatform => {
-  if (value === "github" || value === "gitlab" || value === "bitbucket" || value === "auto") return value;
+  if (value === "github" || value === "gitlab" || value === "bitbucket" || value === "auto")
+    return value;
   throw new Error(`Invalid PR platform "${value}". Use github, gitlab, bitbucket, or auto.`);
 };
 
@@ -83,5 +91,9 @@ export const resolveGitSelection = (
   flags: { changed?: boolean; staged?: boolean; since?: string },
 ): string[] => {
   if (!flags.changed && !flags.staged && !flags.since) return [];
-  return getSelectedGitFiles(directory, { changed: flags.changed, staged: flags.staged, since: flags.since });
+  return getSelectedGitFiles(directory, {
+    changed: flags.changed,
+    staged: flags.staged,
+    since: flags.since,
+  });
 };

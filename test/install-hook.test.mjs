@@ -40,7 +40,16 @@ const createGitProject = (files = {}) => {
 test("install-hook installs direct pre-commit with selected policy", () => {
   const project = createGitProject({ "bun.lock": "" });
 
-  const output = runCli(project, ["install-hook", ".", "--mode", "staged", "--fail-on", "warning", "--min-score", "80"]);
+  const output = runCli(project, [
+    "install-hook",
+    ".",
+    "--mode",
+    "staged",
+    "--fail-on",
+    "warning",
+    "--min-score",
+    "80",
+  ]);
   assert.match(output, /pre-commit\s+installed\s+direct/);
 
   const hookPath = path.join(project, ".git", "hooks", "pre-commit");
@@ -79,16 +88,26 @@ test("install-hook lists and removes only managed hooks", () => {
 
   const listed = JSON.parse(runCli(project, ["install-hook", ".", "--list", "--json"]));
   assert.equal(listed.length, 2);
-  assert.equal(listed.every((status) => status.action === "installed"), true);
+  assert.equal(
+    listed.every((status) => status.action === "installed"),
+    true,
+  );
 
-  const removed = JSON.parse(runCli(project, ["install-hook", ".", "--remove", "--pre-push", "--json"]));
-  assert.equal(removed.every((status) => status.action === "removed"), true);
+  const removed = JSON.parse(
+    runCli(project, ["install-hook", ".", "--remove", "--pre-push", "--json"]),
+  );
+  assert.equal(
+    removed.every((status) => status.action === "removed"),
+    true,
+  );
   assert.equal(fs.existsSync(path.join(project, ".git", "hooks", "pre-commit")), false);
   assert.equal(fs.existsSync(path.join(project, ".git", "hooks", "pre-push")), false);
 });
 
 test("install-hook help documents user-facing flags", () => {
-  const project = createProject({ "package.json": JSON.stringify({ name: "help-fixture" }, null, 2) });
+  const project = createProject({
+    "package.json": JSON.stringify({ name: "help-fixture" }, null, 2),
+  });
   const output = runCli(project, ["install-hook", "--help"]);
 
   assert.match(output, /Install, list, or remove svelte-doctor git hooks/);

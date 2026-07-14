@@ -1,5 +1,7 @@
 const buildHunk = (oldLines: string[], newLines: string[]): string[] => {
-  const lines: string[] = [`@@ -1,${Math.max(oldLines.length, 1)} +1,${Math.max(newLines.length, 1)} @@`];
+  const lines: string[] = [
+    `@@ -1,${Math.max(oldLines.length, 1)} +1,${Math.max(newLines.length, 1)} @@`,
+  ];
   const max = Math.max(oldLines.length, newLines.length);
 
   for (let index = 0; index < max; index++) {

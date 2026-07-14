@@ -21,7 +21,8 @@ const formatReads = (reads: DeadStoreReport["reads"]): string => {
 
   const parts: string[] = [];
   for (const [kind, items] of byKind) {
-    const label = kind === "auto" ? `$-auto-subscribe` : kind === "subscribe" ? ".subscribe()" : "get()";
+    const label =
+      kind === "auto" ? `$-auto-subscribe` : kind === "subscribe" ? ".subscribe()" : "get()";
     const unique = new Map<string, DeadStoreReport["reads"][number]>();
     for (const item of items) {
       const key = `${item.file}:${item.line}`;
@@ -104,7 +105,11 @@ export const deadStoresCommand = new Command("dead-stores")
       const dead = result.stores.filter((s) => s.status === "never-written");
       const ok = result.stores.filter((s) => s.status === "ok");
 
-      logger.log(highlighter.bold(`  Dead store report: ${result.deadStores} never-written, ${ok.length} ok, ${result.totalStores} total`));
+      logger.log(
+        highlighter.bold(
+          `  Dead store report: ${result.deadStores} never-written, ${ok.length} ok, ${result.totalStores} total`,
+        ),
+      );
       logger.break();
 
       if (dead.length > 0) {
@@ -112,7 +117,9 @@ export const deadStoresCommand = new Command("dead-stores")
         logger.break();
         for (const report of dead) {
           const decl = report.declaration;
-          logger.log(`  ${highlighter.bold(decl.name)} - ${decl.kind} - ${highlighter.warn("NEVER WRITTEN")} (${decl.file}:${decl.line})`);
+          logger.log(
+            `  ${highlighter.bold(decl.name)} - ${decl.kind} - ${highlighter.warn("NEVER WRITTEN")} (${decl.file}:${decl.line})`,
+          );
           const readsOut = formatReads(report.reads);
           if (readsOut) {
             logger.log(readsOut);
@@ -127,7 +134,9 @@ export const deadStoresCommand = new Command("dead-stores")
         logger.break();
         for (const report of ok) {
           const decl = report.declaration;
-          logger.log(`  ${highlighter.bold(decl.name)} - ${decl.kind} - ${highlighter.success("WRITTEN")} (${decl.file}:${decl.line})`);
+          logger.log(
+            `  ${highlighter.bold(decl.name)} - ${decl.kind} - ${highlighter.success("WRITTEN")} (${decl.file}:${decl.line})`,
+          );
           const writesOut = formatWrites(report.writes);
           if (writesOut) {
             logger.log(writesOut);

@@ -16,7 +16,7 @@ export const validateDirectory = (dir: string): void => {
     }
   } catch (error) {
     if (isNodeError(error) && error.code === "ENOENT") {
-      throw new Error(`Directory not found: "${dir}"`);
+      throw new Error(`Directory not found: "${dir}"`, { cause: error });
     }
     throw error;
   }

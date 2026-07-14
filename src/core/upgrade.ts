@@ -46,7 +46,13 @@ export interface UpgradeOptions {
   workspace?: string;
 }
 
-const coreDependencies = new Set(["svelte", "@sveltejs/kit", "@sveltejs/vite-plugin-svelte", "vite", "typescript"]);
+const coreDependencies = new Set([
+  "svelte",
+  "@sveltejs/kit",
+  "@sveltejs/vite-plugin-svelte",
+  "vite",
+  "typescript",
+]);
 
 const parseVersion = (value: string): [number, number, number] | null => {
   const match = value.match(/(\d+)\.(\d+)\.(\d+)/);
@@ -129,7 +135,9 @@ const writePackageJson = (filePath: string, pkg: PackageJson): void => {
   });
 };
 
-const collectDeps = (pkg: PackageJson): Array<{ name: string; version: string; type: DependencyType }> => {
+const collectDeps = (
+  pkg: PackageJson,
+): Array<{ name: string; version: string; type: DependencyType }> => {
   const entries: Array<{ name: string; version: string; type: DependencyType }> = [];
   for (const type of ["dependencies", "devDependencies", "peerDependencies"] as const) {
     const source = pkg[type];
@@ -139,16 +147,25 @@ const collectDeps = (pkg: PackageJson): Array<{ name: string; version: string; t
   return entries;
 };
 
-const fetchLatest = async (name: string): Promise<{ latestVersion: string; deprecated: boolean; changelogUrl?: string } | null> => {
+const fetchLatest = async (
+  name: string,
+): Promise<{ latestVersion: string; deprecated: boolean; changelogUrl?: string } | null> => {
   const encoded = encodePackageName(name);
   if (!encoded) return null;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8000);
   try {
-    const response = await fetch(`https://registry.npmjs.org/${encoded}/latest`, { signal: controller.signal });
+    const response = await fetch(`https://registry.npmjs.org/${encoded}/latest`, {
+      signal: controller.signal,
+    });
     if (!response.ok) return null;
-    const body = await response.json() as { version?: string; deprecated?: string; homepage?: string; repository?: { url?: string } };
+    const body = (await response.json()) as {
+      version?: string;
+      deprecated?: string;
+      homepage?: string;
+      repository?: { url?: string };
+    };
     if (!body.version || !isSemver(body.version)) return null;
     return {
       latestVersion: body.version,
@@ -178,7 +195,9 @@ const buildPlan = async (directory: string, options: UpgradeOptions): Promise<Up
 
   for (let index = 0; index < deps.length; index += 10) {
     const batch = deps.slice(index, index + 10);
-    const settled = await Promise.all(batch.map(async (dep) => ({ dep, latest: await fetchLatest(dep.name) })));
+    const settled = await Promise.all(
+      batch.map(async (dep) => ({ dep, latest: await fetchLatest(dep.name) })),
+    );
     for (const entry of settled) {
       if (!entry.latest) continue;
       const current = parseVersion(entry.dep.version)?.join(".");
@@ -223,7 +242,9 @@ const applyPlan = (plan: UpgradePlan): void => {
   writePackageJson(plan.packageJsonPath, pkg);
 };
 
-const filterInteractiveSuggestions = async (suggestions: UpgradeSuggestion[]): Promise<UpgradeSuggestion[]> => {
+const filterInteractiveSuggestions = async (
+  suggestions: UpgradeSuggestion[],
+): Promise<UpgradeSuggestion[]> => {
   const rl = readline.createInterface({ input, output });
   const selected: UpgradeSuggestion[] = [];
   let acceptAll = false;
@@ -234,7 +255,13 @@ const filterInteractiveSuggestions = async (suggestions: UpgradeSuggestion[]): P
         selected.push(suggestion);
         continue;
       }
-      const answer = (await rl.question(`${suggestion.name} ${suggestion.currentVersion} → ${suggestion.wantedVersion} (${suggestion.risk}) [y/n/a/q] `)).trim().toLowerCase();
+      const answer = (
+        await rl.question(
+          `${suggestion.name} ${suggestion.currentVersion} → ${suggestion.wantedVersion} (${suggestion.risk}) [y/n/a/q] `,
+        )
+      )
+        .trim()
+        .toLowerCase();
       if (answer === "q") break;
       if (answer === "a") {
         acceptAll = true;
@@ -250,7 +277,10 @@ const filterInteractiveSuggestions = async (suggestions: UpgradeSuggestion[]): P
   return selected;
 };
 
-const getTargets = (directory: string, options: UpgradeOptions): Array<WorkspaceInfo | { directory: string; name: string; relativePath: string }> => {
+const getTargets = (
+  directory: string,
+  options: UpgradeOptions,
+): Array<WorkspaceInfo | { directory: string; name: string; relativePath: string }> => {
   if (options.workspace) {
     const workspace = findWorkspace(directory, options.workspace);
     if (!workspace) throw new Error(`Workspace "${options.workspace}" not found.`);
@@ -260,7 +290,10 @@ const getTargets = (directory: string, options: UpgradeOptions): Array<Workspace
   return [{ directory, name: path.basename(directory), relativePath: "." }];
 };
 
-export const runUpgrade = async (directory: string, options: UpgradeOptions): Promise<UpgradePlan[]> => {
+export const runUpgrade = async (
+  directory: string,
+  options: UpgradeOptions,
+): Promise<UpgradePlan[]> => {
   const resolvedDir = path.resolve(directory);
   validateDirectory(resolvedDir);
   const targets = getTargets(resolvedDir, options);
@@ -276,11 +309,15 @@ export const runUpgrade = async (directory: string, options: UpgradeOptions): Pr
   logger.log(`  ${highlighter.bold("svelte-doctor upgrade")}`);
   logger.break();
   for (const plan of plans) {
-    logger.log(`  ${path.relative(resolvedDir, plan.packageJsonPath)}: ${plan.totalUpgradable}/${plan.totalPackages} upgradable`);
+    logger.log(
+      `  ${path.relative(resolvedDir, plan.packageJsonPath)}: ${plan.totalUpgradable}/${plan.totalPackages} upgradable`,
+    );
     for (const suggestion of plan.suggestions) {
       const resolved = suggestion.resolvedVersion ? ` resolved ${suggestion.resolvedVersion}` : "";
       const alternative = suggestion.alternative ? ` alternative: ${suggestion.alternative}` : "";
-      logger.log(`    ${suggestion.name} ${suggestion.currentVersion} → ${suggestion.wantedVersion} (${suggestion.risk})${resolved}${alternative}`);
+      logger.log(
+        `    ${suggestion.name} ${suggestion.currentVersion} → ${suggestion.wantedVersion} (${suggestion.risk})${resolved}${alternative}`,
+      );
     }
     if (!options.dryRun && plan.suggestions.length > 0 && !options.interactive) applyPlan(plan);
     if (!options.dryRun && plan.suggestions.length > 0 && options.interactive) {

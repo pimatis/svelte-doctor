@@ -37,7 +37,7 @@ const expandPattern = (root: string, pattern: string): string[] => {
 
     for (const directory of directories) {
       if (segment === "*") {
-        let entries: fs.Dirent[] = [];
+        let entries: fs.Dirent[];
         try {
           entries = fs.readdirSync(directory, { withFileTypes: true });
         } catch {
@@ -116,14 +116,14 @@ export const discoverWorkspaces = (rootDirectory: string): WorkspaceInfo[] => {
   return [...workspaces.values()].sort((a, b) => a.relativePath.localeCompare(b.relativePath));
 };
 
-export const findWorkspace = (
-  rootDirectory: string,
-  selector: string,
-): WorkspaceInfo | null => {
+export const findWorkspace = (rootDirectory: string, selector: string): WorkspaceInfo | null => {
   const workspaces = discoverWorkspaces(rootDirectory);
-  return workspaces.find((workspace) =>
-    workspace.name === selector ||
-    workspace.relativePath === selector ||
-    path.basename(workspace.relativePath) === selector,
-  ) ?? null;
+  return (
+    workspaces.find(
+      (workspace) =>
+        workspace.name === selector ||
+        workspace.relativePath === selector ||
+        path.basename(workspace.relativePath) === selector,
+    ) ?? null
+  );
 };

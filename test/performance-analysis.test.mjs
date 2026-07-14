@@ -5,14 +5,19 @@ import path from "node:path";
 import { scan } from "../src/core/scanner.ts";
 import { createProject } from "./helpers.mjs";
 
-const createSvelteProject = (files) => createProject({
-  "package.json": JSON.stringify({
-    name: "performance-fixture",
-    type: "module",
-    dependencies: { svelte: "^5.0.0" },
-  }, null, 2),
-  ...files,
-});
+const createSvelteProject = (files) =>
+  createProject({
+    "package.json": JSON.stringify(
+      {
+        name: "performance-fixture",
+        type: "module",
+        dependencies: { svelte: "^5.0.0" },
+      },
+      null,
+      2,
+    ),
+    ...files,
+  });
 
 const ruleNames = (diagnostics) => new Set(diagnostics.map((diagnostic) => diagnostic.rule));
 
@@ -122,7 +127,15 @@ test("build artifact analysis flags oversized chunks, base64 assets, and duplica
   const project = createSvelteProject({
     "src/App.svelte": `<p>clean</p>\n`,
   });
-  const clientDir = path.join(project, ".svelte-kit", "output", "client", "_app", "immutable", "chunks");
+  const clientDir = path.join(
+    project,
+    ".svelte-kit",
+    "output",
+    "client",
+    "_app",
+    "immutable",
+    "chunks",
+  );
 
   fs.mkdirSync(clientDir, { recursive: true });
   fs.writeFileSync(

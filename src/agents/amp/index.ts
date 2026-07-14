@@ -5,9 +5,6 @@ export const createAmpAgent = (isCommandAvailable: (cmd: string) => boolean): Ag
   command: "amp",
   id: "amp",
   available: isCommandAvailable("amp"),
-  getSpawnArgs: (_cwd, mode) => [
-    ...(mode === "unsafe" ? ["--dangerously-allow-all"] : []),
-    "-x",
-  ],
+  getSpawnArgs: (_cwd, mode) => [...(mode === "unsafe" ? ["--dangerously-allow-all"] : []), "-x"],
   usePromptAsArg: true,
 });

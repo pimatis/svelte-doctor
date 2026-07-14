@@ -10,45 +10,18 @@ const buildScriptLineMap = (source: string): boolean[] => {
 
   for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i].trim();
-    if (/^<script[\s>]/.test(trimmed)) { inside = true; continue; }
-    if (trimmed === "</script>") { inside = false; continue; }
+    if (/^<script[\s>]/.test(trimmed)) {
+      inside = true;
+      continue;
+    }
+    if (trimmed === "</script>") {
+      inside = false;
+      continue;
+    }
     map[i] = inside;
   }
 
   return map;
-};
-
-// shared helper — constructs a fresh RegExp per call to avoid shared lastIndex state
-const scanLines = (
-  ctx: RuleContext,
-  rule: Pick<Rule, "name" | "severity" | "message" | "help" | "category">,
-  patternSource: string,
-  patternFlags = "",
-): Diagnostic[] => {
-  const diagnostics: Diagnostic[] = [];
-  const lines = ctx.source.split("\n");
-  const pattern = new RegExp(patternSource, patternFlags);
-
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i].trimStart();
-    if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
-
-    const match = pattern.exec(lines[i]);
-    if (!match) continue;
-
-    diagnostics.push({
-      filePath: ctx.filePath,
-      rule: rule.name,
-      severity: rule.severity,
-      message: rule.message,
-      help: rule.help,
-      line: i + 1,
-      column: match.index + 1,
-      category: rule.category,
-    });
-  }
-
-  return diagnostics;
 };
 
 const pushScriptDiagnostic = (
@@ -224,7 +197,13 @@ const noEval: Rule = {
       walkSourceFile(block.sourceFile, (node) => {
         if (!ts.isCallExpression(node)) return;
         if (!isIdentifierNamed(node.expression, "eval")) return;
-        pushScriptDiagnostic(diagnostics, ctx, noEval, block, node.expression.getStart(block.sourceFile));
+        pushScriptDiagnostic(
+          diagnostics,
+          ctx,
+          noEval,
+          block,
+          node.expression.getStart(block.sourceFile),
+        );
       });
     }
 
@@ -236,8 +215,7 @@ const noEval: Rule = {
 const isSensitiveEnvName = (name: string): boolean =>
   /(?:^|_)(?:SECRET|TOKEN|KEY|PASSWORD|AUTH|CREDENTIAL|PRIVATE)(?:_|$)/i.test(name);
 
-const escapeRegexLiteral = (value: string): string =>
-  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRegexLiteral = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const hasSensitiveEnvObjectAccess = (source: string, objectName: string): boolean => {
   const escapedObject = escapeRegexLiteral(objectName);
@@ -247,7 +225,10 @@ const hasSensitiveEnvObjectAccess = (source: string, objectName: string): boolea
     if (isSensitiveEnvName(dotMatch[1])) return true;
   }
 
-  const bracketAccess = new RegExp("\\b" + escapedObject + "\\[\\s*['\"`]([^'\"`]+)['\"`]\\s*\\]", "g");
+  const bracketAccess = new RegExp(
+    "\\b" + escapedObject + "\\[\\s*['\"`]([^'\"`]+)['\"`]\\s*\\]",
+    "g",
+  );
   let bracketMatch: RegExpExecArray | null;
   while ((bracketMatch = bracketAccess.exec(source)) !== null) {
     if (isSensitiveEnvName(bracketMatch[1])) return true;
@@ -305,7 +286,13 @@ const noPublicEnvSecrets: Rule = {
         });
         if (!hasSensitiveImport) return;
 
-        pushScriptDiagnostic(diagnostics, ctx, noPublicEnvSecrets, block, node.getStart(block.sourceFile));
+        pushScriptDiagnostic(
+          diagnostics,
+          ctx,
+          noPublicEnvSecrets,
+          block,
+          node.getStart(block.sourceFile),
+        );
       });
 
       if (publicEnvObjects.size === 0) continue;
@@ -316,7 +303,13 @@ const noPublicEnvSecrets: Rule = {
         if (!publicEnvObjects.has(node.expression.text)) return;
         if (!isSensitiveEnvName(node.name.text)) return;
 
-        pushScriptDiagnostic(diagnostics, ctx, noPublicEnvSecrets, block, node.name.getStart(block.sourceFile));
+        pushScriptDiagnostic(
+          diagnostics,
+          ctx,
+          noPublicEnvSecrets,
+          block,
+          node.name.getStart(block.sourceFile),
+        );
       });
 
       walkSourceFile(block.sourceFile, (node) => {
@@ -326,7 +319,13 @@ const noPublicEnvSecrets: Rule = {
         if (!ts.isStringLiteralLike(node.argumentExpression)) return;
         if (!isSensitiveEnvName(node.argumentExpression.text)) return;
 
-        pushScriptDiagnostic(diagnostics, ctx, noPublicEnvSecrets, block, node.argumentExpression.getStart(block.sourceFile));
+        pushScriptDiagnostic(
+          diagnostics,
+          ctx,
+          noPublicEnvSecrets,
+          block,
+          node.argumentExpression.getStart(block.sourceFile),
+        );
       });
     }
 
@@ -351,7 +350,11 @@ const noDangerousRedirectParam: Rule = {
     for (let i = 0; i < ctx.lines.length; i++) {
       const line = ctx.lines[i];
       if (!/(redirect|goto|location\.href|location\.assign)/.test(line)) continue;
-      if (!/(searchParams\.get\(['"`]redirect['"`]\)|url\.searchParams\.get\(['"`]redirect['"`]\)|params\.redirect|query\.redirect)/.test(line)) {
+      if (
+        !/(searchParams\.get\(['"`]redirect['"`]\)|url\.searchParams\.get\(['"`]redirect['"`]\)|params\.redirect|query\.redirect)/.test(
+          line,
+        )
+      ) {
         continue;
       }
 
@@ -381,14 +384,23 @@ const cookieMissingSecureFlags: Rule = {
   cost: "low",
   check: (ctx) => {
     if (ctx.projectInfo.framework !== "sveltekit") return [];
-    if (!/\.(server|hooks)\.(ts|js)$/.test(ctx.filePath) && !/\+page\.server\.(ts|js)$/.test(ctx.filePath)) return [];
+    if (
+      !/\.(server|hooks)\.(ts|js)$/.test(ctx.filePath) &&
+      !/\+page\.server\.(ts|js)$/.test(ctx.filePath)
+    )
+      return [];
 
     const diagnostics: Diagnostic[] = [];
     for (let i = 0; i < ctx.lines.length; i++) {
       const line = ctx.lines[i];
       if (!/cookies\.set\s*\(/.test(line)) continue;
       const window = ctx.lines.slice(i, Math.min(ctx.lines.length, i + 6)).join(" ");
-      if (/\bhttpOnly\s*:/.test(window) && /\bsecure\s*:/.test(window) && /\bsameSite\s*:/.test(window)) continue;
+      if (
+        /\bhttpOnly\s*:/.test(window) &&
+        /\bsecure\s*:/.test(window) &&
+        /\bsameSite\s*:/.test(window)
+      )
+        continue;
 
       diagnostics.push({
         filePath: ctx.filePath,
@@ -428,9 +440,14 @@ const noBroadCors: Rule = {
         /headers\.set\(\s*['"`]Access-Control-Allow-Origin['"`]\s*,\s*['"`]\*['"`]\s*\)/.test(line);
       if (!lineHasWildcardOrigin) continue;
 
-      const nearby = ctx.lines.slice(Math.max(0, i - 2), Math.min(ctx.lines.length, i + 4)).join(" ");
-      const withCredentials = /Access-Control-Allow-Credentials['"`]?\s*[:,]\s*(?:true|['"`]true['"`])/.test(nearby) ||
-        /headers\.set\(\s*['"`]Access-Control-Allow-Credentials['"`]\s*,\s*['"`]true['"`]\s*\)/.test(nearby);
+      const nearby = ctx.lines
+        .slice(Math.max(0, i - 2), Math.min(ctx.lines.length, i + 4))
+        .join(" ");
+      const withCredentials =
+        /Access-Control-Allow-Credentials['"`]?\s*[:,]\s*(?:true|['"`]true['"`])/.test(nearby) ||
+        /headers\.set\(\s*['"`]Access-Control-Allow-Credentials['"`]\s*,\s*['"`]true['"`]\s*\)/.test(
+          nearby,
+        );
 
       diagnostics.push({
         filePath: ctx.filePath,
@@ -460,7 +477,11 @@ const noServerSecretLeak: Rule = {
   cost: "medium",
   check: (ctx) => {
     if (ctx.projectInfo.framework !== "sveltekit") return [];
-    if (!/\.(server|hooks)\.(ts|js)$/.test(ctx.filePath) && !/\+(page\.server|server)\.(ts|js)$/.test(ctx.filePath)) return [];
+    if (
+      !/\.(server|hooks)\.(ts|js)$/.test(ctx.filePath) &&
+      !/\+(page\.server|server)\.(ts|js)$/.test(ctx.filePath)
+    )
+      return [];
 
     const privateEnvNames = new Set<string>();
     const privateEnvObjects = new Set<string>();
@@ -540,7 +561,8 @@ const noUnsafeShell: Rule = {
   cost: "low",
   docs: {
     summary: "Flags direct shell execution or child_process spawn with shell:true.",
-    whyItMatters: "String-based shell execution expands attacker-controlled input into full command injection.",
+    whyItMatters:
+      "String-based shell execution expands attacker-controlled input into full command injection.",
     safeFix: "Use argv-based execFile/spawn without shell:true and validate command sources.",
   },
   check: (ctx) => {
@@ -553,25 +575,46 @@ const noUnsafeShell: Rule = {
       walkSourceFile(block.sourceFile, (node) => {
         if (!ts.isCallExpression(node)) return;
 
-        if (isIdentifierNamed(node.expression, "exec") || isIdentifierNamed(node.expression, "execSync")) {
-          pushScriptDiagnostic(diagnostics, ctx, noUnsafeShell, block, node.expression.getStart(block.sourceFile));
+        if (
+          isIdentifierNamed(node.expression, "exec") ||
+          isIdentifierNamed(node.expression, "execSync")
+        ) {
+          pushScriptDiagnostic(
+            diagnostics,
+            ctx,
+            noUnsafeShell,
+            block,
+            node.expression.getStart(block.sourceFile),
+          );
           return;
         }
 
         if (!isIdentifierNamed(node.expression, "spawn")) return;
         if (node.arguments.length < 2) return;
 
-        const optionsArg = node.arguments.find((argument) => ts.isObjectLiteralExpression(argument));
+        const optionsArg = node.arguments.find((argument) =>
+          ts.isObjectLiteralExpression(argument),
+        );
         if (!optionsArg || !ts.isObjectLiteralExpression(optionsArg)) return;
 
         const hasShellTrue = optionsArg.properties.some((property) => {
           if (!ts.isPropertyAssignment(property)) return false;
-          const key = ts.isIdentifier(property.name) ? property.name.text : ts.isStringLiteral(property.name) ? property.name.text : "";
+          const key = ts.isIdentifier(property.name)
+            ? property.name.text
+            : ts.isStringLiteral(property.name)
+              ? property.name.text
+              : "";
           return key === "shell" && property.initializer.kind === ts.SyntaxKind.TrueKeyword;
         });
 
         if (!hasShellTrue) return;
-        pushScriptDiagnostic(diagnostics, ctx, noUnsafeShell, block, node.expression.getStart(block.sourceFile));
+        pushScriptDiagnostic(
+          diagnostics,
+          ctx,
+          noUnsafeShell,
+          block,
+          node.expression.getStart(block.sourceFile),
+        );
       });
     }
 

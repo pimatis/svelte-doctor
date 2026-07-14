@@ -26,9 +26,14 @@ export const buildPlanReport = (files: MigrationPlanFile[]): MigrationPlanReport
 
   return {
     totalFiles: files.length,
-    autoMigratable: files.filter((file) => file.reviewReasons.length === 0 && file.changes.length > 0).length,
+    autoMigratable: files.filter(
+      (file) => file.reviewReasons.length === 0 && file.changes.length > 0,
+    ).length,
     needsReview: files.filter((file) => file.reviewReasons.length > 0).length,
-    topIssues: [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([label, count]) => ({ label, count })).slice(0, 5),
+    topIssues: [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, count]) => ({ label, count }))
+      .slice(0, 5),
     files,
   };
 };

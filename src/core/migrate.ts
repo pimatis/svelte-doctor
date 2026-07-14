@@ -98,7 +98,10 @@ const writeMigratedFile = (directory: string, filePath: string, content: string)
   });
 };
 
-export const transformMigrateSource = (source: string, options: { stage?: CodemodStageName } = {}): { content: string; changes: string[] } => {
+export const transformMigrateSource = (
+  source: string,
+  options: { stage?: CodemodStageName } = {},
+): { content: string; changes: string[] } => {
   const result = runCodemod(source, options);
   return {
     content: result.content,
@@ -106,18 +109,27 @@ export const transformMigrateSource = (source: string, options: { stage?: Codemo
   };
 };
 
-const collectMigrationPlan = (directory: string, svelteFiles: string[], stage?: CodemodStageName): MigrationPlanReport => {
-  const files = svelteFiles.map((filePath) => {
-    const source = fs.readFileSync(filePath, "utf-8");
-    const result = runCodemod(source, { stage }, filePath);
-    const complexity = detectComplexity(source);
-    return {
-      file: toPosix(path.relative(directory, filePath)),
-      changes: result.changes,
-      warnings: result.warnings,
-      reviewReasons: complexity.reasons,
-    };
-  }).filter((file) => file.changes.length > 0 || file.reviewReasons.length > 0 || file.warnings.length > 0);
+const collectMigrationPlan = (
+  directory: string,
+  svelteFiles: string[],
+  stage?: CodemodStageName,
+): MigrationPlanReport => {
+  const files = svelteFiles
+    .map((filePath) => {
+      const source = fs.readFileSync(filePath, "utf-8");
+      const result = runCodemod(source, { stage }, filePath);
+      const complexity = detectComplexity(source);
+      return {
+        file: toPosix(path.relative(directory, filePath)),
+        changes: result.changes,
+        warnings: result.warnings,
+        reviewReasons: complexity.reasons,
+      };
+    })
+    .filter(
+      (file) =>
+        file.changes.length > 0 || file.reviewReasons.length > 0 || file.warnings.length > 0,
+    );
 
   return buildPlanReport(files);
 };
@@ -136,7 +148,9 @@ const printPlan = (plan: MigrationPlanReport): void => {
     `  Needs manual review: ${plan.needsReview}`,
     "",
     "  Top remaining issues:",
-    ...(plan.topIssues.length > 0 ? plan.topIssues.map((issue) => `  - ${issue.label}: ${issue.count} files`) : ["  - none"]),
+    ...(plan.topIssues.length > 0
+      ? plan.topIssues.map((issue) => `  - ${issue.label}: ${issue.count} files`)
+      : ["  - none"]),
   ];
 
   for (const line of lines) {
@@ -183,14 +197,21 @@ const printMigrateSummary = (result: MigrateResult, options: MigrateOptions): vo
   logger.log(pc.bold(`  +${border}+`));
 };
 
-const askApplyDecision = async (relativePath: string, diff: string, changes: string[], rl: readline.Interface): Promise<"yes" | "no" | "all" | "quit"> => {
+const askApplyDecision = async (
+  relativePath: string,
+  diff: string,
+  changes: string[],
+  rl: readline.Interface,
+): Promise<"yes" | "no" | "all" | "quit"> => {
   logger.break();
   logger.log(`  ${highlighter.bold(relativePath)}`);
   logger.log(`  ${changes.length} change${changes.length === 1 ? "" : "s"} needed`);
   logger.break();
   logger.log(diff);
   logger.break();
-  const answer = (await rl.question("  Apply? [y]es / [n]o / [a]ll / [q]uit: ")).trim().toLowerCase();
+  const answer = (await rl.question("  Apply? [y]es / [n]o / [a]ll / [q]uit: "))
+    .trim()
+    .toLowerCase();
   if (answer === "a") return "all";
   if (answer === "q") return "quit";
   if (answer === "n") return "no";
@@ -223,10 +244,16 @@ const maybeCommitStage = (directory: string, message: string, files: MigrateFile
   const changedFiles = files.filter((file) => file.modified).map((file) => file.relativePath);
   if (changedFiles.length === 0) return;
 
-  const status = spawnSync("git", ["status", "--porcelain", "--", ...changedFiles], { cwd: directory, encoding: "utf-8" });
+  const status = spawnSync("git", ["status", "--porcelain", "--", ...changedFiles], {
+    cwd: directory,
+    encoding: "utf-8",
+  });
   if (status.status !== 0 || status.stdout.trim().length === 0) return;
 
-  const add = spawnSync("git", ["add", "--", ...changedFiles], { cwd: directory, encoding: "utf-8" });
+  const add = spawnSync("git", ["add", "--", ...changedFiles], {
+    cwd: directory,
+    encoding: "utf-8",
+  });
   if (add.status !== 0) throw new Error(`Failed to stage migration changes: ${add.stderr}`);
   const commit = spawnSync("git", ["commit", "-m", message], { cwd: directory, encoding: "utf-8" });
   if (commit.status !== 0) throw new Error(`Failed to commit migration stage: ${commit.stderr}`);
@@ -234,17 +261,33 @@ const maybeCommitStage = (directory: string, message: string, files: MigrateFile
 
 const migrateOnce = async (directory: string, options: MigrateOptions): Promise<MigrateResult> => {
   validateDirectory(directory);
-  const discoverSpinner = options.json || options.diff || options.plan ? null : spinner("Discovering .svelte files...").start();
+  const discoverSpinner =
+    options.json || options.diff || options.plan
+      ? null
+      : spinner("Discovering .svelte files...").start();
   const svelteFiles = collectFiles(directory, SVELTE_FILE_PATTERN);
   discoverSpinner?.succeed(`Found ${highlighter.info(String(svelteFiles.length))} .svelte files`);
 
   if (svelteFiles.length === 0) {
-    return { filesScanned: 0, filesModified: 0, totalChanges: 0, fileResults: [], backupsCreated: 0 };
+    return {
+      filesScanned: 0,
+      filesModified: 0,
+      totalChanges: 0,
+      fileResults: [],
+      backupsCreated: 0,
+    };
   }
 
   if (options.plan) {
     const plan = collectMigrationPlan(directory, svelteFiles, options.stage);
-    return { filesScanned: svelteFiles.length, filesModified: 0, totalChanges: 0, fileResults: [], backupsCreated: 0, plan };
+    return {
+      filesScanned: svelteFiles.length,
+      filesModified: 0,
+      totalChanges: 0,
+      fileResults: [],
+      backupsCreated: 0,
+      plan,
+    };
   }
 
   const fileResults: MigrateFileResult[] = [];
@@ -306,7 +349,10 @@ const migrateOnce = async (directory: string, options: MigrateOptions): Promise<
   };
 };
 
-export const migrate = async (directory: string, options: MigrateOptions): Promise<MigrateResult> => {
+export const migrate = async (
+  directory: string,
+  options: MigrateOptions,
+): Promise<MigrateResult> => {
   if (!options.json && !options.diff && !options.plan) {
     logger.break();
     logger.log(`  ${highlighter.bold("svelte-doctor migrate")} v${VERSION}`);
@@ -316,14 +362,28 @@ export const migrate = async (directory: string, options: MigrateOptions): Promi
   if (options.rollback) {
     const result = rollbackBackups(directory);
     if (options.json) logger.log(JSON.stringify(result, null, 2));
-    if (!options.json) logger.success(`  Restored ${result.rolledBackFiles ?? 0} backup file${result.rolledBackFiles === 1 ? "" : "s"}.`);
+    if (!options.json)
+      logger.success(
+        `  Restored ${result.rolledBackFiles ?? 0} backup file${result.rolledBackFiles === 1 ? "" : "s"}.`,
+      );
     return result;
   }
 
   if (options.commitStages) {
-    let aggregate: MigrateResult = { filesScanned: 0, filesModified: 0, totalChanges: 0, fileResults: [], backupsCreated: 0 };
+    let aggregate: MigrateResult = {
+      filesScanned: 0,
+      filesModified: 0,
+      totalChanges: 0,
+      fileResults: [],
+      backupsCreated: 0,
+    };
     for (const stage of COMMIT_STAGES) {
-      const result = await migrateOnce(directory, { ...options, backup: false, stage: stage.stage, commitStages: false });
+      const result = await migrateOnce(directory, {
+        ...options,
+        backup: false,
+        stage: stage.stage,
+        commitStages: false,
+      });
       maybeCommitStage(directory, stage.message, result.fileResults);
       aggregate = {
         filesScanned: Math.max(aggregate.filesScanned, result.filesScanned),

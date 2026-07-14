@@ -10,7 +10,8 @@ const resolveColorEnabled = (): boolean => {
   const force = env.FORCE_COLOR;
   if (force !== undefined) {
     const value = force.toLowerCase();
-    if (value === "0" || value === "false" || value === "no" || value === "off" || value === "") return false;
+    if (value === "0" || value === "false" || value === "no" || value === "off" || value === "")
+      return false;
     return true;
   }
   return pc.isColorSupported;
@@ -41,10 +42,12 @@ export const highlighter = {
 };
 
 // strips ANSI escape codes so we can calculate visible string width
-export const stripAnsi = (str: string): string =>
-  str.replace(/\x1b\[[0-9;]*m/g, "");
+/* eslint-disable-next-line no-control-regex */
+export const stripAnsi = (str: string): string => str.replace(/\x1b\[[0-9;]*m/g, "");
 
 // removes dangerous terminal control chars from untrusted content
 // keeps \n and \t since those are safe for display
+/* eslint-disable no-control-regex */
 export const sanitize = (str: string): string =>
   str.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "").replace(/\x1b\[[0-9;]*m/g, "");
+/* eslint-enable no-control-regex */

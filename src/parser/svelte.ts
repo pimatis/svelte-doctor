@@ -31,10 +31,7 @@ const buildContext = (
 // reads the file once and falls back to text-only mode if parsing fails
 // (some files with preprocessor syntax can't be parsed raw, but we can still
 // run text-based rules on them)
-export const parseSvelteFile = (
-  filePath: string,
-  projectInfo: ProjectInfo,
-): RuleContext | null => {
+export const parseSvelteFile = (filePath: string, projectInfo: ProjectInfo): RuleContext | null => {
   let source: string;
 
   try {
@@ -54,7 +51,9 @@ export const parseSvelteFile = (
         dev: false,
       });
       compiledSource = compiled.js.code;
-    } catch {}
+    } catch {
+      /* compile failed, continue without compiled source */
+    }
 
     return buildContext(filePath, source, ast, projectInfo, "svelte", compiledSource);
   } catch {
@@ -64,10 +63,7 @@ export const parseSvelteFile = (
 };
 
 // For .ts/.js files no svelte AST is needed so just read the source.
-export const parseScriptFile = (
-  filePath: string,
-  projectInfo: ProjectInfo,
-): RuleContext | null => {
+export const parseScriptFile = (filePath: string, projectInfo: ProjectInfo): RuleContext | null => {
   try {
     const source = fs.readFileSync(filePath, "utf-8");
     return buildContext(filePath, source, null, projectInfo, "script");

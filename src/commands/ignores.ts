@@ -14,13 +14,27 @@ export const suggestIgnoreCommand = new Command("suggest-ignore")
       const suggestions = buildIgnoreSuggestions(result.diagnostics);
 
       if (flags.json) {
-        logger.log(JSON.stringify({ count: suggestions.length, suggestions, config: JSON.parse(buildIgnoreConfigSnippet(suggestions)) }, null, 2));
+        logger.log(
+          JSON.stringify(
+            {
+              count: suggestions.length,
+              suggestions,
+              config: JSON.parse(buildIgnoreConfigSnippet(suggestions)),
+            },
+            null,
+            2,
+          ),
+        );
         return;
       }
 
-      logger.log(`  ${suggestions.length} diagnostic${suggestions.length === 1 ? "" : "s"} can likely be ignored.`);
+      logger.log(
+        `  ${suggestions.length} diagnostic${suggestions.length === 1 ? "" : "s"} can likely be ignored.`,
+      );
       for (const suggestion of suggestions) {
-        logger.log(`  ${suggestion.confidence}% ${suggestion.diagnostic.rule} ${suggestion.diagnostic.filePath}:${suggestion.diagnostic.line} - ${suggestion.reason}`);
+        logger.log(
+          `  ${suggestion.confidence}% ${suggestion.diagnostic.rule} ${suggestion.diagnostic.filePath}:${suggestion.diagnostic.line} - ${suggestion.reason}`,
+        );
       }
       if (suggestions.length > 0) {
         logger.break();

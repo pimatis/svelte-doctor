@@ -21,7 +21,14 @@ export interface InitOptions {
   yes?: boolean;
 }
 
-const defaultCategories: RuleCategory[] = ["Correctness", "Performance", "Architecture", "Security", "Accessibility", "State & Reactivity"];
+const defaultCategories: RuleCategory[] = [
+  "Correctness",
+  "Performance",
+  "Architecture",
+  "Security",
+  "Accessibility",
+  "State & Reactivity",
+];
 
 const writeJsonAtomic = (rootDirectory: string, filePath: string, value: unknown): void => {
   writeFileAtomicSafe(rootDirectory, filePath, `${JSON.stringify(value, null, 2)}\n`, {
@@ -32,7 +39,12 @@ const writeJsonAtomic = (rootDirectory: string, filePath: string, value: unknown
   });
 };
 
-const writeTextAtomic = (rootDirectory: string, filePath: string, content: string, mode: number = 0o644): void => {
+const writeTextAtomic = (
+  rootDirectory: string,
+  filePath: string,
+  content: string,
+  mode: number = 0o644,
+): void => {
   writeFileAtomicSafe(rootDirectory, filePath, content, {
     mode,
     pathMessage: "Text output path must stay inside project root.",
@@ -44,7 +56,11 @@ const writeTextAtomic = (rootDirectory: string, filePath: string, content: strin
 const readPackageJson = (directory: string): PackageJson =>
   JSON.parse(fs.readFileSync(path.join(directory, "package.json"), "utf-8")) as PackageJson;
 
-const askBoolean = async (rl: readline.Interface, question: string, fallback: boolean): Promise<boolean> => {
+const askBoolean = async (
+  rl: readline.Interface,
+  question: string,
+  fallback: boolean,
+): Promise<boolean> => {
   const suffix = fallback ? "Y/n" : "y/N";
   const answer = (await rl.question(`${question} (${suffix}) `)).trim().toLowerCase();
   if (answer === "y" || answer === "yes") return true;
@@ -73,7 +89,12 @@ const mergeScripts = (directory: string): boolean => {
 };
 
 const setupPreCommitHook = (directory: string): boolean => {
-  const [status] = installHook(directory, { hookTypes: ["pre-commit"], mode: "changed", failOn: "error", minScore: 0 });
+  const [status] = installHook(directory, {
+    hookTypes: ["pre-commit"],
+    mode: "changed",
+    failOn: "error",
+    minScore: 0,
+  });
   return status?.action === "installed" || status?.action === "updated";
 };
 
@@ -94,7 +115,8 @@ export const runInit = async (directory: string, options: InitOptions): Promise<
     const rl = readline.createInterface({ input, output });
     createBaseline = await askBoolean(rl, "Create baseline from current diagnostics?", true);
     createHook = await askBoolean(rl, "Create direct git pre-commit hook?", false);
-    if (!ciPlatform && await askBoolean(rl, "Create GitHub Actions workflow?", true)) ciPlatform = "github-actions";
+    if (!ciPlatform && (await askBoolean(rl, "Create GitHub Actions workflow?", true)))
+      ciPlatform = "github-actions";
     rl.close();
   }
 
@@ -114,7 +136,8 @@ export const runInit = async (directory: string, options: InitOptions): Promise<
   if (ciPlatform) {
     const template = getCiTemplate(ciPlatform, 80);
     const targetPath = path.join(resolvedDir, template.path);
-    if (!fs.existsSync(targetPath) || options.force) writeTextAtomic(resolvedDir, targetPath, template.content);
+    if (!fs.existsSync(targetPath) || options.force)
+      writeTextAtomic(resolvedDir, targetPath, template.content);
   }
 
   let baselinePath: string | null = null;

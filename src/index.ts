@@ -1,12 +1,30 @@
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import type { Diagnostic, ProjectInfo, ScoreResult } from "./types.js";
+import type {
+  Diagnostic,
+  LoadedPlugin,
+  PluginConfig,
+  ProjectInfo,
+  Rule,
+  ScoreResult,
+  SvelteDoctorPlugin,
+} from "./types.js";
 import { calculateScore } from "./core/score.js";
 import { validateDirectory } from "./fs/validate.js";
 import { discoverProject } from "./project/discover.js";
 import { scan } from "./core/scanner.js";
+import { definePlugin, defineRule, validateRule, PLUGIN_DISABLE_ENV } from "./plugins/loader.js";
 
-export type { Diagnostic, ProjectInfo, ScoreResult };
+export type {
+  Diagnostic,
+  LoadedPlugin,
+  PluginConfig,
+  ProjectInfo,
+  Rule,
+  ScoreResult,
+  SvelteDoctorPlugin,
+};
+export { definePlugin, defineRule, validateRule, PLUGIN_DISABLE_ENV };
 
 export interface DiagnoseOptions {
   lint?: boolean;

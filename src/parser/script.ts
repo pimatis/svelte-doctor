@@ -1,8 +1,7 @@
 import ts from "typescript";
 import type { ScriptAstContext, ScriptBlockKind } from "../types.js";
 
-const countNewlines = (value: string): number =>
-  (value.match(/\n/g) ?? []).length;
+const countNewlines = (value: string): number => (value.match(/\n/g) ?? []).length;
 
 const detectScriptLanguage = (
   filePath: string,
@@ -40,10 +39,7 @@ const createScriptAst = (
   };
 };
 
-export const collectScriptBlocks = (
-  filePath: string,
-  source: string,
-): ScriptAstContext[] => {
+export const collectScriptBlocks = (filePath: string, source: string): ScriptAstContext[] => {
   if (!filePath.endsWith(".svelte")) {
     return [createScriptAst(filePath, source, 1, "script")];
   }
@@ -65,13 +61,15 @@ export const collectScriptBlocks = (
     const isModule = /\b(?:context\s*=\s*["']module["']|module)\b/i.test(attrs);
     const langMatch = /\blang\s*=\s*["']([^"']+)["']/i.exec(attrs);
 
-    blocks.push(createScriptAst(
-      filePath,
-      content,
-      startLine,
-      isModule ? "module" : "instance",
-      langMatch?.[1],
-    ));
+    blocks.push(
+      createScriptAst(
+        filePath,
+        content,
+        startLine,
+        isModule ? "module" : "instance",
+        langMatch?.[1],
+      ),
+    );
   }
 
   return blocks;

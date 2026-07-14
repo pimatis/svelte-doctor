@@ -12,8 +12,14 @@ const buildScriptLineMap = (source: string): boolean[] => {
 
   for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i].trim();
-    if (/^<script[\s>]/.test(trimmed)) { inside = true; continue; }
-    if (trimmed === "</script>") { inside = false; continue; }
+    if (/^<script[\s>]/.test(trimmed)) {
+      inside = true;
+      continue;
+    }
+    if (trimmed === "</script>") {
+      inside = false;
+      continue;
+    }
     map[i] = inside;
   }
 
@@ -26,7 +32,8 @@ const noClientFetch: Rule = {
   name: "no-client-fetch",
   category: "SvelteKit",
   severity: "warning",
-  message: "Avoid `fetch()` in component scripts — use SvelteKit `load` functions or form actions instead.",
+  message:
+    "Avoid `fetch()` in component scripts — use SvelteKit `load` functions or form actions instead.",
   help: "Move data fetching to `+page.ts` / `+page.server.ts` load functions, or use form actions for mutations.",
   appliesTo: ["svelte"],
   cost: "low",
@@ -80,8 +87,10 @@ const noClientFetch: Rule = {
 
       // detect entry into a named event / form / submit handler
       // these are legitimate places to call fetch() directly
-      if (/\b(?:actions|handleSubmit|onSubmit|enhance)\b.*\{/.test(line) ||
-          /\bfunction\s+handle(?:Submit|Form|Action)\b/.test(line)) {
+      if (
+        /\b(?:actions|handleSubmit|onSubmit|enhance)\b.*\{/.test(line) ||
+        /\bfunction\s+handle(?:Submit|Form|Action)\b/.test(line)
+      ) {
         insideEventHandler = true;
         eventHandlerDepth = functionDepth;
       }
@@ -135,15 +144,24 @@ const loadMissingType: Rule = {
     for (const block of ctx.scriptBlocks) {
       walkSourceFile(block.sourceFile, (node) => {
         if (ts.isVariableStatement(node)) {
-          const isExported = node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
+          const isExported = node.modifiers?.some(
+            (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+          );
           if (!isExported) return;
 
           for (const declaration of node.declarationList.declarations) {
             if (!ts.isIdentifier(declaration.name) || declaration.name.text !== "load") continue;
             if (declaration.type) continue;
-            if (declaration.initializer && declaration.initializer.kind === ts.SyntaxKind.SatisfiesExpression) continue;
+            if (
+              declaration.initializer &&
+              declaration.initializer.kind === ts.SyntaxKind.SatisfiesExpression
+            )
+              continue;
 
-            const { line, column } = getLineAndColumn(block, declaration.name.getStart(block.sourceFile));
+            const { line, column } = getLineAndColumn(
+              block,
+              declaration.name.getStart(block.sourceFile),
+            );
             diagnostics.push({
               filePath: ctx.filePath,
               rule: loadMissingType.name,
@@ -160,7 +178,9 @@ const loadMissingType: Rule = {
 
         if (!ts.isFunctionDeclaration(node)) return;
         if (!node.name || node.name.text !== "load") return;
-        const isExported = node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
+        const isExported = node.modifiers?.some(
+          (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+        );
         if (!isExported || node.type) return;
 
         const { line, column } = getLineAndColumn(block, node.name.getStart(block.sourceFile));
@@ -237,7 +257,8 @@ const formActionNoValidation: Rule = {
     if (!/formData/.test(ctx.source)) return [];
 
     // bail out if any recognised validation pattern is present anywhere in the file
-    const validationPatterns = /\b(?:parse|validate|safeParse|zod|yup|valibot|joi|arktype|typeof|instanceof|z\.)\b/;
+    const validationPatterns =
+      /\b(?:parse|validate|safeParse|zod|yup|valibot|joi|arktype|typeof|instanceof|z\.)\b/;
     if (validationPatterns.test(ctx.source)) return [];
 
     const lines = ctx.source.split("\n");
@@ -246,16 +267,18 @@ const formActionNoValidation: Rule = {
     for (let i = 0; i < lines.length; i++) {
       if (!/formData/.test(lines[i])) continue;
 
-      return [{
-        filePath: ctx.filePath,
-        rule: "form-action-no-validation",
-        severity: "warning",
-        message: formActionNoValidation.message,
-        help: formActionNoValidation.help,
-        line: i + 1,
-        column: lines[i].indexOf("formData") + 1,
-        category: "SvelteKit",
-      }];
+      return [
+        {
+          filePath: ctx.filePath,
+          rule: "form-action-no-validation",
+          severity: "warning",
+          message: formActionNoValidation.message,
+          help: formActionNoValidation.help,
+          line: i + 1,
+          column: lines[i].indexOf("formData") + 1,
+          category: "SvelteKit",
+        },
+      ];
     }
 
     return [];
@@ -267,7 +290,8 @@ const missingErrorPage: Rule = {
   name: "missing-error-page",
   category: "SvelteKit",
   severity: "warning",
-  message: "No root `+error.svelte` page found — unhandled errors will show SvelteKit's default error page.",
+  message:
+    "No root `+error.svelte` page found — unhandled errors will show SvelteKit's default error page.",
   help: "Create `src/routes/+error.svelte` to provide a custom error page for your users.",
   appliesTo: ["svelte"],
   cost: "low",
@@ -277,7 +301,12 @@ const missingErrorPage: Rule = {
     // anchor the check to the root layout so it fires exactly once per project
     if (!/src\/routes\/\+layout\.svelte$/.test(ctx.filePath)) return [];
 
-    const errorPagePath = path.join(ctx.projectInfo.rootDirectory, "src", "routes", "+error.svelte");
+    const errorPagePath = path.join(
+      ctx.projectInfo.rootDirectory,
+      "src",
+      "routes",
+      "+error.svelte",
+    );
 
     try {
       const stat = fs.lstatSync(errorPagePath);
@@ -287,16 +316,18 @@ const missingErrorPage: Rule = {
       // file does not exist — fall through to report the diagnostic
     }
 
-    return [{
-      filePath: ctx.filePath,
-      rule: "missing-error-page",
-      severity: "warning",
-      message: missingErrorPage.message,
-      help: missingErrorPage.help,
-      line: 1,
-      column: 1,
-      category: "SvelteKit",
-    }];
+    return [
+      {
+        filePath: ctx.filePath,
+        rule: "missing-error-page",
+        severity: "warning",
+        message: missingErrorPage.message,
+        help: missingErrorPage.help,
+        line: 1,
+        column: 1,
+        category: "SvelteKit",
+      },
+    ];
   },
 };
 
@@ -315,16 +346,18 @@ const serverLoadMissingErrorGuard: Rule = {
 
     for (let i = 0; i < ctx.lines.length; i++) {
       if (!/\bfetch\s*\(/.test(ctx.lines[i])) continue;
-      return [{
-        filePath: ctx.filePath,
-        rule: serverLoadMissingErrorGuard.name,
-        severity: serverLoadMissingErrorGuard.severity,
-        message: serverLoadMissingErrorGuard.message,
-        help: serverLoadMissingErrorGuard.help,
-        line: i + 1,
-        column: ctx.lines[i].indexOf("fetch") + 1,
-        category: serverLoadMissingErrorGuard.category,
-      }];
+      return [
+        {
+          filePath: ctx.filePath,
+          rule: serverLoadMissingErrorGuard.name,
+          severity: serverLoadMissingErrorGuard.severity,
+          message: serverLoadMissingErrorGuard.message,
+          help: serverLoadMissingErrorGuard.help,
+          line: i + 1,
+          column: ctx.lines[i].indexOf("fetch") + 1,
+          category: serverLoadMissingErrorGuard.category,
+        },
+      ];
     }
 
     return [];
@@ -341,23 +374,25 @@ const formActionMissingAuthCheck: Rule = {
   cost: "low",
   check: (ctx: RuleContext): Diagnostic[] => {
     if (!/\+page\.server\.(ts|js)$/.test(ctx.filePath)) return [];
-    if (!/\bactions\s*=/.test(ctx.source) && !/\bexport\s+const\s+actions\b/.test(ctx.source)) return [];
-    if (/\b(locals|cookies|getSession|requireAuth|requireUser|isAuthenticated)\b/.test(ctx.source)) return [];
+    if (!/\bactions\s*=/.test(ctx.source) && !/\bexport\s+const\s+actions\b/.test(ctx.source))
+      return [];
+    if (/\b(locals|cookies|getSession|requireAuth|requireUser|isAuthenticated)\b/.test(ctx.source))
+      return [];
 
-    return [{
-      filePath: ctx.filePath,
-      rule: formActionMissingAuthCheck.name,
-      severity: formActionMissingAuthCheck.severity,
-      message: formActionMissingAuthCheck.message,
-      help: formActionMissingAuthCheck.help,
-      line: 1,
-      column: 1,
-      category: formActionMissingAuthCheck.category,
-    }];
+    return [
+      {
+        filePath: ctx.filePath,
+        rule: formActionMissingAuthCheck.name,
+        severity: formActionMissingAuthCheck.severity,
+        message: formActionMissingAuthCheck.message,
+        help: formActionMissingAuthCheck.help,
+        line: 1,
+        column: 1,
+        category: formActionMissingAuthCheck.category,
+      },
+    ];
   },
 };
-
-
 
 export const sveltekitRules: Rule[] = [
   noClientFetch,

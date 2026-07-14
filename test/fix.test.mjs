@@ -43,13 +43,17 @@ test("verifyScripts skips command execution in diagnostics mode", async () => {
 
 test("verifyScripts runs typecheck and test via the resolved manager", async () => {
   const project = createProject({
-    "package.json": JSON.stringify({
-      name: "fixture-app",
-      scripts: {
-        typecheck: "tsc --noEmit",
-        test: "bun test",
+    "package.json": JSON.stringify(
+      {
+        name: "fixture-app",
+        scripts: {
+          typecheck: "tsc --noEmit",
+          test: "bun test",
+        },
       },
-    }, null, 2),
+      null,
+      2,
+    ),
   });
   const commands = [];
 
@@ -70,12 +74,16 @@ test("verifyScripts runs typecheck and test via the resolved manager", async () 
 
 test("verifyScripts fails fast when a required script is missing", async () => {
   const project = createProject({
-    "package.json": JSON.stringify({
-      name: "fixture-app",
-      scripts: {
-        typecheck: "tsc --noEmit",
+    "package.json": JSON.stringify(
+      {
+        name: "fixture-app",
+        scripts: {
+          typecheck: "tsc --noEmit",
+        },
       },
-    }, null, 2),
+      null,
+      2,
+    ),
   });
 
   const verified = await verifyScripts(project, "tests", {
@@ -88,14 +96,18 @@ test("verifyScripts fails fast when a required script is missing", async () => {
 
 test("verifyScripts full mode uses bun pack smoke and version probe", async () => {
   const project = createProject({
-    "package.json": JSON.stringify({
-      name: "fixture-app",
-      scripts: {
-        typecheck: "tsc --noEmit",
-        test: "bun test",
-        build: "tsdown",
+    "package.json": JSON.stringify(
+      {
+        name: "fixture-app",
+        scripts: {
+          typecheck: "tsc --noEmit",
+          test: "bun test",
+          build: "tsdown",
+        },
       },
-    }, null, 2),
+      null,
+      2,
+    ),
     "dist/cli.mjs": "console.log('0.0.0');",
     "bun.lock": "",
   });
@@ -117,5 +129,8 @@ test("verifyScripts full mode uses bun pack smoke and version probe", async () =
     { command: "bun", args: ["pm", "pack", "--dry-run"], cwd: project },
     { command: "node", args: [path.join("dist", "cli.mjs"), "--version"], cwd: project },
   ]);
-  assert.equal(commands.some((entry) => entry.command === "npm"), false);
+  assert.equal(
+    commands.some((entry) => entry.command === "npm"),
+    false,
+  );
 });

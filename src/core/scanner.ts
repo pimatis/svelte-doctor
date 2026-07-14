@@ -1,7 +1,8 @@
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { SCAN_CACHE_VERSION, VERSION } from "../constants.js";
-import { allRules, getRuleCount } from "../rules/index.js";
+import { allRules } from "../rules/index.js";
+import { loadProjectRules } from "../plugins/loader.js";
 import type {
   Diagnostic,
   ProjectFileManifest,
@@ -73,27 +74,46 @@ export const scanSingleFile = (
   fullPath: string,
   relativePath: string,
   projectInfo: ProjectInfo,
+  rules: Rule[] = allRules,
+  warnings: string[] = [],
 ): Diagnostic[] => {
   const posixPath = toPosix(relativePath);
   const fileKind = fullPath.endsWith(".svelte") ? "svelte" : "script";
-  const ctx = fileKind === "svelte"
-    ? parseSvelteFile(fullPath, projectInfo)
-    : parseScriptFile(fullPath, projectInfo);
+  const ctx =
+    fileKind === "svelte"
+      ? parseSvelteFile(fullPath, projectInfo)
+      : parseScriptFile(fullPath, projectInfo);
 
   if (!ctx) return [];
 
   ctx.filePath = posixPath;
 
   const diagnostics: Diagnostic[] = [];
-  for (const rule of allRules) {
+  for (const rule of rules) {
     if (!shouldRunRule(rule, fileKind)) continue;
     if (rule.requiresAst && !ctx.ast) continue;
 
-    const ruleDiagnostics = rule.check(ctx).map((diagnostic) => ({
-      ...diagnostic,
-      fixable: diagnostic.fixable ?? rule.autofixable ?? false,
-    }));
-    diagnostics.push(...ruleDiagnostics);
+    let ruleDiagnostics: Diagnostic[];
+    try {
+      ruleDiagnostics = rule.check(ctx);
+    } catch (error) {
+      // a faulty plugin rule must never abort the whole scan
+      warnings.push(
+        `Rule "${rule.id}"${rule.plugin ? ` (plugin "${rule.plugin}")` : ""} threw during check: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
+      continue;
+    }
+
+    if (!Array.isArray(ruleDiagnostics)) continue;
+
+    diagnostics.push(
+      ...ruleDiagnostics.map((diagnostic) => ({
+        ...diagnostic,
+        rule: rule.id ?? rule.name,
+        fixable: diagnostic.fixable ?? rule.autofixable ?? false,
+        plugin: diagnostic.plugin ?? rule.plugin,
+      })),
+    );
   }
 
   return diagnostics;
@@ -109,7 +129,9 @@ export const runLintPass = (
   manifest: ProjectFileManifest,
   projectInfo: ProjectInfo,
   useCache: boolean,
-  existingCache?: ScanCacheData,
+  existingCache: ScanCacheData | undefined,
+  rules: Rule[],
+  warnings: string[] = [],
 ): LintPassResult => {
   const cache = existingCache ?? { version: SCAN_CACHE_VERSION, files: {} };
   const diagnostics: Diagnostic[] = [];
@@ -123,7 +145,7 @@ export const runLintPass = (
       continue;
     }
 
-    const fileDiagnostics = scanSingleFile(file, relativePath, projectInfo);
+    const fileDiagnostics = scanSingleFile(file, relativePath, projectInfo, rules, warnings);
     diagnostics.push(...fileDiagnostics);
 
     const signature = getFileStatSignature(file);
@@ -168,6 +190,8 @@ export const scan = async (
   const startTime = performance.now();
   const userConfig = loadConfig(directory);
   const options = getEffectiveOptions(inputOptions, userConfig);
+  const projectRules = await loadProjectRules(directory, userConfig);
+  const ruleRuntimeWarnings: string[] = [];
   const silent = options.scoreOnly || options.json || options.quiet;
   const fullManifest = collectProjectFiles(directory);
   const selectedManifest = buildSelectedManifest(directory, fullManifest, options.targetFiles);
@@ -191,22 +215,29 @@ export const scan = async (
     } as const;
 
     if (options.json) {
-      logger.log(JSON.stringify({
-        version: VERSION,
-        score: emptyScore.score,
-        label: emptyScore.label,
-        totalFiles: 0,
-        affectedFiles: 0,
-        errors: 0,
-        warnings: 0,
-        suppressedCount: 0,
-        fixableCount: 0,
-        categoryBreakdown: emptyScore.categoryBreakdown,
-        elapsedMs: emptyMeta.elapsedMs,
-        diagnostics: [],
-        warning: "No Svelte dependency found in package.json. This project does not appear to be a Svelte project.",
-        ...(notes.length > 0 ? { notes } : {}),
-      }, null, 2));
+      logger.log(
+        JSON.stringify(
+          {
+            version: VERSION,
+            score: emptyScore.score,
+            label: emptyScore.label,
+            totalFiles: 0,
+            affectedFiles: 0,
+            errors: 0,
+            warnings: 0,
+            suppressedCount: 0,
+            fixableCount: 0,
+            categoryBreakdown: emptyScore.categoryBreakdown,
+            elapsedMs: emptyMeta.elapsedMs,
+            diagnostics: [],
+            warning:
+              "No Svelte dependency found in package.json. This project does not appear to be a Svelte project.",
+            ...(notes.length > 0 ? { notes } : {}),
+          },
+          null,
+          2,
+        ),
+      );
     } else if (options.scoreOnly) {
       logger.log(`${emptyScore.score}`);
     } else {
@@ -221,21 +252,42 @@ export const scan = async (
     return { diagnostics: emptyDiagnostics, scoreResult: emptyScore, meta: emptyMeta };
   }
 
-  const scanCache = options.cache ? loadScanCache(directory) : { version: SCAN_CACHE_VERSION, files: {} };
+  const scanCache = options.cache
+    ? loadScanCache(directory)
+    : { version: SCAN_CACHE_VERSION, files: {} };
 
   if (!silent) {
     const frameworkLabel = formatFrameworkName(projectInfo.framework);
     const langLabel = projectInfo.hasTypeScript ? "TypeScript" : "JavaScript";
     completeStep(`Detecting framework. Found ${highlighter.info(frameworkLabel)}.`);
-    completeStep(`Detecting Svelte version. Found ${highlighter.info(`Svelte ${projectInfo.svelteVersion}`)}.`);
+    completeStep(
+      `Detecting Svelte version. Found ${highlighter.info(`Svelte ${projectInfo.svelteVersion}`)}.`,
+    );
     completeStep(`Detecting language. Found ${highlighter.info(langLabel)}.`);
-    completeStep(`Runes mode: ${projectInfo.usesRunes ? highlighter.info("Yes") : "Not detected"}.`);
-    completeStep(`Preprocess: ${projectInfo.hasPreprocess ? highlighter.info("Enabled") : "Not detected"}.`);
-    completeStep(`Found ${highlighter.info(String(selectedManifest.sourceFileCount))} source files.`);
-    completeStep(`Loaded ${highlighter.info(String(getRuleCount()))} rules.`);
+    completeStep(
+      `Runes mode: ${projectInfo.usesRunes ? highlighter.info("Yes") : "Not detected"}.`,
+    );
+    completeStep(
+      `Preprocess: ${projectInfo.hasPreprocess ? highlighter.info("Enabled") : "Not detected"}.`,
+    );
+    completeStep(
+      `Found ${highlighter.info(String(selectedManifest.sourceFileCount))} source files.`,
+    );
+    completeStep(
+      `Loaded ${highlighter.info(String(projectRules.rules.length))} rules${projectRules.plugins.length > 0 ? highlighter.info(` (+${projectRules.plugins.length} plugin${projectRules.plugins.length === 1 ? "" : "s"})`) : ""}.`,
+    );
     if (userConfig) completeStep(`Loaded ${highlighter.info("svelte-doctor config")}.`);
+    for (const warning of projectRules.warnings) {
+      notes.push(warning);
+      if (!silent) logger.dim(`  ⚠ ${warning}`);
+    }
+    for (const warning of ruleRuntimeWarnings) {
+      notes.push(warning);
+      if (!silent) logger.dim(`  ⚠ ${warning}`);
+    }
     if (options.cache) completeStep(`Scan cache: ${highlighter.info("Enabled")}.`);
-    if (targetMode === "subset") completeStep(`Target mode: ${highlighter.info("Changed files only")}.`);
+    if (targetMode === "subset")
+      completeStep(`Target mode: ${highlighter.info("Changed files only")}.`);
     logger.break();
   }
 
@@ -246,7 +298,15 @@ export const scan = async (
     const lintSpinner = silent ? null : spinner("Running lint checks...").start();
 
     try {
-      const lintResult = runLintPass(directory, selectedManifest, projectInfo, options.cache, scanCache);
+      const lintResult = runLintPass(
+        directory,
+        selectedManifest,
+        projectInfo,
+        options.cache,
+        scanCache,
+        projectRules.rules,
+        ruleRuntimeWarnings,
+      );
       lintDiagnostics = lintResult.diagnostics;
       lintSpinner?.succeed("Running lint checks.");
       shouldSaveCache = options.cache;
@@ -286,17 +346,23 @@ export const scan = async (
     saveScanCache(directory, scanCache);
   }
 
-  const artifactDiagnostics = targetMode === "full" && options.lint
-    ? analyzeBuildArtifacts(directory)
-    : [];
+  const artifactDiagnostics =
+    targetMode === "full" && options.lint ? analyzeBuildArtifacts(directory) : [];
 
   const allDiagnostics = attachDiagnosticMetadata(
-    userConfig ? filterIgnored([...lintDiagnostics, ...deadCodeDiagnostics, ...artifactDiagnostics], userConfig) : [...lintDiagnostics, ...deadCodeDiagnostics, ...artifactDiagnostics],
+    userConfig
+      ? filterIgnored(
+          [...lintDiagnostics, ...deadCodeDiagnostics, ...artifactDiagnostics],
+          userConfig,
+        )
+      : [...lintDiagnostics, ...deadCodeDiagnostics, ...artifactDiagnostics],
   );
-  const baselineResult = options.baseline ? filterBaselineDiagnostics(allDiagnostics, loadBaseline(directory)) : {
-    diagnostics: allDiagnostics,
-    suppressedCount: 0,
-  };
+  const baselineResult = options.baseline
+    ? filterBaselineDiagnostics(allDiagnostics, loadBaseline(directory))
+    : {
+        diagnostics: allDiagnostics,
+        suppressedCount: 0,
+      };
   const diagnostics = baselineResult.diagnostics;
   const elapsedMs = performance.now() - startTime;
   const scoreResult = calculateScore(diagnostics);
@@ -335,36 +401,43 @@ export const scan = async (
   }
 
   if (options.json) {
-    logger.log(JSON.stringify({
-      version: VERSION,
-      score: scoreResult.score,
-      label: scoreResult.label,
-      totalPenalty: scoreResult.totalPenalty,
-      totalFiles: selectedManifest.sourceFileCount,
-      affectedFiles: affectedFileSet.size,
-      errors: errorCount,
-      warnings: warningCount,
-      suppressedCount: meta.suppressedCount,
-      fixableCount: meta.fixableCount,
-      ignorableCount: ignoreSuggestions.length,
-      bundleImpact,
-      categoryBreakdown: scoreResult.categoryBreakdown,
-      elapsedMs: meta.elapsedMs,
-      targetMode: meta.targetMode,
-      ...(notes.length > 0 ? { notes } : {}),
-      diagnostics: diagnostics.map((d) => ({
-        rule: d.rule,
-        severity: d.severity,
-        category: d.category,
-        message: d.message,
-        help: d.help,
-        file: d.filePath,
-        line: d.line,
-        column: d.column,
-        fingerprint: d.fingerprint,
-        fixable: d.fixable ?? false,
-      })),
-    }, null, 2));
+    logger.log(
+      JSON.stringify(
+        {
+          version: VERSION,
+          score: scoreResult.score,
+          label: scoreResult.label,
+          totalPenalty: scoreResult.totalPenalty,
+          totalFiles: selectedManifest.sourceFileCount,
+          affectedFiles: affectedFileSet.size,
+          errors: errorCount,
+          warnings: warningCount,
+          suppressedCount: meta.suppressedCount,
+          fixableCount: meta.fixableCount,
+          ignorableCount: ignoreSuggestions.length,
+          bundleImpact,
+          categoryBreakdown: scoreResult.categoryBreakdown,
+          elapsedMs: meta.elapsedMs,
+          targetMode: meta.targetMode,
+          ...(notes.length > 0 ? { notes } : {}),
+          diagnostics: diagnostics.map((d) => ({
+            rule: d.rule,
+            severity: d.severity,
+            category: d.category,
+            message: d.message,
+            help: d.help,
+            file: d.filePath,
+            line: d.line,
+            column: d.column,
+            fingerprint: d.fingerprint,
+            fixable: d.fixable ?? false,
+            plugin: d.plugin ?? null,
+          })),
+        },
+        null,
+        2,
+      ),
+    );
     return { diagnostics, scoreResult, meta };
   }
 
@@ -386,7 +459,9 @@ export const scan = async (
 
   printDiagnostics(diagnostics);
   printSummary(diagnostics, elapsedMs, scoreResult, selectedManifest.sourceFileCount, meta);
-  logger.log(`  Ignore suggestions: ${ignoreSuggestions.length} diagnostic${ignoreSuggestions.length === 1 ? "" : "s"} can likely be ignored.`);
+  logger.log(
+    `  Ignore suggestions: ${ignoreSuggestions.length} diagnostic${ignoreSuggestions.length === 1 ? "" : "s"} can likely be ignored.`,
+  );
   logger.log(`  Potential bundle savings: ${bundleImpact.totalKilobytes}KB.`);
   printCategoryBreakdown(scoreResult.categoryBreakdown);
   logger.break();

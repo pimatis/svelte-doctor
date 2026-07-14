@@ -15,7 +15,9 @@ const resolveConfigSource = (dir: string): string | null => {
   try {
     const stat = fs.lstatSync(configPath);
     if (!stat.isSymbolicLink() && stat.isFile()) return configPath;
-  } catch {}
+  } catch {
+    /* not found, skip */
+  }
 
   const pkgPath = path.join(dir, "package.json");
   try {
@@ -26,7 +28,9 @@ const resolveConfigSource = (dir: string): string | null => {
         return `${pkgPath} → "svelte-doctor" key`;
       }
     }
-  } catch {}
+  } catch {
+    /* not found, skip */
+  }
 
   return null;
 };

@@ -68,7 +68,10 @@ test("graph outputs imports, render edges, and cycles", () => {
 
   const result = JSON.parse(runCli(project, ["graph", ".", "--format", "json"]));
 
-  assert.equal(result.edges.some((edge) => edge.from === "src/App.svelte" && edge.to === "src/Child.svelte"), true);
+  assert.equal(
+    result.edges.some((edge) => edge.from === "src/App.svelte" && edge.to === "src/Child.svelte"),
+    true,
+  );
   assert.equal(result.cycles.length > 0, true);
 });
 
@@ -117,23 +120,48 @@ test("test-gaps maps source files to expected tests", () => {
 
   const result = JSON.parse(runCli(project, ["test-gaps", ".", "--json"]));
 
-  assert.equal(result.gaps.some((gap) => gap.sourceFile === "src/App.svelte"), false);
-  assert.equal(result.gaps.some((gap) => gap.sourceFile === "src/+page.server.ts" && gap.criticalReasons.includes("form actions")), true);
+  assert.equal(
+    result.gaps.some((gap) => gap.sourceFile === "src/App.svelte"),
+    false,
+  );
+  assert.equal(
+    result.gaps.some(
+      (gap) =>
+        gap.sourceFile === "src/+page.server.ts" && gap.criticalReasons.includes("form actions"),
+    ),
+    true,
+  );
 });
 
-test("create-rule scaffolds rule, test, and docs", () => {
+test("create-rule scaffolds runtime-loadable rule and test", () => {
   const project = writeProject({
     "package.json": JSON.stringify({ type: "module", dependencies: { svelte: "^5.0.0" } }),
   });
 
   const result = JSON.parse(runCli(project, ["create-rule", "no-custom-pattern", ".", "--json"]));
 
-  assert.deepEqual(result.files.sort(), [
-    "src/rules/custom/no-custom-pattern/README.md",
-    "src/rules/custom/no-custom-pattern/index.ts",
-    "test/no-custom-pattern.test.mjs",
-  ].sort());
-  assert.equal(fs.existsSync(path.join(project, "src/rules/custom/no-custom-pattern/index.ts")), true);
+  assert.deepEqual(
+    result.files.sort(),
+    ["svelte-doctor.rules/no-custom-pattern.mjs", "test/no-custom-pattern.test.mjs"].sort(),
+  );
+  assert.equal(
+    fs.existsSync(path.join(project, "svelte-doctor.rules/no-custom-pattern.mjs")),
+    true,
+  );
+});
+
+test("create-rule generated rule is loaded by the plugin system", () => {
+  const project = writeProject({
+    "package.json": JSON.stringify({ type: "module", dependencies: { svelte: "^5.0.0" } }),
+  });
+
+  runCli(project, ["create-rule", "no-custom-pattern", ".", "--json"]);
+
+  const result = JSON.parse(runCli(project, ["plugins", ".", "--json"]));
+  const local = result.plugins.find((plugin) => plugin.name === "local");
+
+  assert.notEqual(local, undefined);
+  assert.equal(local.rules.includes("local/no-custom-pattern"), true);
 });
 
 test("create-rule rejects traversal names before writing files", () => {
@@ -153,8 +181,7 @@ test("create-rule refuses symlinked output directories without writing through t
     "package.json": JSON.stringify({ type: "module", dependencies: { svelte: "^5.0.0" } }),
   });
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), "svelte-doctor-outside-"));
-  fs.mkdirSync(path.join(project, "src", "rules"), { recursive: true });
-  fs.symlinkSync(outside, path.join(project, "src", "rules", "custom"), "dir");
+  fs.symlinkSync(outside, path.join(project, "svelte-doctor.rules"), "dir");
 
   const result = spawnCli(project, ["create-rule", "no-escape", ".", "--json"]);
 
@@ -180,7 +207,7 @@ test("graph ignores imports outside the project root", () => {
 test("graph dot output escapes attacker-controlled file names", () => {
   const project = writeProject({
     "package.json": JSON.stringify({ type: "module", dependencies: { svelte: "^5.0.0" } }),
-    "src/Bad\"Name.svelte": "<p>bad</p>\n",
+    'src/Bad"Name.svelte': "<p>bad</p>\n",
   });
 
   const output = runCli(project, ["graph", ".", "--format", "dot"]);

@@ -8,7 +8,8 @@ export const svelteOptionsTransform: CodemodTransform = {
     if (!/<svelte:options\b/.test(source)) return createNoopResult(source);
     const next = source.replace(/<svelte:options\s+([^>]*)\/>/g, (_match, attrs: string) => {
       const remaining = attrs.replace(/\b(?:immutable|accessors)=\{?[^\s}]+\}?/g, "").trim();
-      if (remaining.length === 0) return "<!-- TODO: removed legacy svelte:options immutable/accessors -->";
+      if (remaining.length === 0)
+        return "<!-- TODO: removed legacy svelte:options immutable/accessors -->";
       return `<svelte:options ${remaining} />`;
     });
     return createResult(next, "svelte-options", "svelte:options -> modern API review", [

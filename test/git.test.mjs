@@ -14,7 +14,10 @@ const createGitProject = () => {
   });
 
   execFileSync("git", ["init"], { cwd: project, stdio: "ignore" });
-  execFileSync("git", ["config", "user.email", "fixture@example.com"], { cwd: project, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "fixture@example.com"], {
+    cwd: project,
+    stdio: "ignore",
+  });
   execFileSync("git", ["config", "user.name", "Fixture"], { cwd: project, stdio: "ignore" });
   execFileSync("git", ["add", "."], { cwd: project, stdio: "ignore" });
   execFileSync("git", ["commit", "-m", "init"], { cwd: project, stdio: "ignore" });

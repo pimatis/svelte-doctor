@@ -14,15 +14,48 @@ export const depsCommand = new Command("deps")
   .action(async (directory: string, flags: Record<string, unknown>) => {
     try {
       const resolvedDir = path.resolve(directory);
-      const workspaces = getWorkspaceTargets(resolvedDir, flags.workspace as string | undefined, flags.allWorkspaces as boolean | undefined);
-      if (workspaces.length === 0) { runDepsCheck(resolvedDir, (flags.json as boolean) ?? false); return; }
+      const workspaces = getWorkspaceTargets(
+        resolvedDir,
+        flags.workspace as string | undefined,
+        flags.allWorkspaces as boolean | undefined,
+      );
+      if (workspaces.length === 0) {
+        runDepsCheck(resolvedDir, (flags.json as boolean) ?? false);
+        return;
+      }
       const results = workspaces.map((w) => ({ workspace: w, result: checkDeps(w.directory) }));
-      if (flags.json) { logger.log(JSON.stringify(results.map((e) => ({ name: e.workspace.name, directory: e.workspace.relativePath, ...e.result })), null, 2)); return; }
-      logger.break(); logger.log(`  ${highlighter.bold("svelte-doctor deps")} v${VERSION}`); logger.break();
-      for (const entry of results) { logger.log(`  ${highlighter.info(entry.workspace.name)} (${entry.workspace.relativePath})`); logger.log(`    Total deps: ${entry.result.totalDeps}`); logger.log(`    Issues: ${entry.result.issues.length}`); }
+      if (flags.json) {
+        logger.log(
+          JSON.stringify(
+            results.map((e) => ({
+              name: e.workspace.name,
+              directory: e.workspace.relativePath,
+              ...e.result,
+            })),
+            null,
+            2,
+          ),
+        );
+        return;
+      }
+      logger.break();
+      logger.log(`  ${highlighter.bold("svelte-doctor deps")} v${VERSION}`);
+      logger.break();
+      for (const entry of results) {
+        logger.log(`  ${highlighter.info(entry.workspace.name)} (${entry.workspace.relativePath})`);
+        logger.log(`    Total deps: ${entry.result.totalDeps}`);
+        logger.log(`    Issues: ${entry.result.issues.length}`);
+      }
       logger.break();
     } catch (error) {
-      if (flags.json) { logger.log(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" })); process.exit(1); return; }
-      if (error instanceof Error) logger.error(`  Error: ${error.message}`); process.exit(1);
+      if (flags.json) {
+        logger.log(
+          JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
+        );
+        process.exit(1);
+        return;
+      }
+      if (error instanceof Error) logger.error(`  Error: ${error.message}`);
+      process.exit(1);
     }
   });

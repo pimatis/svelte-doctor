@@ -9,13 +9,13 @@ const SEVERITY_WEIGHTS: Record<string, number> = {
 
 // security and correctness issues tank your score harder than style nits
 const CATEGORY_MULTIPLIERS: Record<string, number> = {
-  "Security": 2.0,
-  "Correctness": 1.5,
+  Security: 2.0,
+  Correctness: 1.5,
   "State & Reactivity": 1.2,
-  "Performance": 1.0,
-  "SvelteKit": 1.0,
-  "Architecture": 0.8,
-  "Accessibility": 0.8,
+  Performance: 1.0,
+  SvelteKit: 1.0,
+  Architecture: 0.8,
+  Accessibility: 0.8,
   "Bundle Size": 0.7,
   "Dead Code": 0.5,
 };

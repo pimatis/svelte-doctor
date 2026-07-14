@@ -9,7 +9,9 @@ const readPackageVersion = (): string => {
     const content = fs.readFileSync(pkgPath, "utf-8");
     const pkg = JSON.parse(content);
     if (typeof pkg.version === "string") return pkg.version;
-  } catch {}
+  } catch {
+    /* fallback */
+  }
 
   return "0.1.0";
 };

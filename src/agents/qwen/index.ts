@@ -5,9 +5,6 @@ export const createQwenAgent = (isCommandAvailable: (cmd: string) => boolean): A
   command: "qwen",
   id: "qwen",
   available: isCommandAvailable("qwen"),
-  getSpawnArgs: (_cwd, mode) => [
-    "-p",
-    ...(mode === "unsafe" ? ["--yolo"] : []),
-  ],
+  getSpawnArgs: (_cwd, mode) => ["-p", ...(mode === "unsafe" ? ["--yolo"] : [])],
   usePromptAsArg: true,
 });

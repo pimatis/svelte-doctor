@@ -5,10 +5,7 @@ import { toPosix } from "../fs/normalize.js";
 
 const maxChunkBytes = 250 * 1024;
 const largeDependencyBytes = 50 * 1024;
-const outputRoots = [
-  ".svelte-kit/output/client",
-  ".svelte-kit/output/server",
-];
+const outputRoots = [".svelte-kit/output/client", ".svelte-kit/output/server"];
 
 const isInside = (root: string, target: string): boolean => {
   const relative = path.relative(root, target);
@@ -98,35 +95,45 @@ export const analyzeBuildArtifacts = (projectRoot: string): Diagnostic[] => {
       }
 
       if (/\.(?:js|mjs)$/.test(file) && stat.size > maxChunkBytes) {
-        diagnostics.push(makeDiagnostic(
-          relativePath,
-          "chunk-size-limit",
-          "Build chunk exceeds recommended size limit",
-          "Split route-level code or move heavy dependencies behind dynamic imports to reduce startup and hydration cost.",
-        ));
+        diagnostics.push(
+          makeDiagnostic(
+            relativePath,
+            "chunk-size-limit",
+            "Build chunk exceeds recommended size limit",
+            "Split route-level code or move heavy dependencies behind dynamic imports to reduce startup and hydration cost.",
+          ),
+        );
       }
 
-      if (/\.(?:js|mjs)$/.test(file) && stat.size > largeDependencyBytes && /from\s+["'](?:lodash|moment|chart\.js|three|monaco-editor)["']/.test(source)) {
-        diagnostics.push(makeDiagnostic(
-          relativePath,
-          "prefer-dynamic-import",
-          "Large dependency appears in a build chunk",
-          "Load large libraries with dynamic import at the interaction boundary when they are not needed for initial render.",
-        ));
+      if (
+        /\.(?:js|mjs)$/.test(file) &&
+        stat.size > largeDependencyBytes &&
+        /from\s+["'](?:lodash|moment|chart\.js|three|monaco-editor)["']/.test(source)
+      ) {
+        diagnostics.push(
+          makeDiagnostic(
+            relativePath,
+            "prefer-dynamic-import",
+            "Large dependency appears in a build chunk",
+            "Load large libraries with dynamic import at the interaction boundary when they are not needed for initial render.",
+          ),
+        );
       }
 
       if (/data:image\/(?:png|jpe?g|webp|gif);base64,/.test(source)) {
-        diagnostics.push(makeDiagnostic(
-          relativePath,
-          "no-base64-inline-asset",
-          "Inline base64 image found in build output",
-          "Emit binary assets as files so the browser can cache, decode, and stream them efficiently.",
-        ));
+        diagnostics.push(
+          makeDiagnostic(
+            relativePath,
+            "no-base64-inline-asset",
+            "Inline base64 image found in build output",
+            "Emit binary assets as files so the browser can cache, decode, and stream them efficiently.",
+          ),
+        );
       }
 
       const imports = source.match(/(?:from|import)\s*\(?["']([^"']+)["']/g) ?? [];
       for (const rawImport of imports) {
-        const packageMatch = /["'](@?[^\/"']+(?:\/[^\/"']+)?)\//.exec(rawImport);
+        const packageMatch = /["'](@?[^/"']+(?:\/[^/"']+)?)\//.exec(rawImport);
         if (!packageMatch) continue;
 
         const chunks = chunkImportCounts.get(packageMatch[1]) ?? new Set<string>();
@@ -139,12 +146,14 @@ export const analyzeBuildArtifacts = (projectRoot: string): Diagnostic[] => {
   for (const [packageName, chunks] of chunkImportCounts) {
     if (chunks.size < 2) continue;
 
-    diagnostics.push(makeDiagnostic(
-      Array.from(chunks)[0],
-      "no-duplicate-lib-in-chunks",
-      `Dependency ${packageName} appears across multiple chunks`,
-      "Inspect Vite chunking and manualChunks config so shared dependencies are emitted once instead of duplicated.",
-    ));
+    diagnostics.push(
+      makeDiagnostic(
+        Array.from(chunks)[0],
+        "no-duplicate-lib-in-chunks",
+        `Dependency ${packageName} appears across multiple chunks`,
+        "Inspect Vite chunking and manualChunks config so shared dependencies are emitted once instead of duplicated.",
+      ),
+    );
   }
 
   return diagnostics;

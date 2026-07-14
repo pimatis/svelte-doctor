@@ -7,7 +7,12 @@ type Visitor = (node: any, parent: any | null) => void;
 // walking these would cause infinite recursion or meaningless noise
 const SKIP_KEYS = new Set(["parent", "scope", "ctx", "start", "end"]);
 
-export const walkAst = (node: any, visitor: Visitor, parent: any = null, visited = new Set<any>()) => {
+export const walkAst = (
+  node: any,
+  visitor: Visitor,
+  parent: any = null,
+  visited = new Set<any>(),
+) => {
   if (!node || typeof node !== "object") return;
 
   // guard against circular references in the AST
@@ -42,6 +47,8 @@ export const walkAst = (node: any, visitor: Visitor, parent: any = null, visited
 // handy for complexity heuristics in architecture rules
 export const countNodes = (node: any): number => {
   let count = 0;
-  walkAst(node, () => { count++; });
+  walkAst(node, () => {
+    count++;
+  });
   return count;
 };

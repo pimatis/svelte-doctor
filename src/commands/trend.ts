@@ -16,15 +16,32 @@ export const trendCommand = new Command("trend")
       const resolvedDir = path.resolve(directory);
       const parsed = parsePositiveInt(flags.last as string, "last");
       const count = parsed < 1 ? 20 : Math.min(500, parsed);
-      const workspaces = getWorkspaceTargets(resolvedDir, flags.workspace as string | undefined, flags.allWorkspaces as boolean | undefined);
-      if (workspaces.length === 0) { printTrend(resolvedDir, count); return; }
-      logger.break(); logger.log(`  ${highlighter.bold("Workspace Trend Snapshot")} v${VERSION}`); logger.break();
+      const workspaces = getWorkspaceTargets(
+        resolvedDir,
+        flags.workspace as string | undefined,
+        flags.allWorkspaces as boolean | undefined,
+      );
+      if (workspaces.length === 0) {
+        printTrend(resolvedDir, count);
+        return;
+      }
+      logger.break();
+      logger.log(`  ${highlighter.bold("Workspace Trend Snapshot")} v${VERSION}`);
+      logger.break();
       for (const workspace of workspaces) {
         const history = loadScoreHistory(workspace.directory);
         const latest = history.at(-1);
-        if (!latest) { logger.log(`  ${highlighter.info(workspace.name)}: no history`); continue; }
-        logger.log(`  ${highlighter.info(workspace.name)} (${workspace.relativePath})  latest ${latest.score}  ${latest.label}`);
+        if (!latest) {
+          logger.log(`  ${highlighter.info(workspace.name)}: no history`);
+          continue;
+        }
+        logger.log(
+          `  ${highlighter.info(workspace.name)} (${workspace.relativePath})  latest ${latest.score}  ${latest.label}`,
+        );
       }
       logger.break();
-    } catch (error) { if (error instanceof Error) logger.error(`  Error: ${error.message}`); process.exit(1); }
+    } catch (error) {
+      if (error instanceof Error) logger.error(`  Error: ${error.message}`);
+      process.exit(1);
+    }
   });

@@ -53,7 +53,9 @@ const getDiagnosticLineIndex = (diagnostic: Diagnostic, lines: string[]): number
 
 // extracts the inner expression from $effect(() => { x = expr })
 // uses parenthesis-aware extraction to handle nested parens like foo(a, b)
-const extractSingleAssignment = (effectCall: string): { varName: string; expression: string } | null => {
+const extractSingleAssignment = (
+  effectCall: string,
+): { varName: string; expression: string } | null => {
   const headerMatch = /\$effect\s*\(\s*\(\s*\)\s*=>\s*\{\s*(\w+)\s*=\s*/.exec(effectCall);
   if (!headerMatch) return null;
 
@@ -164,7 +166,8 @@ export const fixNoUnnecessaryState = (source: string, diagnostic: Diagnostic): s
     // match: let varName = $state(value)
     // or:    let varName = $state<Type>(value) — handles nested generics like $state<Map<string, number>>
     // but NOT: let varName = $state.snapshot(...) or $state.is(...)
-    const pattern = /^(\s*)(let|const|var)\s+(\w+)\s*=\s*\$state(?:<[^]*?>)?\s*\(\s*(.+?)\s*\)\s*;?\s*$/;
+    const pattern =
+      /^(\s*)(let|const|var)\s+(\w+)\s*=\s*\$state(?:<[^]*?>)?\s*\(\s*(.+?)\s*\)\s*;?\s*$/;
     const match = pattern.exec(result[i]);
     if (!match) continue;
 

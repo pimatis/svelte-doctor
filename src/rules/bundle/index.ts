@@ -16,7 +16,8 @@ const noBarrelImport: Rule = {
     const importPattern = /import\s+(?:type\s+)?\{[^}]+\}\s+from\s+['"](\.[^'"]*)['"]/;
 
     // directory names that commonly serve as barrel roots
-    const barrelDirPattern = /\/(components|lib|utils|helpers|stores|actions|hooks|composables|modules)(?:\/index)?$/;
+    const barrelDirPattern =
+      /\/(components|lib|utils|helpers|stores|actions|hooks|composables|modules)(?:\/index)?$/;
 
     for (let i = 0; i < lines.length; i++) {
       const trimmed = lines[i].trimStart();
@@ -102,8 +103,10 @@ const noMoment: Rule = {
   autofixable: true,
   docs: {
     summary: "Flags moment.js imports in favor of smaller, maintained alternatives.",
-    whyItMatters: "moment.js increases bundle size substantially and is no longer the preferred ecosystem choice.",
-    safeFix: "Rewrite the import to dayjs and let callers update API usage incrementally if needed.",
+    whyItMatters:
+      "moment.js increases bundle size substantially and is no longer the preferred ecosystem choice.",
+    safeFix:
+      "Rewrite the import to dayjs and let callers update API usage incrementally if needed.",
   },
   check: (ctx) => {
     const diagnostics: Diagnostic[] = [];
@@ -152,7 +155,8 @@ const noFullIconImport: Rule = {
 
     // only flag wildcard (namespace) imports from icon packages — named imports are fine
     // because modern bundlers tree-shake them correctly
-    const wildcardIconPattern = /import\s+\*\s+as\s+\w+\s+from\s+['"](?:phosphor-svelte|@phosphor-icons\/svelte|lucide-svelte|heroicons\/svelte)['"]/;
+    const wildcardIconPattern =
+      /import\s+\*\s+as\s+\w+\s+from\s+['"](?:phosphor-svelte|@phosphor-icons\/svelte|lucide-svelte|heroicons\/svelte)['"]/;
 
     for (let i = 0; i < lines.length; i++) {
       const trimmed = lines[i].trimStart();
@@ -167,10 +171,7 @@ const noFullIconImport: Rule = {
       const singleQuotes = (beforeMatch.match(/'/g) ?? []).length;
       const doubleQuotes = (beforeMatch.match(/"/g) ?? []).length;
       const backticks = (beforeMatch.match(/`/g) ?? []).length;
-      const insideString =
-        singleQuotes % 2 !== 0 ||
-        doubleQuotes % 2 !== 0 ||
-        backticks % 2 !== 0;
+      const insideString = singleQuotes % 2 !== 0 || doubleQuotes % 2 !== 0 || backticks % 2 !== 0;
       if (insideString) continue;
 
       diagnostics.push({
@@ -189,9 +190,4 @@ const noFullIconImport: Rule = {
   },
 };
 
-export const bundleRules: Rule[] = [
-  noBarrelImport,
-  noFullLodashImport,
-  noMoment,
-  noFullIconImport,
-];
+export const bundleRules: Rule[] = [noBarrelImport, noFullLodashImport, noMoment, noFullIconImport];

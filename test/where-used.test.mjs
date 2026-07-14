@@ -53,20 +53,26 @@ test("where-used reports line-accurate render and import usages", () => {
   assert.equal(result.componentFile, "src/lib/Button.svelte");
   assert.ok(result.total >= 7, `expected >=7 usages, got ${result.total}`);
 
-  const cardRender = result.usages.find((u) => u.file === "src/lib/Card.svelte" && u.type === "render");
+  const cardRender = result.usages.find(
+    (u) => u.file === "src/lib/Card.svelte" && u.type === "render",
+  );
   assert.ok(cardRender, "card render usage missing");
   assert.equal(cardRender.line, 2);
-  assert.ok(cardRender.snippet.includes("<Button variant=\"primary\">"));
+  assert.ok(cardRender.snippet.includes('<Button variant="primary">'));
   assert.ok(cardRender.column >= 1);
 
-  const cardImport = result.usages.find((u) => u.file === "src/lib/Card.svelte" && u.type === "import");
+  const cardImport = result.usages.find(
+    (u) => u.file === "src/lib/Card.svelte" && u.type === "import",
+  );
   assert.ok(cardImport, "card import usage missing");
   assert.equal(cardImport.line, 1);
 });
 
 test("where-used resolves by full file path", () => {
   const project = sampleProject();
-  const result = JSON.parse(runCli(project, ["where-used", "src/lib/Button.svelte", ".", "--json"]))[0];
+  const result = JSON.parse(
+    runCli(project, ["where-used", "src/lib/Button.svelte", ".", "--json"]),
+  )[0];
 
   assert.equal(result.componentFile, "src/lib/Button.svelte");
   assert.equal(result.componentName, "Button");
@@ -76,39 +82,67 @@ test("where-used detects re-export usage of a component", () => {
   const project = sampleProject();
   const result = JSON.parse(runCli(project, ["where-used", "Button", ".", "--json"]))[0];
 
-  const reexport = result.usages.find((u) => u.file === "src/components/index.ts" && u.type === "import");
+  const reexport = result.usages.find(
+    (u) => u.file === "src/components/index.ts" && u.type === "import",
+  );
   assert.ok(reexport, "re-export usage missing");
   assert.ok(reexport.snippet.includes("export { default as Button }"));
 });
 
 test("where-used --type render filters out import usages", () => {
   const project = sampleProject();
-  const result = JSON.parse(runCli(project, ["where-used", "Button", ".", "--json", "--type", "render"]))[0];
+  const result = JSON.parse(
+    runCli(project, ["where-used", "Button", ".", "--json", "--type", "render"]),
+  )[0];
 
-  assert.equal(result.usages.every((u) => u.type === "render"), true);
-  assert.equal(result.usages.some((u) => u.type === "import"), false);
+  assert.equal(
+    result.usages.every((u) => u.type === "render"),
+    true,
+  );
+  assert.equal(
+    result.usages.some((u) => u.type === "import"),
+    false,
+  );
   assert.ok(result.total >= 3, `expected >=3 renders, got ${result.total}`);
 });
 
 test("where-used --type import filters out render usages", () => {
   const project = sampleProject();
-  const result = JSON.parse(runCli(project, ["where-used", "Button", ".", "--json", "--type", "import"]))[0];
+  const result = JSON.parse(
+    runCli(project, ["where-used", "Button", ".", "--json", "--type", "import"]),
+  )[0];
 
-  assert.equal(result.usages.every((u) => u.type === "import"), true);
-  assert.equal(result.usages.some((u) => u.type === "render"), false);
+  assert.equal(
+    result.usages.every((u) => u.type === "import"),
+    true,
+  );
+  assert.equal(
+    result.usages.some((u) => u.type === "render"),
+    false,
+  );
 });
 
 test("where-used --scope restricts results to a subdirectory", () => {
   const project = sampleProject();
-  const result = JSON.parse(runCli(project, ["where-used", "Button", ".", "--json", "--scope", "src/lib"]))[0];
+  const result = JSON.parse(
+    runCli(project, ["where-used", "Button", ".", "--json", "--scope", "src/lib"]),
+  )[0];
 
-  assert.equal(result.usages.every((u) => u.file.startsWith("src/lib/")), true);
-  assert.equal(result.usages.some((u) => u.file.startsWith("src/routes/")), false);
+  assert.equal(
+    result.usages.every((u) => u.file.startsWith("src/lib/")),
+    true,
+  );
+  assert.equal(
+    result.usages.some((u) => u.file.startsWith("src/routes/")),
+    false,
+  );
 });
 
 test("where-used --direction uses reports what a component depends on", () => {
   const project = sampleProject();
-  const result = JSON.parse(runCli(project, ["where-used", "Card", ".", "--json", "--direction", "uses"]))[0];
+  const result = JSON.parse(
+    runCli(project, ["where-used", "Card", ".", "--json", "--direction", "uses"]),
+  )[0];
 
   assert.equal(result.componentName, "Card");
   // usages point to the files Card depends on (Button.svelte)
@@ -190,7 +224,10 @@ test("where-used surfaces no-usages message when component is isolated", () => {
 
 test("where-used resolves SvelteKit $lib alias imports", () => {
   const project = writeProject({
-    "package.json": JSON.stringify({ type: "module", dependencies: { svelte: "^5.0.0", "@sveltejs/kit": "^2.0.0" } }),
+    "package.json": JSON.stringify({
+      type: "module",
+      dependencies: { svelte: "^5.0.0", "@sveltejs/kit": "^2.0.0" },
+    }),
     "src/lib/Button.svelte": `<button><slot /></button>\n`,
     "src/routes/+page.svelte": `<script>import Button from "$lib/Button.svelte";</script>\n<Button variant="primary" />\n`,
   });
@@ -199,7 +236,14 @@ test("where-used resolves SvelteKit $lib alias imports", () => {
 
   assert.equal(result.componentFile, "src/lib/Button.svelte");
   // import edge via $lib alias now resolved
-  assert.ok(result.usages.some((u) => u.type === "import" && u.file === "src/routes/+page.svelte" && u.snippet.includes("$lib/Button.svelte")));
+  assert.ok(
+    result.usages.some(
+      (u) =>
+        u.type === "import" &&
+        u.file === "src/routes/+page.svelte" &&
+        u.snippet.includes("$lib/Button.svelte"),
+    ),
+  );
   // render edge still detected
   assert.ok(result.usages.some((u) => u.type === "render" && u.file === "src/routes/+page.svelte"));
 });
@@ -217,33 +261,56 @@ test("where-used resolves custom tsconfig paths aliases", () => {
   const result = JSON.parse(runCli(project, ["where-used", "Modal", ".", "--json"]))[0];
 
   assert.equal(result.componentFile, "src/components/Modal.svelte");
-  assert.ok(result.usages.some((u) => u.type === "import" && u.file === "src/App.svelte" && u.snippet.includes("$components/Modal.svelte")));
+  assert.ok(
+    result.usages.some(
+      (u) =>
+        u.type === "import" &&
+        u.file === "src/App.svelte" &&
+        u.snippet.includes("$components/Modal.svelte"),
+    ),
+  );
 });
 
 test("where-used detects dynamic import() usages", () => {
   const project = writeProject({
-    "package.json": JSON.stringify({ type: "module", dependencies: { svelte: "^5.0.0", "@sveltejs/kit": "^2.0.0" } }),
+    "package.json": JSON.stringify({
+      type: "module",
+      dependencies: { svelte: "^5.0.0", "@sveltejs/kit": "^2.0.0" },
+    }),
     "src/lib/Button.svelte": `<button>x</button>\n`,
     "src/routes/+page.svelte": `<script>\nconst LazyButton = await import("$lib/Button.svelte");\n</script>\n`,
   });
 
   const result = JSON.parse(runCli(project, ["where-used", "Button", ".", "--json"]))[0];
 
-  const dynImport = result.usages.find((u) => u.type === "import" && u.snippet.includes("await import("));
+  const dynImport = result.usages.find(
+    (u) => u.type === "import" && u.snippet.includes("await import("),
+  );
   assert.ok(dynImport, "dynamic import() usage should be detected");
   assert.equal(dynImport.line, 2);
 });
 
 test("graph command resolves $lib alias import edges", () => {
   const project = writeProject({
-    "package.json": JSON.stringify({ type: "module", dependencies: { svelte: "^5.0.0", "@sveltejs/kit": "^2.0.0" } }),
+    "package.json": JSON.stringify({
+      type: "module",
+      dependencies: { svelte: "^5.0.0", "@sveltejs/kit": "^2.0.0" },
+    }),
     "src/lib/Button.svelte": `<button>x</button>\n`,
     "src/routes/+page.svelte": `<script>import Button from "$lib/Button.svelte";</script>\n<Button />\n`,
   });
 
   const graph = JSON.parse(runCli(project, ["graph", ".", "--format", "json"]));
 
-  assert.ok(graph.edges.some((e) => e.type === "import" && e.from === "src/routes/+page.svelte" && e.to === "src/lib/Button.svelte"), "graph should resolve $lib alias to an import edge");
+  assert.ok(
+    graph.edges.some(
+      (e) =>
+        e.type === "import" &&
+        e.from === "src/routes/+page.svelte" &&
+        e.to === "src/lib/Button.svelte",
+    ),
+    "graph should resolve $lib alias to an import edge",
+  );
 });
 
 test("where-used ignores alias resolution for non-SvelteKit projects without tsconfig paths", () => {
@@ -256,7 +323,10 @@ test("where-used ignores alias resolution for non-SvelteKit projects without tsc
   const result = JSON.parse(runCli(project, ["where-used", "Button", ".", "--json"]))[0];
 
   // no $lib alias configured, so the import edge is dropped; only the render edge remains
-  assert.equal(result.usages.some((u) => u.type === "import"), false);
+  assert.equal(
+    result.usages.some((u) => u.type === "import"),
+    false,
+  );
   assert.ok(result.usages.some((u) => u.type === "render" && u.file === "src/App.svelte"));
 });
 
@@ -264,7 +334,9 @@ test("where-used keeps graph import-type edges with location metadata", () => {
   const project = sampleProject();
   const graph = JSON.parse(runCli(project, ["graph", ".", "--format", "json"]));
 
-  const importEdge = graph.edges.find((e) => e.type === "import" && e.to === "src/lib/Button.svelte");
+  const importEdge = graph.edges.find(
+    (e) => e.type === "import" && e.to === "src/lib/Button.svelte",
+  );
   assert.ok(importEdge, "graph should still emit import edges");
   assert.equal(typeof importEdge.line, "number");
   assert.equal(typeof importEdge.column, "number");
@@ -326,8 +398,7 @@ test("where-used aligns snippet output even for long file paths", () => {
   const project = writeProject({
     "package.json": JSON.stringify({ type: "module", dependencies: { svelte: "^5.0.0" } }),
     "src/lib/Button.svelte": `<button><slot /></button>\n`,
-    "src/routes/very/deeply/nested/path/that/exceeds/thirty/six/chars/+page.svelte":
-      `<script>import Button from "../../../../../lib/Button.svelte";</script>\n<Button />\n`,
+    "src/routes/very/deeply/nested/path/that/exceeds/thirty/six/chars/+page.svelte": `<script>import Button from "../../../../../lib/Button.svelte";</script>\n<Button />\n`,
   });
 
   const output = runCli(project, ["where-used", "Button", "."]);
@@ -338,7 +409,10 @@ test("where-used aligns snippet output even for long file paths", () => {
 
 test("where-used refuses alias-based path traversal escapes from the project root", () => {
   const project = writeProject({
-    "package.json": JSON.stringify({ type: "module", dependencies: { svelte: "^5.0.0", "@sveltejs/kit": "^2.0.0" } }),
+    "package.json": JSON.stringify({
+      type: "module",
+      dependencies: { svelte: "^5.0.0", "@sveltejs/kit": "^2.0.0" },
+    }),
     "tsconfig.json": JSON.stringify({ compilerOptions: { paths: { "$lib/*": ["./src/lib/*"] } } }),
     "src/lib/Button.svelte": `<button>x</button>\n`,
     "src/App.svelte": `<script>import Button from "$lib/../../../../etc/passwd";</script>\n<Button />\n`,
@@ -347,7 +421,10 @@ test("where-used refuses alias-based path traversal escapes from the project roo
   const graph = JSON.parse(runCli(project, ["graph", ".", "--format", "json"]));
 
   // the traversal specifier must not create any edge escaping the project root
-  assert.equal(graph.edges.some((e) => e.to.includes("etc/passwd") || e.to.includes("..")), false);
+  assert.equal(
+    graph.edges.some((e) => e.to.includes("etc/passwd") || e.to.includes("..")),
+    false,
+  );
   // the render edge inside the project is still detected
   assert.ok(graph.edges.some((e) => e.type === "render" && e.to === "src/lib/Button.svelte"));
 });

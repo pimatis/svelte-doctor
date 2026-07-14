@@ -5,9 +5,6 @@ export const createGeminiAgent = (isCommandAvailable: (cmd: string) => boolean):
   command: "gemini",
   id: "gemini",
   available: isCommandAvailable("gemini"),
-  getSpawnArgs: (_cwd, mode) => [
-    "-p",
-    ...(mode === "unsafe" ? ["--yolo"] : []),
-  ],
+  getSpawnArgs: (_cwd, mode) => ["-p", ...(mode === "unsafe" ? ["--yolo"] : [])],
   usePromptAsArg: true,
 });

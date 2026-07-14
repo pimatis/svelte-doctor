@@ -98,21 +98,17 @@ export const runDeadCodeAnalysis = async (rootDir: string): Promise<Diagnostic[]
   if (!hasNodeModules(rootDir)) return [];
 
   try {
-    // @ts-ignore - knip exports types from types.d.ts but main is in index.d.ts
+    // @ts-expect-error — knip exports types from types.d.ts but main is in index.d.ts
     const { main } = await import("knip");
     const { createOptions } = await import("knip/session");
 
-    const options = await silenced(() =>
-      createOptions({ cwd: rootDir, isShowProgress: false }),
-    );
+    const options = await silenced(() => createOptions({ cwd: rootDir, isShowProgress: false }));
 
     const result = (await silenced(() => main(options))) as KnipResults;
     const diagnostics: Diagnostic[] = [];
 
     // guard against knip returning undefined or a non-iterable for files
-    const unusedFiles: string[] = Array.isArray(result.issues?.files)
-      ? result.issues.files
-      : [];
+    const unusedFiles: string[] = Array.isArray(result.issues?.files) ? result.issues.files : [];
 
     for (const unusedFile of unusedFiles) {
       diagnostics.push({

@@ -2,7 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { buildHtmlReport, buildJunitReport, buildMarkdownReport, writeReport } from "../src/core/reporting.ts";
+import {
+  buildHtmlReport,
+  buildJunitReport,
+  buildMarkdownReport,
+  writeReport,
+} from "../src/core/reporting.ts";
 import { calculateScore } from "../src/core/score.ts";
 import { saveBaseline } from "../src/core/baseline.ts";
 import { loadConfig } from "../src/project/config.ts";
@@ -55,18 +60,26 @@ const project = {
   usesRunes: true,
 };
 
-const history = [{
-  timestamp: "2026-01-01T00:00:00.000Z",
-  score: 91,
-  label: "Great",
-  errors: 1,
-  warnings: 1,
-  filesScanned: 7,
-  filesAffected: 2,
-}];
+const history = [
+  {
+    timestamp: "2026-01-01T00:00:00.000Z",
+    score: 91,
+    label: "Great",
+    errors: 1,
+    warnings: 1,
+    filesScanned: 7,
+    filesAffected: 2,
+  },
+];
 
 test("buildMarkdownReport escapes content and includes diagnostics", () => {
-  const markdown = buildMarkdownReport(diagnostics, meta, project, calculateScore(diagnostics), history);
+  const markdown = buildMarkdownReport(
+    diagnostics,
+    meta,
+    project,
+    calculateScore(diagnostics),
+    history,
+  );
 
   assert.match(markdown, /# svelte-doctor Report/);
   assert.match(markdown, /no-unsafe-html/);
@@ -99,7 +112,10 @@ test("writeReport refuses symlinked targets", () => {
   fs.writeFileSync(outside, "outside", "utf-8");
   fs.symlinkSync(outside, target);
 
-  assert.throws(() => writeReport(target, "report"), /Refusing to write report through symlinked file/);
+  assert.throws(
+    () => writeReport(target, "report"),
+    /Refusing to write report through symlinked file/,
+  );
 });
 
 test("writeReport keeps report paths inside project root", () => {

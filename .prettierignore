@@ -1,0 +1,5 @@
+dist/
+node_modules/
+.svelte-doctor/
+bun.lockb
+*.map

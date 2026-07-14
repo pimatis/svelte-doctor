@@ -10,8 +10,10 @@ export interface IgnoreSuggestion {
   };
 }
 
-const TEST_FILE_PATTERN = /(?:^|\/)(?:test|tests|__tests__|spec|e2e)\/|\.(?:test|spec)\.[cm]?[jt]sx?$/;
-const GENERATED_FILE_PATTERN = /(?:^|\/)(?:dist|build|\.svelte-kit|coverage|generated)\/|\.generated\./;
+const TEST_FILE_PATTERN =
+  /(?:^|\/)(?:test|tests|__tests__|spec|e2e)\/|\.(?:test|spec)\.[cm]?[jt]sx?$/;
+const GENERATED_FILE_PATTERN =
+  /(?:^|\/)(?:dist|build|\.svelte-kit|coverage|generated)\/|\.generated\./;
 
 const clampConfidence = (value: number): number => Math.max(0, Math.min(100, Math.round(value)));
 
@@ -68,10 +70,14 @@ export const buildIgnoreConfigSnippet = (suggestions: IgnoreSuggestion[]): strin
   const rules = [...new Set(suggestions.map((suggestion) => suggestion.config.rule))].sort();
   const files = [...new Set(suggestions.map((suggestion) => suggestion.config.file))].sort();
 
-  return JSON.stringify({
-    ignore: {
-      rules,
-      files,
+  return JSON.stringify(
+    {
+      ignore: {
+        rules,
+        files,
+      },
     },
-  }, null, 2);
+    null,
+    2,
+  );
 };

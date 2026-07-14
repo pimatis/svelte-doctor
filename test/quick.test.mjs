@@ -5,11 +5,15 @@ import { runQuick } from "../src/core/quick.ts";
 
 test("quick returns score and error count for clean project", async () => {
   const project = createProject({
-    "package.json": JSON.stringify({
-      name: "test-app",
-      type: "module",
-      dependencies: { svelte: "^5.0.0" },
-    }, null, 2),
+    "package.json": JSON.stringify(
+      {
+        name: "test-app",
+        type: "module",
+        dependencies: { svelte: "^5.0.0" },
+      },
+      null,
+      2,
+    ),
     "src/App.svelte": "<button>hello</button>\n",
   });
 
@@ -24,11 +28,15 @@ test("quick returns score and error count for clean project", async () => {
 
 test("quick returns errors for problematic project", async () => {
   const project = createProject({
-    "package.json": JSON.stringify({
-      name: "test-app",
-      type: "module",
-      dependencies: { svelte: "^5.0.0" },
-    }, null, 2),
+    "package.json": JSON.stringify(
+      {
+        name: "test-app",
+        type: "module",
+        dependencies: { svelte: "^5.0.0" },
+      },
+      null,
+      2,
+    ),
     "src/App.svelte": `<script>
   let password = "hardcoded-secret-123";
 </script>
@@ -40,8 +48,5 @@ test("quick returns errors for problematic project", async () => {
 });
 
 test("quick throws for invalid directory", async () => {
-  await assert.rejects(
-    () => runQuick("/nonexistent/path"),
-    /not found|not a directory/i,
-  );
+  await assert.rejects(() => runQuick("/nonexistent/path"), /not found|not a directory/i);
 });

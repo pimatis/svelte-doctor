@@ -2,12 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { writeFileAtomicSafe } from "../fs/safe-write.js";
 import type { ApplyFileChange, ApplyOptions, ApplyResult, Diagnostic, Rule } from "../types.js";
-import { allRules } from "../rules/index.js";
 import { scan } from "./scanner.js";
 import { transformMigrateSource } from "./migrate.js";
-
-// pre-build a Map for O(1) rule lookup instead of O(n) find per diagnostic
-const ruleMap = new Map<string, Rule>(allRules.map((r) => [r.name, r]));
+import { loadProjectRules } from "../plugins/loader.js";
+import { loadConfig } from "../project/config.js";
+import { logger } from "../output/logger.js";
 
 const MIGRATION_RULES = new Set([
   "no-legacy-reactive",
@@ -23,7 +22,8 @@ const replaceTransitionAll = (source: string): { content: string; changed: boole
   let changed = false;
   const next = source.replace(/transition\s*:\s*all(\s+[^;]+)?;/g, (_match, suffix) => {
     changed = true;
-    const normalizedSuffix = typeof suffix === "string" && suffix.trim().length > 0 ? suffix.trim() : "0.2s ease";
+    const normalizedSuffix =
+      typeof suffix === "string" && suffix.trim().length > 0 ? suffix.trim() : "0.2s ease";
     return `transition: opacity ${normalizedSuffix}, transform ${normalizedSuffix};`;
   });
   return { content: next, changed };
@@ -41,11 +41,13 @@ const replaceLodashImports = (source: string): { content: string; changed: boole
       if (parts.length === 0) return _match;
 
       changed = true;
-      return parts.map((part: string) => {
-        const [imported, alias] = part.split(/\s+as\s+/i).map((value) => value.trim());
-        const localName = alias ?? imported;
-        return `${indent}import ${localName} from "lodash/${imported}";`;
-      }).join("\n");
+      return parts
+        .map((part: string) => {
+          const [imported, alias] = part.split(/\s+as\s+/i).map((value) => value.trim());
+          const localName = alias ?? imported;
+          return `${indent}import ${localName} from "lodash/${imported}";`;
+        })
+        .join("\n");
     },
   );
   return { content: next, changed };
@@ -87,6 +89,7 @@ const replaceIconNamespaceImports = (source: string): { content: string; changed
 const applyFileFixes = (
   source: string,
   diagnostics: Diagnostic[],
+  ruleMap: Map<string, Rule>,
 ): { content: string; appliedRules: string[] } => {
   let nextSource = source;
   const appliedRules = new Set<string>();
@@ -136,10 +139,17 @@ const applyFileFixes = (
     const rule = ruleMap.get(diagnostic.rule);
     if (!rule?.fix) continue;
 
-    const fixed = rule.fix(nextSource, diagnostic);
-    if (fixed !== nextSource) {
-      nextSource = fixed;
-      appliedRules.add(diagnostic.rule);
+    try {
+      const fixed = rule.fix(nextSource, diagnostic);
+      if (fixed !== nextSource) {
+        nextSource = fixed;
+        appliedRules.add(diagnostic.rule);
+      }
+    } catch (error) {
+      // a faulty plugin fix must never abort the apply run
+      logger.warn(
+        `  ⚠ Rule "${rule.name}" fix threw: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
     }
   }
 
@@ -159,10 +169,19 @@ export const runApply = async (
     deadCode: false,
   });
 
+  // O(1) rule lookup so plugin rules with a `fix` are applied like built-ins
+  const { rules } = await loadProjectRules(directory, loadConfig(directory));
+  const ruleMap = new Map<string, Rule>(rules.map((rule) => [rule.id ?? rule.name, rule]));
+
   const requestedRules = new Set(options.rules ?? []);
-  const candidateDiagnostics = scanResult.diagnostics.filter((diagnostic) =>
-    diagnostic.fixable === true &&
-    (requestedRules.size === 0 || requestedRules.has(diagnostic.rule)),
+  const matchesRequested = (diagnostic: Diagnostic): boolean => {
+    if (requestedRules.size === 0) return true;
+    const rule = ruleMap.get(diagnostic.rule);
+    return requestedRules.has(diagnostic.rule) || (rule ? requestedRules.has(rule.name) : false);
+  };
+
+  const candidateDiagnostics = scanResult.diagnostics.filter(
+    (diagnostic) => diagnostic.fixable === true && matchesRequested(diagnostic),
   );
 
   const diagnosticsByFile = new Map<string, Diagnostic[]>();
@@ -178,7 +197,7 @@ export const runApply = async (
   for (const [relativePath, diagnostics] of diagnosticsByFile.entries()) {
     const absolutePath = path.join(directory, relativePath);
     const source = fs.readFileSync(absolutePath, "utf-8");
-    const result = applyFileFixes(source, diagnostics);
+    const result = applyFileFixes(source, diagnostics, ruleMap);
     const changed = result.content !== source;
 
     if (changed && options.write) {
