@@ -469,6 +469,27 @@ Scan your project for issues and output a health score. The scanner analyzes sou
 
 `--copy` is designed for cases where you want to paste diagnostics into a different AI agent instead of using `svelte-doctor fix`. The default mode tries the system clipboard first, then falls back to stdout if no clipboard integration is available. If you need deterministic output for scripts, use `--copy-output file`.
 
+JSON output includes structured fix metrics:
+
+| Field              | Type     | Description                                          |
+| ------------------ | -------- | ---------------------------------------------------- |
+| `fixableSummary`   | object   | Auto-fixable, AI-fixable, and manual-required counts |
+| `estimatedFixTime` | string   | Estimated time to fix all issues (e.g. `"3m 20s"`)   |
+| `priorityFiles`    | string[] | Top 5 files ranked by weighted issue severity        |
+| `regressionRisk`   | string   | `low`, `medium`, `high`, or `critical` risk level    |
+
+```bash
+# Quick CI summary with jq
+svelte-doctor check --json | jq '{score, risk: .regressionRisk, fixTime: .estimatedFixTime, autoFix: .fixableSummary.autoFixable}'
+
+# Gate PRs by regression risk
+RISK=$(svelte-doctor check --json | jq -r '.regressionRisk')
+if [ "$RISK" = "high" ] || [ "$RISK" = "critical" ]; then
+  echo "Block merge: regression risk too high"
+  exit 1
+fi
+```
+
 Rich reports also work with `--all-workspaces` and `--workspace`. Workspace reports aggregate diagnostics into one file and prefix paths with the workspace directory, such as `packages/app/src/App.svelte`.
 
 Examples:
@@ -910,20 +931,6 @@ svelte-doctor explain no-moment --fix --json
 
 # Scan a specific workspace
 svelte-doctor explain no-full-lodash packages/app --fix
-```
-
-```
-  Score History (last 10 runs)
-
-  100 ┤
-   90 ┤          ██
-   80 ┤      ██  ██  ██
-   70 ┤  ██  ██  ██  ██  ██
-      └──────────────────────
-        Jan 15  Jan 16  Jan 17
-
-  Latest: 85 (Good) ↑ +7 from first run
-  Best:   92 (Excellent)  Worst: 62 (Needs Work)
 ```
 
 ### `svelte-doctor deps [directory] [options]`
