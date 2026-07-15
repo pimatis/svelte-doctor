@@ -244,3 +244,211 @@ test("doctor throws for invalid directory", () => {
     });
   });
 });
+
+test("doctor --fix adds missing .gitignore entry", () => {
+  const project = createProject({
+    "package.json": JSON.stringify({ name: "test-project" }),
+    ".gitignore": "node_modules/\n",
+  });
+  const result = JSON.parse(runCli(project, ["doctor", ".", "--fix", "--json"]));
+
+  const gitignoreFix = result.fixes.find((f) => f.checkName === ".gitignore");
+  assert.ok(gitignoreFix);
+  assert.equal(gitignoreFix.status, "fixed");
+
+  const content = fs.readFileSync(path.join(project, ".gitignore"), "utf-8");
+  assert.match(content, /\.svelte-doctor\/\*/);
+
+  const recheck = JSON.parse(runCli(project, ["doctor", ".", "--json"]));
+  const gitignoreCheck = recheck.checks.find((c) => c.name === ".gitignore");
+  assert.equal(gitignoreCheck.status, "pass");
+});
+
+test("doctor --fix creates missing svelte.config.js", () => {
+  const project = createProject({
+    "package.json": JSON.stringify({
+      name: "test-project",
+      dependencies: { svelte: "^5.0.0" },
+    }),
+  });
+  const result = JSON.parse(runCli(project, ["doctor", ".", "--fix", "--json"]));
+
+  const fix = result.fixes.find((f) => f.checkName === "svelte.config");
+  assert.ok(fix);
+  assert.equal(fix.status, "fixed");
+
+  const content = fs.readFileSync(path.join(project, "svelte.config.js"), "utf-8");
+  assert.match(content, /vitePreprocess/);
+
+  const recheck = JSON.parse(runCli(project, ["doctor", ".", "--json"]));
+  const configCheck = recheck.checks.find((c) => c.name === "svelte.config");
+  assert.equal(configCheck.status, "pass");
+});
+
+test("doctor --fix creates missing tsconfig.json", () => {
+  const project = createProject({
+    "package.json": JSON.stringify({ name: "test-project" }),
+  });
+  const result = JSON.parse(runCli(project, ["doctor", ".", "--fix", "--json"]));
+
+  const fix = result.fixes.find((f) => f.checkName === "tsconfig.json");
+  assert.ok(fix);
+  assert.equal(fix.status, "fixed");
+
+  const content = JSON.parse(fs.readFileSync(path.join(project, "tsconfig.json"), "utf-8"));
+  assert.ok(content.compilerOptions);
+  assert.equal(content.compilerOptions.strict, true);
+  assert.equal(content.extends, "./.svelte-kit/tsconfig.json");
+
+  const recheck = JSON.parse(runCli(project, ["doctor", ".", "--json"]));
+  const tsconfigCheck = recheck.checks.find((c) => c.name === "tsconfig.json");
+  assert.equal(tsconfigCheck.status, "pass");
+});
+
+test("doctor --fix creates missing svelte-doctor.config.json", () => {
+  const project = createProject({
+    "package.json": JSON.stringify({
+      name: "test-project",
+      dependencies: { svelte: "^5.0.0" },
+    }),
+  });
+  const result = JSON.parse(runCli(project, ["doctor", ".", "--fix", "--json"]));
+
+  const fix = result.fixes.find((f) => f.checkName === "Config Validation");
+  assert.ok(fix);
+  assert.equal(fix.status, "fixed");
+
+  const content = JSON.parse(
+    fs.readFileSync(path.join(project, "svelte-doctor.config.json"), "utf-8"),
+  );
+  assert.equal(content.ci.failOn, "error");
+  assert.equal(content.ci.minScore, 80);
+
+  const recheck = JSON.parse(runCli(project, ["doctor", ".", "--json"]));
+  const configCheck = recheck.checks.find((c) => c.name === "Config Validation");
+  assert.equal(configCheck.status, "pass");
+});
+
+test("doctor --fix injects package.json scripts", () => {
+  const project = createProject({
+    "package.json": JSON.stringify({
+      name: "test-project",
+      scripts: { build: "vite build" },
+    }),
+  });
+  const result = JSON.parse(runCli(project, ["doctor", ".", "--fix", "--json"]));
+
+  const fix = result.fixes.find((f) => f.checkName === "package.json scripts");
+  assert.ok(fix);
+  assert.equal(fix.status, "fixed");
+
+  const pkg = JSON.parse(fs.readFileSync(path.join(project, "package.json"), "utf-8"));
+  assert.equal(pkg.scripts.doctor, "svelte-doctor check");
+  assert.equal(pkg.scripts["doctor:fix"], "svelte-doctor fix");
+});
+
+test("doctor --fix skips already present .gitignore entry", () => {
+  const project = createProject({
+    "package.json": JSON.stringify({ name: "test-project" }),
+    ".gitignore": ".svelte-doctor/*\nnode_modules/\n",
+  });
+  const result = JSON.parse(runCli(project, ["doctor", ".", "--fix", "--json"]));
+
+  const fix = result.fixes.find((f) => f.checkName === ".gitignore");
+  assert.ok(fix);
+  assert.equal(fix.status, "skipped");
+});
+
+test("doctor --fix skips already present doctor scripts", () => {
+  const project = createProject({
+    "package.json": JSON.stringify({
+      name: "test-project",
+      scripts: { doctor: "svelte-doctor check", "doctor:fix": "svelte-doctor fix" },
+    }),
+  });
+  const result = JSON.parse(runCli(project, ["doctor", ".", "--fix", "--json"]));
+
+  const fix = result.fixes.find((f) => f.checkName === "package.json scripts");
+  assert.ok(fix);
+  assert.equal(fix.status, "skipped");
+});
+
+test("doctor --fix skips invalid JSON tsconfig", () => {
+  const project = createProject({
+    "package.json": JSON.stringify({ name: "test-project" }),
+    "tsconfig.json": "{ broken",
+  });
+  const result = JSON.parse(runCli(project, ["doctor", ".", "--fix", "--json"]));
+
+  const fix = result.fixes.find((f) => f.checkName === "tsconfig.json");
+  assert.ok(fix);
+  assert.equal(fix.status, "skipped");
+});
+
+test("doctor --fix adds extends to minimal tsconfig", () => {
+  const project = createProject({
+    "package.json": JSON.stringify({ name: "test-project" }),
+    "tsconfig.json": JSON.stringify({ include: ["src"] }),
+  });
+  const result = JSON.parse(runCli(project, ["doctor", ".", "--fix", "--json"]));
+
+  const fix = result.fixes.find((f) => f.checkName === "tsconfig.json");
+  assert.ok(fix);
+  assert.equal(fix.status, "fixed");
+
+  const content = JSON.parse(fs.readFileSync(path.join(project, "tsconfig.json"), "utf-8"));
+  assert.equal(content.extends, "./.svelte-kit/tsconfig.json");
+  assert.equal(content.include[0], "src");
+});
+
+test("doctor --fix does not touch already valid config", () => {
+  const project = createProject({
+    "package.json": JSON.stringify({ name: "test-project" }),
+    "svelte-doctor.config.json": JSON.stringify({ lint: true, cache: true }),
+  });
+  const result = JSON.parse(runCli(project, ["doctor", ".", "--fix", "--json"]));
+
+  const fix = result.fixes.find((f) => f.checkName === "Config Validation");
+  assert.ok(fix);
+  assert.equal(fix.status, "skipped");
+});
+
+test("doctor --fix adds preprocess to existing svelte.config without it", () => {
+  const project = createProject({
+    "package.json": JSON.stringify({
+      name: "test-project",
+      dependencies: { svelte: "^5.0.0" },
+    }),
+    "svelte.config.js": "export default { compilerOptions: {} };",
+  });
+  const result = JSON.parse(runCli(project, ["doctor", ".", "--fix", "--json"]));
+
+  const fix = result.fixes.find((f) => f.checkName === "svelte.config");
+  assert.ok(fix);
+  assert.equal(fix.status, "fixed");
+
+  const content = fs.readFileSync(path.join(project, "svelte.config.js"), "utf-8");
+  assert.match(content, /vitePreprocess/);
+  assert.match(content, /preprocess/);
+
+  const recheck = JSON.parse(runCli(project, ["doctor", ".", "--json"]));
+  const configCheck = recheck.checks.find((c) => c.name === "svelte.config");
+  assert.equal(configCheck.status, "pass");
+});
+
+test("doctor --fix json output includes fixes array", () => {
+  const project = createProject({
+    "package.json": JSON.stringify({ name: "test-project" }),
+    ".gitignore": "node_modules/\n",
+  });
+  const result = JSON.parse(runCli(project, ["doctor", ".", "--fix", "--json"]));
+
+  assert.ok(Array.isArray(result.fixes));
+  assert.ok(result.fixes.length > 0);
+
+  for (const fix of result.fixes) {
+    assert.ok(fix.checkName);
+    assert.match(fix.status, /^(fixed|skipped|failed)$/);
+    assert.ok(fix.message);
+  }
+});

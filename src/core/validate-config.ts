@@ -24,12 +24,16 @@ const KNOWN_TOP_KEYS = new Set([
   "reports",
   "ignore",
   "plugins",
+  "rules",
+  "ci",
 ]);
 
 const KNOWN_WATCH_KEYS = new Set(["deadCode"]);
 const KNOWN_FIX_KEYS = new Set(["verifyLevel", "maxFiles"]);
 const KNOWN_REPORTS_KEYS = new Set(["html", "junit", "markdown"]);
 const KNOWN_IGNORE_KEYS = new Set(["rules", "files"]);
+const KNOWN_RULES_KEYS = new Set(["categories"]);
+const KNOWN_CI_KEYS = new Set(["failOn", "minScore"]);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -164,6 +168,35 @@ const validateTypes = (raw: Record<string, unknown>): ValidationIssue[] => {
     }
   }
 
+  if ("rules" in raw && !isRecord(raw.rules)) {
+    issues.push({ field: "rules", message: "Expected object" });
+  } else if ("rules" in raw && isRecord(raw.rules)) {
+    const rules = raw.rules as Record<string, unknown>;
+    if ("categories" in rules && !Array.isArray(rules.categories)) {
+      issues.push({ field: "rules.categories", message: "Expected array of strings" });
+    }
+  }
+
+  if ("ci" in raw && !isRecord(raw.ci)) {
+    issues.push({ field: "ci", message: "Expected object" });
+  } else if ("ci" in raw && isRecord(raw.ci)) {
+    const ci = raw.ci as Record<string, unknown>;
+    if (
+      "failOn" in ci &&
+      ci.failOn !== "never" &&
+      ci.failOn !== "error" &&
+      ci.failOn !== "warning"
+    ) {
+      issues.push({ field: "ci.failOn", message: 'Expected "never", "error", or "warning"' });
+    }
+    if (
+      "minScore" in ci &&
+      (typeof ci.minScore !== "number" || !Number.isFinite(ci.minScore) || ci.minScore < 0)
+    ) {
+      issues.push({ field: "ci.minScore", message: "Expected non-negative number" });
+    }
+  }
+
   return issues;
 };
 
@@ -225,6 +258,12 @@ export const validateConfigFile = (directory: string): ValidateConfigResult => {
     issues.push(
       ...validateObject(obj.ignore as Record<string, unknown>, KNOWN_IGNORE_KEYS, "ignore"),
     );
+  }
+  if (isRecord(obj.rules)) {
+    issues.push(...validateObject(obj.rules as Record<string, unknown>, KNOWN_RULES_KEYS, "rules"));
+  }
+  if (isRecord(obj.ci)) {
+    issues.push(...validateObject(obj.ci as Record<string, unknown>, KNOWN_CI_KEYS, "ci"));
   }
 
   return {

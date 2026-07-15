@@ -50,7 +50,7 @@ Run a single command to scan your entire codebase and receive a **0–100 health
 
 ### Key Features
 
-- **57 Source Diagnostic Rules** covering correctness, performance, security, architecture, SvelteKit reliability, runtime performance, hydration safety, and CSS specificity
+- **69 Source Diagnostic Rules** covering correctness, performance, security, architecture, SvelteKit reliability, runtime performance, hydration safety, and CSS specificity
 - **Build Artifact Diagnostics** for SvelteKit output chunks, duplicate libraries, oversized bundles, and inline base64 assets
 - **TypeScript AST-backed script analysis** for lower false-positive rates on security-sensitive checks
 - **Deterministic Safe Apply** via `apply` for high-confidence fixes — covers CSS transitions, lodash/moment/icon imports, Svelte 4→5 migration, unnecessary `$state` wrappers, and `$effect` to `$derived` conversions
@@ -80,7 +80,7 @@ Run a single command to scan your entire codebase and receive a **0–100 health
 - **Ref Comparison** via `compare` for diagnosing regressions between commits, branches, and tags
 - **Project Metrics** via `stats` for rule frequency, category breakdown, and top affected files
 - **Config Inspection** via `config` and `validate` for viewing and validating the active configuration
-- **Environment Diagnosis** via `doctor` to check Node.js, Svelte, config, and project setup health
+- **Environment Diagnosis** via `doctor` with `--fix` to auto-resolve config, gitignore, and dependency issues
 - **Generated File Cleanup** via `reset` to safely clear cache, baseline, and history
 - **Single-Command Scan + Fix** via `check --fix` for one-step diagnostic and deterministic auto-fix
 - **Zero Configuration** works out of the box
@@ -320,6 +320,9 @@ svelte-doctor validate --json
 # Check your development environment
 svelte-doctor doctor
 
+# Automatically fix detected environment issues
+svelte-doctor doctor --fix
+
 # Clean generated files
 svelte-doctor reset
 svelte-doctor reset --cache
@@ -338,11 +341,14 @@ svelte-doctor check --fix --fix-ai
 
 Check your development environment for common issues — inspired by `flutter doctor`. Diagnoses Node.js version, Svelte dependency presence, `svelte.config.js` configuration, `tsconfig.json` validity, `node_modules` installation state, `svelte-doctor.config.json` schema validation, `.gitignore` completeness, build artifact freshness, and scan cache status.
 
+With `--fix`, the command automatically resolves missing or misconfigured project files: creates `svelte.config.js` with `vitePreprocess`, generates `tsconfig.json` with TypeScript configuration, bootstraps `svelte-doctor.config.json`, adds the `.svelte-doctor/*` entry to `.gitignore`, injects `doctor` and `doctor:fix` scripts into `package.json`, and runs the detected package manager to install `node_modules` when missing.
+
 Each check returns one of four statuses: **pass**, **warning**, **fail**, or **na** (not applicable). The command exits with code 1 if any check fails, making it suitable for CI onboarding gates.
 
-| Option   | Description                  |
-| -------- | ---------------------------- |
-| `--json` | Output machine-readable JSON |
+| Option   | Description                                                         |
+| -------- | ------------------------------------------------------------------- |
+| `--json` | Output machine-readable JSON                                        |
+| `--fix`  | Automatically fix detected issues (config, gitignore, scripts, etc) |
 
 Examples:
 
@@ -350,6 +356,7 @@ Examples:
 svelte-doctor doctor
 svelte-doctor doctor packages/app
 svelte-doctor doctor --json
+svelte-doctor doctor --fix
 ```
 
 ### `svelte-doctor init [directory] [options]`
@@ -1038,7 +1045,7 @@ Security-focused scan that runs the full lint pipeline but filters results to on
 | `--json`  | Output machine-readable JSON   |
 | `--score` | Output only the security score |
 
-Security rules include XSS via `{@html}`, hardcoded secrets, `eval()` usage, insecure cookies, broad CORS, shell injection, server secret leaks, dangerous redirect parameters, and public env secret imports.
+Security rules include XSS via `{@html}`, hardcoded secrets, `eval()` usage, insecure cookies, broad CORS, shell injection, server secret leaks, dangerous redirect parameters, public env secret imports, external links without `rel="noopener"`, and raw error details exposed to clients.
 
 Examples:
 
@@ -1225,23 +1232,26 @@ svelte-doctor explain <rule>     # shows the namespaced id and source plugin
 
 ---
 
-## Rules (58 source rules + 3 build artifact diagnostics)
+## Rules (69 source rules + 3 build artifact diagnostics)
 
-### Correctness (7)
+### Correctness (10)
 
 Rules in this category only fire in **runes-mode projects** (projects that use `$state`, `$derived`, `$effect`, or `$props`). They flag Svelte 4 patterns that are broken or deprecated in Svelte 5.
 
-| Rule                  | Severity | Description                                                 |
-| --------------------- | -------- | ----------------------------------------------------------- |
-| `no-legacy-reactive`  | error    | `$:` reactive statements → `$derived` / `$effect` (fixable) |
-| `no-legacy-lifecycle` | error    | `onMount`/`onDestroy` imports → `$effect` (fixable)         |
-| `no-export-let`       | error    | `export let` → `$props()` (fixable)                         |
-| `no-event-dispatcher` | error    | `createEventDispatcher` → callback props (fixable)          |
-| `no-legacy-slots`     | error    | `<slot>` → `{@render children()}` (fixable)                 |
-| `no-let-directive`    | error    | `let:` directive → snippet props (fixable)                  |
-| `no-on-directive`     | warning  | `on:event` → `onevent` attributes (fixable)                 |
+| Rule                          | Severity | Description                                                        |
+| ----------------------------- | -------- | ------------------------------------------------------------------ |
+| `no-legacy-reactive`          | error    | `$:` reactive statements → `$derived` / `$effect` (fixable)        |
+| `no-legacy-lifecycle`         | error    | `onMount`/`onDestroy` imports → `$effect` (fixable)                |
+| `no-export-let`               | error    | `export let` → `$props()` (fixable)                                |
+| `no-event-dispatcher`         | error    | `createEventDispatcher` → callback props (fixable)                 |
+| `no-legacy-slots`             | error    | `<slot>` → `{@render children()}` (fixable)                        |
+| `no-let-directive`            | error    | `let:` directive → snippet props (fixable)                         |
+| `no-on-directive`             | warning  | `on:event` → `onevent` attributes (fixable)                        |
+| `no-$inspect-in-production`   | error    | `$inspect()` debug rune should not reach production                |
+| `no-$state-frozen-misuse`     | warning  | `.push()` or `.splice()` on `$state.frozen()` objects              |
+| `no-class-instance-as-$state` | warning  | Class instance passed to `$state()` breaks fine-grained reactivity |
 
-### Performance (20)
+### Performance (21)
 
 | Rule                                    | Severity | Description                                                                    |
 | --------------------------------------- | -------- | ------------------------------------------------------------------------------ |
@@ -1265,6 +1275,7 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `no-id-selector`                        | warning  | ID selector creates high specificity in component styles                       |
 | `no-important-override`                 | warning  | CSS uses `!important` override                                                 |
 | `no-style-tag-props`                    | warning  | Inline style attribute can conflict with CSP and maintainability               |
+| `prefer-snippet-over-passed-function`   | warning  | Function prop where `{#snippet}` + `{@render}` should be used                  |
 
 ### Architecture (4)
 
@@ -1275,7 +1286,7 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `no-console`         | warning  | `console.*` left in components               |
 | `no-multi-script`    | warning  | Multiple instance `<script>` blocks          |
 
-### Security (9)
+### Security (11)
 
 | Rule                          | Severity | Description                                                |
 | ----------------------------- | -------- | ---------------------------------------------------------- |
@@ -1288,8 +1299,10 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `no-broad-cors`               | error    | Wildcard CORS or wildcard+credentials configuration        |
 | `no-server-secret-leak`       | error    | Private env vars returned from server code                 |
 | `no-unsafe-shell`             | error    | `exec`, `execSync`, or `spawn(..., { shell: true })`       |
+| `no-plain-external-anchor`    | warning  | External `<a>` link missing `rel="noopener noreferrer"`    |
+| `no-exposed-error-details`    | error    | Raw `error.message` or `error.stack` returned to client    |
 
-### SvelteKit (7)
+### SvelteKit (10)
 
 | Rule                              | Severity | Description                                                  |
 | --------------------------------- | -------- | ------------------------------------------------------------ |
@@ -1300,6 +1313,9 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `missing-error-page`              | warning  | No `+error.svelte` found                                     |
 | `server-load-missing-error-guard` | warning  | Server load uses remote fetch without obvious error handling |
 | `form-action-missing-auth-check`  | warning  | Form actions mutate without an obvious auth/session check    |
+| `no-missing-prefetch`             | warning  | Navigation link missing `data-sveltekit-prefetch`            |
+| `no-form-action-without-redirect` | warning  | POST form action missing `redirect()` after mutation         |
+| `no-non-serializable-load-return` | error    | Server load returns non-serializable value (function, class) |
 
 ### Bundle Size (4 source rules + 3 build artifact diagnostics)
 
@@ -1322,14 +1338,16 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `click-needs-keyboard` | warning  | Click handler on non-interactive element without keyboard support |
 | `anchor-no-content`    | warning  | `<a>` without text content or `aria-label`                        |
 
-### State & Reactivity (4)
+### State & Reactivity (6)
 
-| Rule                     | Severity | Description                                                                    |
-| ------------------------ | -------- | ------------------------------------------------------------------------------ |
-| `no-unnecessary-state`   | warning  | `$state` wrapping a value that is never mutated (fixable)                      |
-| `no-derived-side-effect` | error    | Side effects inside `$derived`                                                 |
-| `prefer-runes`           | warning  | `svelte/store` imports in a runes-mode project                                 |
-| `no-unwritten-store`     | warning  | `writable` store that is never written via `.set()`, `.update()` or `$store =` |
+| Rule                                | Severity | Description                                                                    |
+| ----------------------------------- | -------- | ------------------------------------------------------------------------------ |
+| `no-unnecessary-state`              | warning  | `$state` wrapping a value that is never mutated (fixable)                      |
+| `no-derived-side-effect`            | error    | Side effects inside `$derived`                                                 |
+| `prefer-runes`                      | warning  | `svelte/store` imports in a runes-mode project                                 |
+| `no-unwritten-store`                | warning  | `writable` store that is never written via `.set()`, `.update()` or `$store =` |
+| `no-mixed-runes-and-stores`         | warning  | Both `$state`/`$derived` and `svelte/store` used in the same component         |
+| `no-unnecessary-derived-dependency` | warning  | `$derived()` reads no reactive state — should be a plain `const`               |
 
 ---
 

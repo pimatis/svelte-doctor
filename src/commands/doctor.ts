@@ -3,7 +3,7 @@ import { Command } from "commander";
 import { runDoctor } from "../core/doctor.js";
 import { logger, highlighter } from "../output/logger.js";
 import { VERSION } from "../constants.js";
-import type { DoctorCheckResult } from "../core/doctor.js";
+import type { DoctorCheckResult, DoctorFixResult } from "../core/doctor.js";
 
 const STATUS_ICONS: Record<string, string> = {
   pass: highlighter.success("✓"),
@@ -12,12 +12,19 @@ const STATUS_ICONS: Record<string, string> = {
   na: highlighter.dim("−"),
 };
 
+const FIX_ICONS: Record<string, string> = {
+  fixed: highlighter.success("✓"),
+  skipped: highlighter.dim("−"),
+  failed: highlighter.error("✗"),
+};
+
 const printDoctorReport = (
   checks: DoctorCheckResult[],
   passed: number,
   warnings: number,
   failed: number,
   notApplicable: number,
+  fixes?: DoctorFixResult[],
 ) => {
   logger.break();
   logger.log(`  ${highlighter.bold("svelte-doctor doctor")} v${VERSION}`);
@@ -41,16 +48,28 @@ const printDoctorReport = (
   ];
   logger.log(`  Summary: ${summaryParts.join(", ")}`);
   logger.break();
+
+  if (fixes && fixes.length > 0) {
+    logger.break();
+    logger.log(`  ${highlighter.bold("Fixes applied:")}`);
+    for (const fix of fixes) {
+      const icon = FIX_ICONS[fix.status] ?? "?";
+      logger.log(`    ${icon} ${highlighter.bold(fix.checkName.padEnd(22))} ${fix.message}`);
+    }
+    logger.break();
+  }
 };
 
 export const doctorCommand = new Command("doctor")
   .description("Check your development environment for common issues")
   .argument("[directory]", "project directory to check", ".")
   .option("--json", "output machine-readable JSON")
+  .option("--fix", "automatically fix detected environment issues")
   .action(async (directory: string, flags: Record<string, unknown>) => {
     try {
       const resolvedDir = path.resolve(directory);
-      const result = await runDoctor(resolvedDir);
+      const fix = (flags.fix as boolean) ?? false;
+      const result = await runDoctor(resolvedDir, { fix });
 
       if (result.failed > 0) {
         process.exitCode = 1;
@@ -69,6 +88,7 @@ export const doctorCommand = new Command("doctor")
                 failed: result.failed,
                 notApplicable: result.notApplicable,
               },
+              fixes: result.fixes,
             },
             null,
             2,
@@ -83,6 +103,7 @@ export const doctorCommand = new Command("doctor")
         result.warnings,
         result.failed,
         result.notApplicable,
+        result.fixes,
       );
     } catch (error) {
       if (flags.json) {

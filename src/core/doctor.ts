@@ -1,11 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawn } from "node:child_process";
 import { validateDirectory } from "../fs/validate.js";
 import { validateConfigFile } from "../core/validate-config.js";
 import { resolvePackageManager } from "../core/runtime.js";
+import { writeFileAtomicSafe } from "../fs/safe-write.js";
+import { ensureProjectGitignoreEntry } from "../project/gitignore.js";
+import { discoverProject } from "../project/discover.js";
+import { buildConfig } from "../project/configBuilder.js";
 import { CACHE_DIR, CACHE_FILE, GITIGNORE_SVELTE_DOCTOR_ENTRY } from "../constants.js";
 import type { ValidateConfigResult } from "../core/validate-config.js";
+import type { DeadCodeMode, FailOn, RuleCategory } from "../types.js";
 
 export type DoctorStatus = "pass" | "warning" | "fail" | "na";
 
@@ -16,12 +22,20 @@ export interface DoctorCheckResult {
   detail?: string;
 }
 
+export interface DoctorFixResult {
+  checkName: string;
+  status: "fixed" | "skipped" | "failed";
+  message: string;
+  detail?: string;
+}
+
 export interface DoctorResult {
   checks: DoctorCheckResult[];
   passed: number;
   warnings: number;
   failed: number;
   notApplicable: number;
+  fixes?: DoctorFixResult[];
 }
 
 const MILLISECONDS_PER_DAY = 86_400_000;
@@ -429,7 +443,393 @@ const checkCacheStatus = async (dir: string): Promise<DoctorCheckResult> => {
   }
 };
 
-export const runDoctor = async (directory: string): Promise<DoctorResult> => {
+const defaultCategories: RuleCategory[] = [
+  "Correctness",
+  "Performance",
+  "Architecture",
+  "Security",
+  "Accessibility",
+  "State & Reactivity",
+];
+
+const SVELTE_CONFIG_TEMPLATE = `import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
+
+export default {
+  preprocess: [vitePreprocess()],
+};
+`;
+
+const TSCONFIG_TEMPLATE = {
+  extends: "./.svelte-kit/tsconfig.json",
+  compilerOptions: {
+    allowJs: true,
+    checkJs: true,
+    esModuleInterop: true,
+    forceConsistentCasingInFileNames: true,
+    resolveJsonModule: true,
+    skipLibCheck: true,
+    sourceMap: true,
+    strict: true,
+    moduleResolution: "bundler",
+  },
+};
+
+const writeTextSafe = (dir: string, relativePath: string, content: string): void => {
+  writeFileAtomicSafe(dir, relativePath, content, {
+    mode: 0o644,
+    pathMessage: "Output path must stay inside project root.",
+    symlinkFileMessage: "Refusing to write through symlinked file.",
+    symlinkDirectoryMessage: "Refusing to write through symlinked directory.",
+  });
+};
+
+const writeJsonSafe = (dir: string, relativePath: string, value: unknown): void => {
+  writeFileAtomicSafe(dir, relativePath, `${JSON.stringify(value, null, 2)}\n`, {
+    mode: 0o600,
+    pathMessage: "JSON output path must stay inside project root.",
+    symlinkFileMessage: "Refusing to write JSON output through symlinked file.",
+    symlinkDirectoryMessage: "Refusing to write JSON output through symlinked directory.",
+  });
+};
+
+const fixGitignore = (dir: string, check: DoctorCheckResult): DoctorFixResult => {
+  if (check.status !== "warning") {
+    return {
+      checkName: ".gitignore",
+      status: "skipped",
+      message: "Already present or not applicable",
+    };
+  }
+
+  try {
+    const result = ensureProjectGitignoreEntry(dir, GITIGNORE_SVELTE_DOCTOR_ENTRY);
+    if (result.updated || result.created) {
+      return {
+        checkName: ".gitignore",
+        status: "fixed",
+        message: `Added ${GITIGNORE_SVELTE_DOCTOR_ENTRY} entry`,
+      };
+    }
+    return { checkName: ".gitignore", status: "skipped", message: "Already present" };
+  } catch (error) {
+    return {
+      checkName: ".gitignore",
+      status: "failed",
+      message: `Failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+};
+
+const fixConfigValidation = (dir: string, check: DoctorCheckResult): DoctorFixResult => {
+  if (check.status === "pass") {
+    return { checkName: "Config Validation", status: "skipped", message: "Already valid" };
+  }
+
+  if (check.status === "fail") {
+    return {
+      checkName: "Config Validation",
+      status: "skipped",
+      message: "Cannot auto-fix invalid config, resolve schema errors first",
+    };
+  }
+
+  try {
+    const configPath = path.join(dir, "svelte-doctor.config.json");
+    if (fs.existsSync(configPath)) {
+      return {
+        checkName: "Config Validation",
+        status: "skipped",
+        message: "Config already exists",
+      };
+    }
+
+    const project = discoverProject(dir);
+    const config = buildConfig({
+      framework: project.framework,
+      svelteVersion: project.svelteVersion,
+      usesRunes: project.usesRunes,
+      categories: defaultCategories,
+      deadCodeMode: "lazy" as DeadCodeMode,
+      failOn: "error" as FailOn,
+      minScore: 80,
+    });
+    writeJsonSafe(dir, "svelte-doctor.config.json", config);
+    return {
+      checkName: "Config Validation",
+      status: "fixed",
+      message: "Created svelte-doctor.config.json",
+    };
+  } catch (error) {
+    return {
+      checkName: "Config Validation",
+      status: "failed",
+      message: `Failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+};
+
+const fixSvelteConfig = (dir: string, check: DoctorCheckResult): DoctorFixResult => {
+  if (check.status === "pass") {
+    return {
+      checkName: "svelte.config",
+      status: "skipped",
+      message: "Already configured with preprocess",
+    };
+  }
+
+  try {
+    if (check.status === "fail" && check.message === "Not found") {
+      writeTextSafe(dir, "svelte.config.js", SVELTE_CONFIG_TEMPLATE);
+      return {
+        checkName: "svelte.config",
+        status: "fixed",
+        message: "Created svelte.config.js with vitePreprocess",
+      };
+    }
+
+    if (check.status === "warning") {
+      const candidates = [
+        "svelte.config.js",
+        "svelte.config.ts",
+        "svelte.config.mjs",
+        "svelte.config.cjs",
+      ];
+      let foundPath: string | null = null;
+      let configContent = "";
+
+      for (const candidate of candidates) {
+        try {
+          const fullPath = path.join(dir, candidate);
+          const stat = fs.lstatSync(fullPath);
+          if (!stat.isSymbolicLink() && stat.isFile()) {
+            foundPath = fullPath;
+            configContent = fs.readFileSync(fullPath, "utf-8");
+            break;
+          }
+        } catch {
+          continue;
+        }
+      }
+
+      if (!foundPath) {
+        return {
+          checkName: "svelte.config",
+          status: "failed",
+          message: "Config file disappeared between check and fix",
+        };
+      }
+
+      let updated = configContent;
+      if (
+        !updated.includes("vitePreprocess") &&
+        !updated.includes('from "@sveltejs/vite-plugin-svelte"')
+      ) {
+        updated = `import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";\n${updated}`;
+      }
+
+      if (!updated.includes("preprocess")) {
+        updated = updated.replace(
+          /(export\s+default\s*\{)/,
+          "$1\n  preprocess: [vitePreprocess()],",
+        );
+      }
+
+      const relativePath = path.basename(foundPath);
+      writeTextSafe(dir, relativePath, updated);
+      return {
+        checkName: "svelte.config",
+        status: "fixed",
+        message: `Added vitePreprocess to ${relativePath}`,
+      };
+    }
+
+    return { checkName: "svelte.config", status: "skipped", message: "No action needed" };
+  } catch (error) {
+    return {
+      checkName: "svelte.config",
+      status: "failed",
+      message: `Failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+};
+
+const fixTsconfig = (dir: string, check: DoctorCheckResult): DoctorFixResult => {
+  if (check.status === "pass") {
+    return { checkName: "tsconfig.json", status: "skipped", message: "Already valid" };
+  }
+
+  if (check.message === "Invalid JSON" || check.message === "Symlink refused for security") {
+    return {
+      checkName: "tsconfig.json",
+      status: "skipped",
+      message: "Cannot auto-fix invalid JSON or symlinked tsconfig",
+    };
+  }
+
+  try {
+    if (check.status === "fail" && check.message === "Not found") {
+      writeJsonSafe(dir, "tsconfig.json", TSCONFIG_TEMPLATE);
+      return {
+        checkName: "tsconfig.json",
+        status: "fixed",
+        message: "Created tsconfig.json with TypeScript configuration",
+      };
+    }
+
+    if (check.status === "warning") {
+      const tsconfigPath = path.join(dir, "tsconfig.json");
+      const existing = JSON.parse(fs.readFileSync(tsconfigPath, "utf-8"));
+      const updated = { extends: "./.svelte-kit/tsconfig.json", ...existing };
+      writeJsonSafe(dir, "tsconfig.json", updated);
+      return {
+        checkName: "tsconfig.json",
+        status: "fixed",
+        message: "Added extends to tsconfig.json",
+      };
+    }
+
+    return { checkName: "tsconfig.json", status: "skipped", message: "No action needed" };
+  } catch (error) {
+    return {
+      checkName: "tsconfig.json",
+      status: "failed",
+      message: `Failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+};
+
+const runInstallCommand = (
+  manager: string,
+  cwd: string,
+): Promise<{ ok: boolean; code: number | null }> =>
+  new Promise((resolve) => {
+    const child = spawn(manager, ["install"], { cwd, stdio: "pipe" });
+    child.on("close", (code) => {
+      resolve({ ok: code === 0, code });
+    });
+    child.on("error", () => resolve({ ok: false, code: null }));
+  });
+
+const fixNodeModules = async (dir: string, check: DoctorCheckResult): Promise<DoctorFixResult> => {
+  if (check.status === "pass") {
+    return { checkName: "node_modules", status: "skipped", message: "Already installed" };
+  }
+
+  try {
+    const manager = resolvePackageManager(dir);
+    const result = await runInstallCommand(manager, dir);
+
+    if (result.ok) {
+      const nodeModulesPath = path.join(dir, "node_modules");
+      const entries = fs
+        .readdirSync(nodeModulesPath)
+        .filter((e) => !e.startsWith(".") && !e.startsWith("@"));
+      const scopedDirs = fs.readdirSync(nodeModulesPath).filter((e) => e.startsWith("@"));
+      let scopedCount = 0;
+      for (const scoped of scopedDirs) {
+        try {
+          scopedCount += fs.readdirSync(path.join(nodeModulesPath, scoped)).length;
+        } catch {
+          /* skip */
+        }
+      }
+      const totalPackages = entries.length + scopedCount;
+      return {
+        checkName: "node_modules",
+        status: "fixed",
+        message: `Ran ${manager} install (~${totalPackages.toLocaleString()} packages)`,
+      };
+    }
+
+    return {
+      checkName: "node_modules",
+      status: "failed",
+      message: `${manager} install failed (exit ${result.code})`,
+      detail: "Run install manually and check for errors.",
+    };
+  } catch (error) {
+    return {
+      checkName: "node_modules",
+      status: "failed",
+      message: `Failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+};
+
+const injectDoctorScripts = (dir: string): DoctorFixResult => {
+  try {
+    const pkg = readPackageJson(dir);
+    if (!pkg) {
+      return {
+        checkName: "package.json scripts",
+        status: "skipped",
+        message: "No package.json found",
+      };
+    }
+
+    const scripts = {
+      ...((pkg.scripts as Record<string, string> | undefined) ?? {}),
+    };
+    let changed = false;
+
+    if (!scripts.doctor) {
+      scripts.doctor = "svelte-doctor check";
+      changed = true;
+    }
+    if (!scripts["doctor:fix"]) {
+      scripts["doctor:fix"] = "svelte-doctor fix";
+      changed = true;
+    }
+
+    if (!changed) {
+      return {
+        checkName: "package.json scripts",
+        status: "skipped",
+        message: "doctor scripts already present",
+      };
+    }
+
+    writeJsonSafe(dir, "package.json", { ...pkg, scripts });
+    return {
+      checkName: "package.json scripts",
+      status: "fixed",
+      message: "Added doctor and doctor:fix scripts",
+    };
+  } catch (error) {
+    return {
+      checkName: "package.json scripts",
+      status: "failed",
+      message: `Failed: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+};
+
+const applyDoctorFixes = async (
+  dir: string,
+  checks: DoctorCheckResult[],
+): Promise<DoctorFixResult[]> => {
+  const fixes: DoctorFixResult[] = [];
+
+  const gitignoreCheck = checks.find((c) => c.name === ".gitignore");
+  const configCheck = checks.find((c) => c.name === "Config Validation");
+  const svelteConfigCheck = checks.find((c) => c.name === "svelte.config");
+  const tsconfigCheck = checks.find((c) => c.name === "tsconfig.json");
+  const nodeModulesCheck = checks.find((c) => c.name === "node_modules");
+
+  if (gitignoreCheck) fixes.push(fixGitignore(dir, gitignoreCheck));
+  if (configCheck) fixes.push(fixConfigValidation(dir, configCheck));
+  if (svelteConfigCheck) fixes.push(fixSvelteConfig(dir, svelteConfigCheck));
+  if (tsconfigCheck) fixes.push(fixTsconfig(dir, tsconfigCheck));
+  fixes.push(injectDoctorScripts(dir));
+  if (nodeModulesCheck) fixes.push(await fixNodeModules(dir, nodeModulesCheck));
+
+  return fixes;
+};
+
+export const runDoctor = async (
+  directory: string,
+  options?: { fix?: boolean },
+): Promise<DoctorResult> => {
   const resolvedDir = path.resolve(directory);
   validateDirectory(resolvedDir);
 
@@ -450,5 +850,11 @@ export const runDoctor = async (directory: string): Promise<DoctorResult> => {
   const failed = checks.filter((c) => c.status === "fail").length;
   const notApplicable = checks.filter((c) => c.status === "na").length;
 
-  return { checks, passed, warnings, failed, notApplicable };
+  const result: DoctorResult = { checks, passed, warnings, failed, notApplicable };
+
+  if (options?.fix) {
+    result.fixes = await applyDoctorFixes(resolvedDir, checks);
+  }
+
+  return result;
 };
