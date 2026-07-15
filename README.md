@@ -293,6 +293,10 @@ svelte-doctor pr-check --base main --head HEAD
 svelte-doctor rules
 svelte-doctor explain no-unsafe-shell
 
+# Explain a rule with fix examples and project occurrences
+svelte-doctor explain no-transition-all --fix
+svelte-doctor explain no-moment --fix --json
+
 # Quick health check (errors only, fast)
 svelte-doctor quick
 svelte-doctor quick --score
@@ -881,13 +885,32 @@ Monorepos can also query the latest trend snapshot per workspace with `--all-wor
 
 List every rule with its category and whether it supports deterministic autofix. Rules are grouped by source (built-in, plugin, or local), so custom rules appear alongside the built-ins.
 
-### `svelte-doctor explain <rule>`
+### `svelte-doctor explain <rule> [directory] [options]`
 
-Explain what a rule checks, why it matters, and what the safest remediation looks like.
+Explain what a rule checks, why it matters, and what the safest remediation looks like. With `--fix`, shows before/after code examples and scans the project for occurrences that would be fixed — use it as a learning and discovery tool before running `apply --write` on the entire codebase.
 
-| Option               | Description                                    |
-| -------------------- | ---------------------------------------------- |
-| `-n, --last <count>` | Number of recent entries to show (default: 20) |
+Rules with deterministic fixes show an interactive apply prompt after listing occurrences. AI-only rules (like `no-giant-component` or `too-many-effects`) show examples but do not offer automatic apply since they require manual judgment.
+
+| Option   | Description                                                           |
+| -------- | --------------------------------------------------------------------- |
+| `--fix`  | Show fix examples and scan project for matching occurrences           |
+| `--json` | Output machine-readable JSON (combine with `--fix` for full fix data) |
+
+Examples:
+
+```bash
+# Basic rule explanation
+svelte-doctor explain no-transition-all
+
+# Explain with fix examples and scan
+svelte-doctor explain no-transition-all --fix
+
+# Machine-readable output with occurrence data
+svelte-doctor explain no-moment --fix --json
+
+# Scan a specific workspace
+svelte-doctor explain no-full-lodash packages/app --fix
+```
 
 ```
   Score History (last 10 runs)
