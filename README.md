@@ -82,7 +82,7 @@ Run a single command to scan your entire codebase and receive a **0–100 health
 - **Config Inspection** via `config` and `validate` for viewing and validating the active configuration
 - **Environment Diagnosis** via `doctor` with `--fix` to auto-resolve config, gitignore, and dependency issues
 - **Generated File Cleanup** via `reset` to safely clear cache, baseline, and history
-- **Single-Command Scan + Fix** via `check --fix` for one-step diagnostic and deterministic auto-fix
+- **Single-Command Scan + Fix** via `check --fix` for one-step diagnostic and deterministic auto-fix, with `--interactive` for step-by-step approval
 - **Zero Configuration** works out of the box
 
 ---
@@ -334,6 +334,7 @@ svelte-doctor reset --cache
 # Scan and apply deterministic fixes in one step
 svelte-doctor check --fix
 svelte-doctor check --fix --dry-run
+svelte-doctor check --fix --interactive
 svelte-doctor check --fix --fix-ai
 ```
 
@@ -460,6 +461,7 @@ Scan your project for issues and output a health score. The scanner analyzes sou
 | `--all-workspaces`                        | Scan all package.json workspaces                                                     |
 | `--workspace <name>`                      | Scan one workspace by name or relative path                                          |
 | `--fix`                                   | Apply deterministic auto-fixes after scan                                            |
+| `--interactive`                           | With `--fix`: confirm each fix individually (`y`, `n`, `a`, `q`)                     |
 | `--fix-ai`                                | Also run AI agent fix after deterministic fixes                                      |
 | `--dry-run`                               | With `--fix`: preview fixes without writing files                                    |
 | `--rules <csv>`                           | With `--fix`: limit deterministic fixes to comma-separated rules                     |
@@ -509,7 +511,7 @@ svelte-doctor check --all-workspaces --html --junit --markdown
 # Scan and apply fixes in one step
 svelte-doctor check --fix
 svelte-doctor check --fix --dry-run
-svelte-doctor check --fix --errors-only
+svelte-doctor check --fix --interactive
 svelte-doctor check --fix --fix-ai --verify-level tests
 ```
 

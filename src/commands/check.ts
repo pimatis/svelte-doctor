@@ -2,6 +2,8 @@ import path from "node:path";
 import { Command } from "commander";
 import { scan } from "../core/scanner.js";
 import { runApply } from "../core/apply.js";
+import { runInteractiveFixes, sortDiagnosticsForInteractive } from "../core/interactive-fix.js";
+import { loadProjectRules } from "../plugins/loader.js";
 import { runFix } from "../agents/fix.js";
 import { exportDiagnosticsForAi } from "../core/export.js";
 import {
@@ -233,6 +235,7 @@ export const checkCommand = new Command("check")
   .option("--workspace <name>", "scan a specific workspace by name or relative path")
   .option("--fix", "apply deterministic auto-fixes after scan")
   .option("--fix-ai", "also run AI agent fix after deterministic fixes")
+  .option("--interactive", "with --fix: confirm each fix individually [y/n/a/q]")
   .option("--dry-run", "with --fix: preview fixes without writing files")
   .option("--rules <csv>", "with --fix: limit deterministic fixes to comma-separated rules")
   .option("--errors-only", "with --fix: fix only error-severity diagnostics")
@@ -420,6 +423,7 @@ export const checkCommand = new Command("check")
 
       // --fix: deterministic auto-fixes
       if (shouldFix) {
+        const interactive = (flags.interactive as boolean) ?? false;
         const fixDiagnostics = errorsOnly
           ? currentDiagnostics.filter((d) => d.fixable === true && d.severity === "error")
           : currentDiagnostics.filter((d) => d.fixable === true);
@@ -429,6 +433,53 @@ export const checkCommand = new Command("check")
             logger.break();
             logger.log(`  ${highlighter.dim("No auto-fixable issues found.")}`);
             logger.break();
+          }
+        } else if (interactive) {
+          const { rules } = await loadProjectRules(resolvedDir, loadConfig(resolvedDir));
+          const ruleMap = new Map(rules.map((r) => [r.id ?? r.name, r]));
+          const sortedDiagnostics = sortDiagnosticsForInteractive(fixDiagnostics);
+
+          const interactiveResult = await runInteractiveFixes(
+            resolvedDir,
+            sortedDiagnostics,
+            ruleMap,
+            !dryRun,
+          );
+
+          if (interactiveResult.aborted) {
+            if (!silentMode) {
+              logger.break();
+              logger.warn("  Interactive fix aborted. No changes applied.");
+              logger.break();
+            }
+            return;
+          }
+
+          appliedFixRules = [...new Set(interactiveResult.files.flatMap((f) => f.appliedRules))];
+          fixChangedFiles = interactiveResult.changedFiles;
+          fixDiagnosticsConsidered = fixDiagnostics.length;
+
+          if (!silentMode) {
+            const skippedCount = sortedDiagnostics.length - interactiveResult.applied.length;
+            logger.break();
+            logger.log(`  ${highlighter.bold("Interactive Fix Summary")}`);
+            logger.break();
+            logger.log(
+              `  ${highlighter.success(`${interactiveResult.applied.length} applied`)}, ${highlighter.dim(`${skippedCount} skipped`)}`,
+            );
+            logger.break();
+          }
+
+          if (!dryRun && interactiveResult.changedFiles > 0) {
+            const afterResult = await scan(resolvedDir, {
+              lint: flags.lint as boolean,
+              deadCode: flags.deadCode as boolean,
+              cache: flags.cache as boolean,
+              quiet: true,
+              baseline: (flags.baseline as boolean) ?? false,
+              targetFiles: filterSelectedFilesForDirectory(resolvedDir, selectedFiles),
+            });
+            currentDiagnostics = afterResult.diagnostics;
           }
         } else {
           const applyResult = await runApply(resolvedDir, {

@@ -2,13 +2,13 @@ import type { Diagnostic, ScoreResult } from "../types.js";
 import { PERFECT_SCORE, SCORE_GOOD_THRESHOLD, SCORE_OK_THRESHOLD } from "../constants.js";
 
 // higher weight = bigger penalty per diagnostic
-const SEVERITY_WEIGHTS: Record<string, number> = {
+export const SEVERITY_WEIGHTS: Record<string, number> = {
   error: 3,
   warning: 1,
 };
 
 // security and correctness issues tank your score harder than style nits
-const CATEGORY_MULTIPLIERS: Record<string, number> = {
+export const CATEGORY_MULTIPLIERS: Record<string, number> = {
   Security: 2.0,
   Correctness: 1.5,
   "State & Reactivity": 1.2,

@@ -18,7 +18,7 @@ const MIGRATION_RULES = new Set([
   "no-legacy-lifecycle",
 ]);
 
-const replaceTransitionAll = (source: string): { content: string; changed: boolean } => {
+export const replaceTransitionAll = (source: string): { content: string; changed: boolean } => {
   let changed = false;
   const next = source.replace(/transition\s*:\s*all(\s+[^;]+)?;/g, (_match, suffix) => {
     changed = true;
@@ -29,7 +29,7 @@ const replaceTransitionAll = (source: string): { content: string; changed: boole
   return { content: next, changed };
 };
 
-const replaceLodashImports = (source: string): { content: string; changed: boolean } => {
+export const replaceLodashImports = (source: string): { content: string; changed: boolean } => {
   let changed = false;
   const next = source.replace(
     /^(\s*)import\s+\{([^}]+)\}\s+from\s+['"]lodash['"];?\s*$/gm,
@@ -53,7 +53,7 @@ const replaceLodashImports = (source: string): { content: string; changed: boole
   return { content: next, changed };
 };
 
-const replaceMomentImports = (source: string): { content: string; changed: boolean } => {
+export const replaceMomentImports = (source: string): { content: string; changed: boolean } => {
   let changed = false;
   const next = source.replace(/from\s+['"]moment['"]/g, () => {
     changed = true;
@@ -62,7 +62,9 @@ const replaceMomentImports = (source: string): { content: string; changed: boole
   return { content: next, changed };
 };
 
-const replaceIconNamespaceImports = (source: string): { content: string; changed: boolean } => {
+export const replaceIconNamespaceImports = (
+  source: string,
+): { content: string; changed: boolean } => {
   let changed = false;
 
   const next = source.replace(
@@ -86,7 +88,7 @@ const replaceIconNamespaceImports = (source: string): { content: string; changed
   return { content: next, changed };
 };
 
-const applyFileFixes = (
+export const applyFileFixes = (
   source: string,
   diagnostics: Diagnostic[],
   ruleMap: Map<string, Rule>,
