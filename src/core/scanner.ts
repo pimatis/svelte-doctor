@@ -38,6 +38,12 @@ import { parseSvelteFile, parseScriptFile } from "../parser/svelte.js";
 import { highlighter, logger } from "../output/logger.js";
 import { printCategoryBreakdown, printDiagnostics, printSummary } from "../output/summary.js";
 import { spinner } from "../output/spinner.js";
+import {
+  buildFixableSummary,
+  estimateFixTime,
+  getPriorityFiles,
+  calculateRegressionRisk,
+} from "./fix-metrics.js";
 import { buildIgnoreSuggestions } from "./ignores.js";
 import { estimateBundleImpact, summarizeBundleImpact } from "./impact.js";
 
@@ -419,6 +425,10 @@ export const scan = async (
           categoryBreakdown: scoreResult.categoryBreakdown,
           elapsedMs: meta.elapsedMs,
           targetMode: meta.targetMode,
+          fixableSummary: buildFixableSummary(diagnostics, projectRules.rules),
+          estimatedFixTime: estimateFixTime(diagnostics),
+          priorityFiles: getPriorityFiles(diagnostics),
+          regressionRisk: calculateRegressionRisk(diagnostics, scoreResult),
           ...(notes.length > 0 ? { notes } : {}),
           diagnostics: diagnostics.map((d) => ({
             rule: d.rule,
