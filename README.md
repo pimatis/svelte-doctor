@@ -1,30 +1,8 @@
 <p align="center">
-  <img src="assets/logos/logo.png" width="64" height="64" alt="svelte-doctor logo">
+  <img src="assets/logos/logo.png" width="96" height="96" alt="svelte-doctor logo">
 </p>
 
 <h1 align="center">svelte-doctor</h1>
-
-<p align="center">
-  <a href="#installation">
-    <strong>Installation</strong>
-  </a>
-  &nbsp;•&nbsp;
-  <a href="#usage">
-    <strong>Usage</strong>
-  </a>
-  &nbsp;•&nbsp;
-  <a href="#commands">
-    <strong>Commands</strong>
-  </a>
-  &nbsp;•&nbsp;
-  <a href="#rules">
-    <strong>Rules</strong>
-  </a>
-  &nbsp;•&nbsp;
-  <a href="#configuration">
-    <strong>Configuration</strong>
-  </a>
-</p>
 
 <p align="center">
   <strong>Diagnose and fix performance, correctness, and architecture issues in your Svelte codebase</strong>
@@ -42,60 +20,116 @@
   </a>
 </p>
 
+---
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Quick Start](#quick-start)
+- [Installation](#installation)
+- [Commands](#commands)
+- [Configuration](#configuration)
+- [Plugins & Community Rules](#plugins--community-rules)
+- [Rules](#rules)
+- [Node.js API](#nodejs-api)
+- [License](#license)
+
+---
+
 ## Overview
 
-`svelte-doctor` is a comprehensive diagnostic tool that analyzes your Svelte projects for security vulnerabilities, performance bottlenecks, architectural issues, and Svelte 4-to-5 migration patterns.
+`svelte-doctor` is a comprehensive diagnostic CLI for Svelte and SvelteKit projects. It analyzes your codebase for security vulnerabilities, performance bottlenecks, architectural issues, and Svelte 4-to-5 migration patterns — then reports everything as a single **0–100 health score** with actionable, line-specific diagnostics.
 
-Run a single command to scan your entire codebase and receive a **0–100 health score** with actionable, line-specific diagnostics.
+Run one command to scan your entire project:
 
-### Key Features
+```bash
+svelte-doctor check
+```
 
-- **69 Source Diagnostic Rules** covering correctness, performance, security, architecture, SvelteKit reliability, runtime performance, hydration safety, and CSS specificity
-- **Build Artifact Diagnostics** for SvelteKit output chunks, duplicate libraries, oversized bundles, and inline base64 assets
+The tool is designed to be **safe by default**: deterministic fixes are opt-in, AI agents run in a controlled flow, and CI integration is a first-class citizen (SARIF, GitHub annotations, baseline suppression, and PR checks).
+
+---
+
+## Key Features
+
+### Diagnostics & Scanning
+
+- **78 source diagnostic rules + 3 build artifact diagnostics** covering correctness, performance, security, architecture, SvelteKit reliability, runtime performance, hydration safety, CSS specificity, and accessibility
+- **0–100 health score** with actionable, line-specific diagnostics on every scan
 - **TypeScript AST-backed script analysis** for lower false-positive rates on security-sensitive checks
-- **Deterministic Safe Apply** via `apply` for high-confidence fixes — covers CSS transitions, lodash/moment/icon imports, Svelte 4→5 migration, unnecessary `$state` wrappers, and `$effect` to `$derived` conversions
-- **Baseline Suppression** to keep legacy issues out of new CI failures
-- **Interactive Project Bootstrap** via `init` for config, CI, scripts, baseline, and `.gitignore` setup
-- **Managed Git Hooks** via `install-hook` for automatic pre-commit and pre-push quality gates
-- **SARIF + GitHub Annotations** for code scanning and CI integration
-- **PR Check Workflow** for branch diff analysis and GitHub PR summary comments
-- **Diff-Aware and Workspace-Aware Scans** for staged files, changed files, and monorepos
+- **Cached scans + incremental watch** for faster repeat checks and tighter feedback loops, with `watch --fix` auto-applying deterministic fixes on save
+- **Diff-aware and workspace-aware scans** for staged files, changed files, and monorepos
+- **Parallel scanning** with `--jobs` for multi-worker file scanning in large codebases, with automatic CPU detection (`--jobs 0`)
+- **Focused scan modes** — `quick` (error-only), `audit` (security-only), `compare` (regression analysis), `stats` (project metrics)
+
+### Fixing & Migration
+
+- **Deterministic Safe Apply** via `apply` — covers CSS transitions, lodash/moment/icon imports, Svelte 4→5 migration, unnecessary `$state` wrappers, and `$effect` → `$derived` conversions
+- **Svelte 4→5 AST-backed auto-migration** with modular codemods, plan/diff/interactive modes, backups, rollback, staged commits, JSON output, and `.svelte.js` / `.svelte.ts` module file support
+- **Migration progress tracking** via `migrate-status` with migrated/pending/skipped counts, category breakdown, and ETA
 - **Safe-by-default AI Fix** flow with secure temp prompts, opt-in unsafe execution, post-fix verification, and support for Cursor, Amp, Claude Code, Codex, Copilot CLI, OpenCode, Pi, Gemini CLI, Qwen Code, Aider, and Goose
-- **AI-Friendly Copy Export** via `check --copy` with clipboard-first fallback behavior
-- **Svelte 4→5 AST-backed Auto-Migration** with modular codemods, plan/diff/interactive modes, backups, rollback, staged commits, and JSON output
-- **Migration Progress Tracking** via `migrate-status` with migrated/pending/skipped counts, category breakdown, and ETA
-- **Smart Ignore Suggestions** via `suggest-ignore` with confidence scoring and generated ignore config snippets
-- **Component Dependency Graphs** via `graph` with ASCII, DOT, JSON, alias resolution, and circular dependency detection
-- **Component Where-Used Lookup** via `where-used` with line-accurate import/render locations, `$lib` and tsconfig alias resolution, dynamic import detection, render tree, scope filtering, and reverse direction
-- **Bundle Impact Preview** via `bundle-impact` for estimated savings from fixable bundle-size diagnostics
-- **Dead Store Detection** via `dead-stores` for finding `writable` stores never written anywhere, with cross-file write tracking and runes migration suggestions
-- **Test Coverage Gap Finder** via `test-gaps` for source-to-test matching and SvelteKit critical path checks
-- **Rule Authoring Kit** via `create-rule` for custom rule, test, and docs scaffolding
-- **Component Render Profiler** via `render-profile` for compile-time DOM, reactivity, hydration, and re-render cost ranking
-- **Cached Scans + Incremental Watch** for faster repeat checks and tighter feedback loops
-- **Automatic `.gitignore` Sync** for generated `.svelte-doctor/*` cache/history files while preserving tracked baseline negations
-- **Dependency Health Checks and Upgrade Planning** for ecosystem compatibility and npm registry updates
-- **Quick Health Check** via `quick` for fast error-only scans with instant score feedback
-- **Security Audit** via `audit` for focused security-only scans with a dedicated security score
-- **Ref Comparison** via `compare` for diagnosing regressions between commits, branches, and tags
-- **Project Metrics** via `stats` for rule frequency, category breakdown, and top affected files
-- **Config Inspection** via `config` and `validate` for viewing and validating the active configuration
-- **Environment Diagnosis** via `doctor` with `--fix` to auto-resolve config, gitignore, and dependency issues
-- **Generated File Cleanup** via `reset` to safely clear cache, baseline, and history
-- **Single-Command Scan + Fix** via `check --fix` for one-step diagnostic and deterministic auto-fix, with `--interactive` for step-by-step approval
-- **Zero Configuration** works out of the box
+
+### CI & Workflows
+
+- **Baseline suppression** to keep legacy issues out of new CI failures
+- **Managed Git hooks** via `install-hook` for automatic pre-commit and pre-push quality gates
+- **SARIF + GitHub annotations** for code scanning and CI integration
+- **PR Check workflow** for branch diff analysis and GitHub PR summary comments
+- **Ref comparison** via `compare` for diagnosing regressions between commits, branches, and tags
+- **Dependency health checks and upgrade planning** for ecosystem compatibility and npm registry updates
+
+### Insights & Reporting
+
+- **Component dependency graphs** via `graph` with ASCII, DOT, JSON, alias resolution, and circular dependency detection
+- **Component where-used lookup** via `where-used` with line-accurate import/render locations, `$lib` and tsconfig alias resolution, dynamic import detection, render trees, scope filtering, and reverse direction
+- **Bundle impact preview** via `bundle-impact` for estimated savings from fixable bundle-size diagnostics
+- **Dead store detection** via `dead-stores` for `writable` stores never written, with cross-file write tracking and runes migration suggestions
+- **Test coverage gap finder** via `test-gaps` for source-to-test matching and SvelteKit critical path checks
+- **Component render profiler** via `render-profile` for compile-time DOM, reactivity, hydration, and re-render cost ranking
+- **Score history and trends** via `trend` and live feedback via `watch`
+
+### Automation & DX
+
+- **Zero configuration** — works out of the box
+- **Interactive project bootstrap** via `init` for config, CI, scripts, baseline, and `.gitignore` setup
+- **Single-command scan + fix** via `check --fix`, with `--interactive` for step-by-step approval
+- **AI-friendly copy export** via `check --copy` with clipboard-first fallback behavior
+- **Smart ignore suggestions** via `suggest-ignore` with confidence scoring and generated config snippets
+- **Rule authoring kit** via `create-rule` for custom rule, test, and docs scaffolding
+- **Environment diagnosis** via `doctor` with `--fix` to auto-resolve config, gitignore, and dependency issues
+- **Automatic `.gitignore` sync** for generated `.svelte-doctor/*` cache/history files while preserving tracked baseline negations
+- **Generated file cleanup** via `reset` to safely clear cache, baseline, and history
+
+---
+
+## Quick Start
+
+Get a health score for your project in under a minute:
+
+```bash
+# 1. Install the CLI globally (or skip this and use npx / bunx)
+bun i -g svelte-doctor          # or: npm install -g svelte-doctor
+
+# 2. Scan your project
+svelte-doctor check
+
+# 3. Bootstrap config, CI, and git hooks (recommended)
+svelte-doctor init --yes --ci github-actions
+svelte-doctor install-hook --mode staged --fail-on error
+```
+
+Requires **Node.js 22.18.0+** — see [Installation](#installation) for details.
 
 ---
 
 ## Installation
 
-**Runtime Requirement:** Node.js `22.18.0+`
-
-If you are on Node 18 or Node 20, upgrade Node before installing or building `svelte-doctor`.
+**Runtime requirement:** Node.js `22.18.0+`. If you are on Node 18 or Node 20, upgrade Node before installing or building `svelte-doctor`.
 
 ### Global Installation (Recommended)
 
-Install `svelte-doctor` globally to use it from anywhere in your terminal.
+Install `svelte-doctor` globally to use it from anywhere in your terminal:
 
 ```bash
 # Using bun (recommended)
@@ -108,9 +142,9 @@ npm install -g svelte-doctor
 pnpm add -g svelte-doctor
 ```
 
-**Add to PATH (Required for first-time setup):**
+**Add to PATH (required for first-time setup):**
 
-If you get a "command not found" error after installation, add the global bin folder to your PATH:
+If you get a `command not found` error after installation, add the global bin folder to your PATH.
 
 **macOS / Linux:**
 
@@ -124,14 +158,13 @@ echo 'export PATH="$(npm config get prefix)/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-**Windows:**
+**Windows (PowerShell as Administrator):**
 
 ```powershell
-# For Bun users - run in PowerShell as Administrator
+# For Bun users
 [Environment]::SetEnvironmentVariable("Path", $env:Path + ";$env:USERPROFILE\.bun\bin", "User")
 
-# For npm users - usually automatic
-# If needed, add: %APPDATA%\npm to your PATH
+# For npm users - usually automatic; if needed, add %APPDATA%\npm to your PATH
 ```
 
 ### Local Installation
@@ -149,14 +182,15 @@ npm install -D svelte-doctor
 pnpm add -D svelte-doctor
 ```
 
-Then run with:
+Then run with `npx` / `bunx` or a package script:
 
 ```bash
 # Using npx / bunx
 npx svelte-doctor
 bunx svelte-doctor
+```
 
-# Or via package.json scripts
+```json
 "scripts": {
   "doctor": "svelte-doctor check"
 }
@@ -164,207 +198,68 @@ bunx svelte-doctor
 
 ---
 
-## Usage
-
-```bash
-# Scan your project
-svelte-doctor check
-
-# Bootstrap config, scripts, CI, gitignore, and baseline
-svelte-doctor init
-
-# Non-interactive bootstrap with GitHub Actions
-svelte-doctor init --yes --ci github-actions
-
-# Install a managed pre-commit hook for staged-file checks
-svelte-doctor install-hook --mode staged --fail-on error
-
-# Add a pre-push hook and require warning-free CI-quality scans
-svelte-doctor install-hook --pre-push --mode full --fail-on warning --min-score 80
-
-# Force a cold scan without cache
-svelte-doctor check --no-cache
-
-# Copy diagnostics into an AI-friendly prompt
-svelte-doctor check --copy
-
-# Just the score (useful for CI)
-svelte-doctor check --score
-
-# Scan only changed files
-svelte-doctor check --changed
-
-# Scan all workspaces in a monorepo
-svelte-doctor check --all-workspaces
-
-# Generate a baseline from current issues
-svelte-doctor baseline
-
-# Apply safe deterministic fixes
-svelte-doctor apply --write
-
-# Auto-fix issues with an AI agent
-svelte-doctor fix
-
-# Force Copilot CLI (runs: copilot -p "<prompt>")
-svelte-doctor fix --agent copilot
-
-# Generate a secure prompt without spawning an agent
-svelte-doctor fix --dry-run-prompt
-
-# Update the global CLI from npm
-svelte-doctor update
-
-# Find writable stores that are never written (runes migration helper)
-svelte-doctor dead-stores
-
-# Dead store report as JSON for CI
-svelte-doctor dead-stores --json
-
-# Check whether a newer version exists
-svelte-doctor update --check
-
-# Auto-migrate Svelte 4 → Svelte 5
-svelte-doctor migrate
-svelte-doctor migrate --plan
-svelte-doctor migrate --dry-run --diff
-svelte-doctor migrate --interactive
-svelte-doctor migrate --stage export-let
-svelte-doctor migrate --rollback
-
-# Track Svelte 4 → 5 migration progress
-svelte-doctor migrate-status
-svelte-doctor migrate-status --json
-
-# Suggest likely false-positive ignores
-svelte-doctor suggest-ignore
-svelte-doctor suggest-ignore --json
-
-# Preview bundle savings from fixable diagnostics
-svelte-doctor bundle-impact
-svelte-doctor bundle-impact --json
-
-# Build a component dependency graph
-svelte-doctor graph
-svelte-doctor graph --format dot
-svelte-doctor graph --format json
-
-# Find every place a component is imported or rendered
-svelte-doctor where-used Button
-svelte-doctor where-used src/lib/Button.svelte
-svelte-doctor where-used Button --json
-svelte-doctor where-used Button --tree
-svelte-doctor where-used Button --scope src/routes
-svelte-doctor where-used Button --direction uses
-
-# Find writable stores that are never written (runes migration helper)
-svelte-doctor dead-stores
-svelte-doctor dead-stores --json
-
-# Find source files without matching tests
-svelte-doctor test-gaps
-svelte-doctor test-gaps --json
-
-# Scaffold a custom rule, test, and docs
-svelte-doctor create-rule no-custom-pattern
-
-# Rank the most expensive components before runtime
-svelte-doctor render-profile
-svelte-doctor render-profile --top 10
-svelte-doctor render-profile --watch
-svelte-doctor render-profile --json
-
-# Watch for changes and show live score
-svelte-doctor watch
-
-# Show score history and trend
-svelte-doctor trend
-
-# Check dependency health
-svelte-doctor deps
-
-# Check npm registry for dependency upgrades without writing files
-svelte-doctor upgrade --dry-run
-
-# Analyze current branch against main for PR/CI feedback
-svelte-doctor pr-check --base main --head HEAD
-
-# List rules or explain one in detail
-svelte-doctor rules
-svelte-doctor explain no-unsafe-shell
-
-# Explain a rule with fix examples and project occurrences
-svelte-doctor explain no-transition-all --fix
-svelte-doctor explain no-moment --fix --json
-
-# Quick health check (errors only, fast)
-svelte-doctor quick
-svelte-doctor quick --score
-
-# Security-focused audit
-svelte-doctor audit
-svelte-doctor audit --score
-
-# Project metrics and statistics
-svelte-doctor stats
-svelte-doctor stats --top 5
-
-# Compare diagnostics between two git refs
-svelte-doctor compare --base main --head HEAD
-svelte-doctor compare --base v1.0.0 --head v2.0.0
-
-# View active configuration
-svelte-doctor config
-svelte-doctor config --json
-
-# Validate config file for errors
-svelte-doctor validate
-svelte-doctor validate --json
-
-# Check your development environment
-svelte-doctor doctor
-
-# Automatically fix detected environment issues
-svelte-doctor doctor --fix
-
-# Clean generated files
-svelte-doctor reset
-svelte-doctor reset --cache
-
-# Scan and apply deterministic fixes in one step
-svelte-doctor check --fix
-svelte-doctor check --fix --dry-run
-svelte-doctor check --fix --interactive
-svelte-doctor check --fix --fix-ai
-```
-
----
-
 ## Commands
 
-### `svelte-doctor doctor [directory] [options]`
-
-Check your development environment for common issues — inspired by `flutter doctor`. Diagnoses Node.js version, Svelte dependency presence, `svelte.config.js` configuration, `tsconfig.json` validity, `node_modules` installation state, `svelte-doctor.config.json` schema validation, `.gitignore` completeness, build artifact freshness, and scan cache status.
-
-With `--fix`, the command automatically resolves missing or misconfigured project files: creates `svelte.config.js` with `vitePreprocess`, generates `tsconfig.json` with TypeScript configuration, bootstraps `svelte-doctor.config.json`, adds the `.svelte-doctor/*` entry to `.gitignore`, injects `doctor` and `doctor:fix` scripts into `package.json`, and runs the detected package manager to install `node_modules` when missing.
-
-Each check returns one of four statuses: **pass**, **warning**, **fail**, or **na** (not applicable). The command exits with code 1 if any check fails, making it suitable for CI onboarding gates.
-
-| Option   | Description                                                         |
-| -------- | ------------------------------------------------------------------- |
-| `--json` | Output machine-readable JSON                                        |
-| `--fix`  | Automatically fix detected issues (config, gitignore, scripts, etc) |
-
-Examples:
+### Common Workflows
 
 ```bash
-svelte-doctor doctor
-svelte-doctor doctor packages/app
-svelte-doctor doctor --json
-svelte-doctor doctor --fix
+# First scan
+svelte-doctor check
+
+# Bootstrap config, CI, scripts, gitignore, and baseline
+svelte-doctor init --yes --ci github-actions
+
+# Install managed pre-commit / pre-push quality gates
+svelte-doctor install-hook --mode staged --fail-on error
+
+# Fix issues — deterministic first, then with an AI agent
+svelte-doctor check --fix
+svelte-doctor fix
+
+# Gate CI on score and warning thresholds
+svelte-doctor check --fail-on warning --min-score 80
 ```
 
-### `svelte-doctor init [directory] [options]`
+### Command Index
+
+| Command                                                               | Purpose                                                |
+| --------------------------------------------------------------------- | ------------------------------------------------------ |
+| [`init`](#svelte-doctor-init-directory-options)                       | Bootstrap config, CI, scripts, baseline, and gitignore |
+| [`install-hook`](#svelte-doctor-install-hook-directory-options)       | Install managed pre-commit / pre-push git hooks        |
+| [`pr-check`](#svelte-doctor-pr-check-directory-options)               | Analyze a branch diff for PR / CI feedback             |
+| [`doctor`](#svelte-doctor-doctor-directory-options)                   | Diagnose and fix your development environment          |
+| [`reset`](#svelte-doctor-reset-directory-options)                     | Clean generated cache, baseline, and history files     |
+| [`check`](#svelte-doctor-check-directory-options)                     | Scan the project and output a health score             |
+| [`quick`](#svelte-doctor-quick-directory-options)                     | Fast error-only scan with health score                 |
+| [`audit`](#svelte-doctor-audit-directory-options)                     | Security-focused scan with a dedicated security score  |
+| [`baseline`](#svelte-doctor-baseline-directory)                       | Create a baseline from current diagnostics             |
+| [`config`](#svelte-doctor-config-directory-options)                   | Display the active configuration                       |
+| [`validate`](#svelte-doctor-validate-directory-options)               | Validate the config file for errors                    |
+| [`suggest-ignore`](#svelte-doctor-suggest-ignore-directory-options)   | Suggest likely false-positive ignores                  |
+| [`stats`](#svelte-doctor-stats-directory-options)                     | Show project metrics and statistics                    |
+| [`compare`](#svelte-doctor-compare-directory-options)                 | Compare diagnostics between two git refs               |
+| [`watch`](#svelte-doctor-watch-directory-options)                     | Watch files and show live diagnostics                  |
+| [`trend`](#svelte-doctor-trend-directory-options)                     | Show score history and trend                           |
+| [`apply`](#svelte-doctor-apply-directory-options)                     | Apply deterministic, safe fixes                        |
+| [`fix`](#svelte-doctor-fix-directory-options)                         | Fix issues automatically with an AI agent              |
+| [`migrate`](#svelte-doctor-migrate-directory-options)                 | Auto-migrate Svelte 4 → Svelte 5                       |
+| [`migrate-status`](#svelte-doctor-migrate-status-directory-options)   | Track Svelte 4 → 5 migration progress                  |
+| [`graph`](#svelte-doctor-graph-directory-options)                     | Build a component dependency graph                     |
+| [`where-used`](#svelte-doctor-where-used-component-directory-options) | Find every place a component is used                   |
+| [`dead-stores`](#svelte-doctor-dead-stores-directory-options)         | Find writable stores that are never written            |
+| [`test-gaps`](#svelte-doctor-test-gaps-directory-options)             | Find source files without matching tests               |
+| [`bundle-impact`](#svelte-doctor-bundle-impact-directory-options)     | Preview bundle savings from fixable diagnostics        |
+| [`render-profile`](#svelte-doctor-render-profile-directory-options)   | Rank the most expensive components                     |
+| [`deps`](#svelte-doctor-deps-directory-options)                       | Check dependency health (offline)                      |
+| [`upgrade`](#svelte-doctor-upgrade-directory-options)                 | Check the npm registry for dependency upgrades         |
+| [`update`](#svelte-doctor-update-options)                             | Update the global CLI installation                     |
+| [`rules`](#svelte-doctor-rules-directory)                             | List every rule and its category                       |
+| [`explain`](#svelte-doctor-explain-rule-directory-options)            | Explain a rule in detail                               |
+| [`create-rule`](#svelte-doctor-create-rule-name-directory-options)    | Scaffold a custom rule, test, and docs                 |
+
+### Setup, CI & Hooks
+
+#### `svelte-doctor init [directory] [options]`
 
 Bootstrap an existing Svelte project for `svelte-doctor`. The command probes the project with the same discovery path used by scans, writes `svelte-doctor.config.json`, syncs `.gitignore`, injects package scripts, optionally creates a CI workflow, and can create an initial diagnostic baseline.
 
@@ -392,7 +287,7 @@ svelte-doctor init --yes --ci github-actions
 svelte-doctor init packages/app --ci gitlab-ci
 ```
 
-### `svelte-doctor install-hook [directory] [options]`
+#### `svelte-doctor install-hook [directory] [options]`
 
 Install, list, or remove managed git hooks that run `svelte-doctor check` automatically. The command detects direct git hooks, Husky (`.husky/`), and Lefthook (`.lefthook/` or `lefthook.yml`). It chooses `bunx`, `pnpm exec`, or `npx` from the lockfile and only updates hooks that contain the `svelte-doctor managed hook` signature unless `--force` is used.
 
@@ -426,7 +321,82 @@ svelte-doctor install-hook --list --json
 svelte-doctor install-hook --remove --pre-push
 ```
 
-### `svelte-doctor check [directory] [options]`
+#### `svelte-doctor pr-check [directory] [options]`
+
+Analyze a branch diff for PR or CI feedback. The command lists files changed between `--base` and `--head`, scans isolated git worktrees for both refs, builds a Markdown PR summary, and can post that summary or review to GitHub with the `gh` CLI. When posting to GitHub, it also writes a `svelte-doctor` commit status for required-check workflows.
+
+| Option                                         | Description                                               |
+| ---------------------------------------------- | --------------------------------------------------------- |
+| `--pr <number>`                                | Pull request number for comment posting                   |
+| `--base <branch>`                              | Base branch or ref (default: `main`)                      |
+| `--head <branch>`                              | Head branch or ref (default: `HEAD`)                      |
+| `--comment`                                    | Post a summary comment via GitHub CLI                     |
+| `--inline`                                     | Submit a GitHub PR review with the generated summary      |
+| `--fail-on <never\|error\|warning>`            | Control exit behavior for new issues                      |
+| `--min-score <score>`                          | Fail if PR score is below the threshold                   |
+| `--json`                                       | Output machine-readable JSON                              |
+| `--platform <github\|gitlab\|bitbucket\|auto>` | Select PR platform adapter mode                           |
+| `--token <env-var>`                            | Token environment variable name (default: `GITHUB_TOKEN`) |
+
+Examples:
+
+```bash
+svelte-doctor pr-check --base main --head HEAD
+svelte-doctor pr-check --base origin/main --head HEAD --min-score 80
+svelte-doctor pr-check --pr 42 --comment --platform github
+svelte-doctor pr-check --json
+```
+
+#### `svelte-doctor doctor [directory] [options]`
+
+Check your development environment for common issues — inspired by `flutter doctor`. Diagnoses Node.js version, Svelte dependency presence, `svelte.config.js` configuration, `tsconfig.json` validity, `node_modules` installation state, `svelte-doctor.config.json` schema validation, `.gitignore` completeness, build artifact freshness, and scan cache status.
+
+With `--fix`, the command automatically resolves missing or misconfigured project files: creates `svelte.config.js` with `vitePreprocess`, generates `tsconfig.json` with TypeScript configuration, bootstraps `svelte-doctor.config.json`, adds the `.svelte-doctor/*` entry to `.gitignore`, injects `doctor` and `doctor:fix` scripts into `package.json`, and runs the detected package manager to install `node_modules` when missing.
+
+Each check returns one of four statuses: **pass**, **warning**, **fail**, or **na** (not applicable). The command exits with code 1 if any check fails, making it suitable for CI onboarding gates.
+
+| Option   | Description                                                         |
+| -------- | ------------------------------------------------------------------- |
+| `--json` | Output machine-readable JSON                                        |
+| `--fix`  | Automatically fix detected issues (config, gitignore, scripts, etc) |
+
+Examples:
+
+```bash
+svelte-doctor doctor
+svelte-doctor doctor packages/app
+svelte-doctor doctor --json
+svelte-doctor doctor --fix
+```
+
+#### `svelte-doctor reset [directory] [options]`
+
+Clean generated files (cache, baseline, score history) inside `.svelte-doctor/`. Useful when cache gets corrupted, baseline becomes stale, or you want to start fresh without manually deleting files.
+
+By default (no flags), all generated files are removed and the `.svelte-doctor/` directory is cleaned up if empty afterwards.
+
+| Option       | Description                                                |
+| ------------ | ---------------------------------------------------------- |
+| `--all`      | Clean everything in `.svelte-doctor/` (default if no flag) |
+| `--cache`    | Clean only scan cache                                      |
+| `--baseline` | Clean only baseline                                        |
+| `--history`  | Clean only score history                                   |
+| `--dry-run`  | Show what would be deleted without deleting                |
+| `--json`     | Output machine-readable JSON                               |
+
+Examples:
+
+```bash
+svelte-doctor reset
+svelte-doctor reset --dry-run
+svelte-doctor reset --cache
+svelte-doctor reset --baseline --history
+svelte-doctor reset --all --json
+```
+
+### Scanning & Reporting
+
+#### `svelte-doctor check [directory] [options]`
 
 Scan your project for issues and output a health score. The scanner analyzes source files, Svelte compiler output, and existing SvelteKit build artifacts under `.svelte-kit/output/` when that directory exists. Every run saves the score to `.svelte-doctor/history.json`, including `--json` and `--score` modes, so your CI pipeline contributes to the trend graph. When `svelte-doctor` first creates its local `.svelte-doctor/` directory, it also ensures the scanned project's `.gitignore` contains a `.svelte-doctor/*` entry unless an equivalent `.svelte-doctor` or `.svelte-doctor/*` pattern already exists.
 
@@ -468,6 +438,7 @@ Scan your project for issues and output a health score. The scanner analyzes sou
 | `--errors-only`                           | With `--fix`: fix only error-severity diagnostics                                    |
 | `--verify-level <level>`                  | With `--fix-ai`: verification depth — `diagnostics`, `typecheck`, `tests`, or `full` |
 | `--max-files <count>`                     | With `--fix-ai`: max diagnostics in AI agent batch (default: 50)                     |
+| `--jobs <count>`                          | Number of parallel scan workers (0 = auto-detect CPU count, default: 1)              |
 
 `--copy` is designed for cases where you want to paste diagnostics into a different AI agent instead of using `svelte-doctor fix`. The default mode tries the system clipboard first, then falls back to stdout if no clipboard integration is available. If you need deterministic output for scripts, use `--copy-output file`.
 
@@ -508,6 +479,10 @@ svelte-doctor check --junit --junit-file .svelte-doctor/junit.xml
 svelte-doctor check --markdown --markdown-file .svelte-doctor/report.md
 svelte-doctor check --all-workspaces --html --junit --markdown
 
+# Parallel scanning for large codebases
+svelte-doctor check --jobs 4
+svelte-doctor check --jobs 0  # auto-detect CPU count
+
 # Scan and apply fixes in one step
 svelte-doctor check --fix
 svelte-doctor check --fix --dry-run
@@ -515,7 +490,44 @@ svelte-doctor check --fix --interactive
 svelte-doctor check --fix --fix-ai --verify-level tests
 ```
 
-### `svelte-doctor baseline [directory]`
+#### `svelte-doctor quick [directory] [options]`
+
+Fast error-only scan with health score. Runs a lint scan with cache enabled and dead-code detection disabled for maximum speed. Only error-level diagnostics are reported, making it ideal for quick pre-commit checks or rapid feedback during development.
+
+| Option    | Description                   |
+| --------- | ----------------------------- |
+| `--json`  | Output machine-readable JSON  |
+| `--score` | Output only the numeric score |
+
+Examples:
+
+```bash
+svelte-doctor quick
+svelte-doctor quick --score
+svelte-doctor quick packages/app --json
+```
+
+#### `svelte-doctor audit [directory] [options]`
+
+Security-focused scan that runs the full lint pipeline but filters results to only the Security category. Computes a dedicated security score from the filtered diagnostics. Useful for compliance checks, security reviews, and CI gates that focus exclusively on security posture.
+
+| Option    | Description                    |
+| --------- | ------------------------------ |
+| `--json`  | Output machine-readable JSON   |
+| `--score` | Output only the security score |
+
+Security rules include XSS via `{@html}`, hardcoded secrets, `eval()` usage, insecure cookies, broad CORS, shell injection, server secret leaks, dangerous redirect parameters, public env secret imports, external links without `rel="noopener"`, and raw error details exposed to clients.
+
+Examples:
+
+```bash
+svelte-doctor audit
+svelte-doctor audit --score
+svelte-doctor audit --json
+svelte-doctor audit packages/api --json
+```
+
+#### `svelte-doctor baseline [directory]`
 
 Create `.svelte-doctor/baseline.json` from the current diagnostics so future checks can suppress already-known issues with `check --baseline`.
 
@@ -527,7 +539,143 @@ svelte-doctor baseline --changed
 svelte-doctor baseline --all-workspaces
 ```
 
-### `svelte-doctor apply [directory] [options]`
+#### `svelte-doctor config [directory] [options]`
+
+Display the active `svelte-doctor` configuration. Reads from `svelte-doctor.config.json` first, then falls back to the `"svelte-doctor"` key in `package.json`. Shows all active settings including lint, dead-code, cache, watch, fix, reports, and ignore rules.
+
+| Option   | Description                    |
+| -------- | ------------------------------ |
+| `--json` | Output machine-readable JSON   |
+| `--path` | Show only the config file path |
+
+Examples:
+
+```bash
+svelte-doctor config
+svelte-doctor config --json
+svelte-doctor config --path
+```
+
+#### `svelte-doctor validate [directory] [options]`
+
+Validate the `svelte-doctor.config.json` file for syntax and schema errors. Checks for invalid JSON syntax, unknown top-level and nested keys, type mismatches (e.g., string where boolean expected), invalid enum values (e.g., `watch.deadCode`, `fix.verifyLevel`), empty report paths, and malformed ignore lists with non-string elements.
+
+| Option   | Description                  |
+| -------- | ---------------------------- |
+| `--json` | Output machine-readable JSON |
+
+Validation covers:
+
+- **Unknown keys** at all nesting levels
+- **Type checks** for `lint`, `deadCode`, `cache`, `watch`, `fix`, `reports`, `ignore`
+- **Enum validation** for `watch.deadCode` (`off`/`lazy`/`full`), `fix.verifyLevel` (`diagnostics`/`typecheck`/`tests`/`full`)
+- **Numeric bounds** for `fix.maxFiles` (must be positive)
+- **Path validation** for `reports.html`, `reports.junit`, `reports.markdown` (must be non-empty strings)
+- **Array validation** for `ignore.rules` and `ignore.files` (must be arrays of non-empty strings)
+- **Symlink detection** — refuses to validate symlinked config files
+
+Examples:
+
+```bash
+svelte-doctor validate
+svelte-doctor validate --json
+svelte-doctor validate packages/app
+```
+
+#### `svelte-doctor suggest-ignore [directory] [options]`
+
+Generate smart ignore suggestions for diagnostics that are likely false positives or low-risk noise. Each suggestion includes a confidence score, the reason it was flagged, and an ignore config snippet you can review before copying into `svelte-doctor.config.json`.
+
+This is intentionally advisory. It does not write config automatically.
+
+| Option   | Description                                              |
+| -------- | -------------------------------------------------------- |
+| `--json` | Output machine-readable JSON with suggestions and config |
+
+Examples:
+
+```bash
+svelte-doctor suggest-ignore
+svelte-doctor suggest-ignore --json
+```
+
+#### `svelte-doctor stats [directory] [options]`
+
+Show project metrics including total diagnostics by severity, category breakdown with error/warning counts and penalty weights, most frequently triggered rules, and most affected files. Useful for identifying systemic patterns and prioritizing cleanup efforts.
+
+| Option          | Description                                          |
+| --------------- | ---------------------------------------------------- |
+| `--json`        | Output machine-readable JSON                         |
+| `--top <count>` | Number of top items to show per list (default: `10`) |
+
+Examples:
+
+```bash
+svelte-doctor stats
+svelte-doctor stats --top 5
+svelte-doctor stats --json
+svelte-doctor stats --top 3 --json
+```
+
+#### `svelte-doctor compare [directory] [options]`
+
+Compare diagnostics between two git refs (commits, branches, tags). Creates temporary git worktrees for both refs, runs independent scans, and reports the score delta along with newly introduced and fixed diagnostics. The comparison is symmetric: it shows both what got worse and what improved.
+
+| Option         | Description                                          |
+| -------------- | ---------------------------------------------------- |
+| `--base <ref>` | Base git ref (commit, branch, tag) (default: `main`) |
+| `--head <ref>` | Head git ref (default: `HEAD`)                       |
+| `--json`       | Output machine-readable JSON                         |
+
+Git refs are validated for injection-safe characters. Temporary worktrees are created in the OS temp directory and cleaned up automatically, even on scan failure.
+
+Examples:
+
+```bash
+svelte-doctor compare --base main --head HEAD
+svelte-doctor compare --base v1.0.0 --head v2.0.0
+svelte-doctor compare --base HEAD~5 --head HEAD --json
+svelte-doctor compare --base origin/main --head feature/xyz
+```
+
+#### `svelte-doctor watch [directory] [options]`
+
+Watch for file changes and show live diagnostics. Runs an initial cached scan, then incrementally re-scans only changed files with 150ms debounced updates. With `--fix`, deterministic fixes are applied automatically when a file is saved — the watch loop closes the feedback gap between "see the issue" and "fix the issue".
+
+| Option                | Description                                                                              |
+| --------------------- | ---------------------------------------------------------------------------------------- |
+| `--dead-code <mode>`  | Dead-code behavior in watch mode: `off`, `lazy`, or `full`                                |
+| `--fix`               | Auto-apply deterministic fixes to saved files                                            |
+| `--fix-rules <csv>`   | With `--fix`: limit auto-fixes to comma-separated rules (implies `--fix`)                 |
+
+Auto-fix can also be enabled permanently in `svelte-doctor.config.json` — no CLI flag needed:
+
+```jsonc
+{
+  "watch": {
+    "deadCode": "lazy",
+    "fix": true // or { "rules": ["no-transition-all", "no-moment"] }
+  }
+}
+```
+
+CLI flags (`--fix`, `--fix-rules`) take precedence over config. Only deterministic, high-confidence fixes are applied — the same set as `svelte-doctor apply` — so the loop stays safe. When a fix is applied, the line shows which rules were fixed:
+
+```text
+[12:34:56] src/Component.svelte changed — Score: 82 → 78 (⚠ 2 issues)
+[12:34:59] src/Layout.svelte changed — Score: 78 → 80 (✓ fixed: no-transition-all)
+[12:35:02] src/Card.svelte changed — Score: 80 → 84 (✓ score improved +4)
+```
+
+#### `svelte-doctor trend [directory] [options]`
+
+Show score history and trend over time. Every `check` run automatically saves the score to `.svelte-doctor/history.json`. The `trend` command visualizes this data as a terminal bar chart.
+
+Monorepos can also query the latest trend snapshot per workspace with `--all-workspaces` or `--workspace <name>`.
+
+### Fixing & Migration
+
+#### `svelte-doctor apply [directory] [options]`
 
 Apply deterministic, high-confidence fixes without launching an AI agent. This command is intentionally conservative and only rewrites patterns the tool can fix safely.
 
@@ -559,31 +707,11 @@ svelte-doctor apply --dry-run
 svelte-doctor apply --write --rules no-transition-all,no-full-lodash
 ```
 
-### `svelte-doctor fix [directory] [options]`
+#### `svelte-doctor fix [directory] [options]`
 
 Detects installed AI coding agents (**Cursor**, **Amp**, **Claude Code**, **Codex**, **Copilot CLI**, **OpenCode**, **Pi**, **Gemini CLI**, **Qwen Code**, **Aider**, **Goose**) and uses the best available one to fix reported issues automatically. The flow is **safe by default**: privileged agent flags are disabled unless you explicitly pass `--unsafe-agent-exec`. Diagnostics are redacted before prompt generation, prompts are written into a secure temp directory when needed, and post-fix verification can be escalated from diagnostics-only to full typecheck/test/build smoke.
 
 Supported agent ids for `--agent` are `cursor`, `amp`, `claude`, `codex`, `copilot`, `opencode`, `pi`, `gemini`, `qwen`, `aider`, and `goose`. Install and authenticate at least one of them first, then run `svelte-doctor fix`. The command uses each agent's documented non-interactive mode where available: Amp execute mode, Claude print mode, Codex exec mode, Copilot prompt mode, OpenCode run mode, Pi print mode, Gemini headless mode, Qwen headless mode, Aider message mode, and Goose run mode.
-
-```bash
-# Use the best installed agent
-svelte-doctor fix
-
-# Force a specific agent
-svelte-doctor fix --agent amp
-svelte-doctor fix --agent claude
-svelte-doctor fix --agent codex
-svelte-doctor fix --agent copilot
-svelte-doctor fix --agent opencode
-svelte-doctor fix --agent pi
-svelte-doctor fix --agent gemini
-svelte-doctor fix --agent qwen
-svelte-doctor fix --agent aider
-svelte-doctor fix --agent goose
-
-# Preview the prompt if you want to paste it manually
-svelte-doctor fix --dry-run-prompt
-```
 
 | Option                   | Description                                                                                            |
 | ------------------------ | ------------------------------------------------------------------------------------------------------ |
@@ -610,9 +738,31 @@ Supported agents under `src/agents`:
 | `aider`    | `aider`     | `--yes --no-auto-commits --message`                            |
 | `goose`    | `goose`     | `run --no-session --quiet -t`                                  |
 
-### `svelte-doctor migrate [directory] [options]`
+Examples:
 
-Auto-migrate Svelte 4 syntax to Svelte 5. The migration engine uses a modular codemod pipeline with Svelte parser validation and TypeScript AST-backed script transforms for safer rewrites than line-only regex replacement. Template transforms remain conservative and parser-validated; complex cases are marked for review instead of being silently rewritten.
+```bash
+# Use the best installed agent
+svelte-doctor fix
+
+# Force a specific agent
+svelte-doctor fix --agent amp
+svelte-doctor fix --agent claude
+svelte-doctor fix --agent codex
+svelte-doctor fix --agent copilot
+svelte-doctor fix --agent opencode
+svelte-doctor fix --agent pi
+svelte-doctor fix --agent gemini
+svelte-doctor fix --agent qwen
+svelte-doctor fix --agent aider
+svelte-doctor fix --agent goose
+
+# Preview the prompt if you want to paste it manually
+svelte-doctor fix --dry-run-prompt
+```
+
+#### `svelte-doctor migrate [directory] [options]`
+
+Auto-migrate Svelte 4 syntax to Svelte 5. The migration engine uses a modular codemod pipeline with Svelte parser validation and TypeScript AST-backed script transforms for safer rewrites than line-only regex replacement. Template transforms remain conservative and parser-validated; complex cases are marked for review instead of being silently rewritten. Both `.svelte` component files and `.svelte.js` / `.svelte.ts` module files are scanned and migrated — module files receive reactive-statement, lifecycle, and store transforms since they can contain `$:` reactive statements and lifecycle imports that need runes migration.
 
 **Transformations:**
 
@@ -637,8 +787,8 @@ Auto-migrate Svelte 4 syntax to Svelte 5. The migration engine uses a modular co
 | `--interactive`   | Show each file diff and ask before applying (`y`, `n`, `a`, `q`)                                                                                                                                              |
 | `--plan`          | Report total files, auto-migratable files, manual-review files, and top issue categories without writing files                                                                                                |
 | `--commit-stages` | Run supported migration stages and create one git commit per stage                                                                                                                                            |
-| `--rollback`      | Restore files from `.svelte.bak` backups and remove the backup files                                                                                                                                          |
-| `--no-backup`     | Skip creating `.svelte.bak` backup files                                                                                                                                                                      |
+| `--rollback`      | Restore files from `.bak` backups and remove the backup files                                                                                                                                                |
+| `--no-backup`     | Skip creating `.bak` backup files                                                                                                                                                                            |
 | `--stage <name>`  | Run only one stage: `reactive-statement`, `export-let`, `event-dispatcher`, `slot`, `on-directive`, `lifecycle`, `let-directive`, `store`, `class-directive`, `module-export`, `snippet`, or `svelte-options` |
 | `--json`          | Output machine-readable JSON                                                                                                                                                                                  |
 
@@ -662,7 +812,7 @@ svelte-doctor migrate --stage export-let
 svelte-doctor migrate --rollback
 ```
 
-### `svelte-doctor migrate-status [directory] [options]`
+#### `svelte-doctor migrate-status [directory] [options]`
 
 Show Svelte 4 to 5 migration progress without modifying files. The command scans `.svelte` files for pending legacy patterns and reports migrated, pending, and skipped file counts, category-specific progress, and an estimated remaining time.
 
@@ -684,24 +834,9 @@ svelte-doctor migrate-status
 svelte-doctor migrate-status --json
 ```
 
-### `svelte-doctor suggest-ignore [directory] [options]`
+### Analysis & Insights
 
-Generate smart ignore suggestions for diagnostics that are likely false positives or low-risk noise. Each suggestion includes a confidence score, the reason it was flagged, and an ignore config snippet you can review before copying into `svelte-doctor.config.json`.
-
-This is intentionally advisory. It does not write config automatically.
-
-| Option   | Description                                              |
-| -------- | -------------------------------------------------------- |
-| `--json` | Output machine-readable JSON with suggestions and config |
-
-Examples:
-
-```bash
-svelte-doctor suggest-ignore
-svelte-doctor suggest-ignore --json
-```
-
-### `svelte-doctor graph [directory] [options]`
+#### `svelte-doctor graph [directory] [options]`
 
 Build a component dependency graph from local imports and rendered component tags. The graph helps answer which component imports or renders another component and highlights circular dependencies. Imports through SvelteKit's `$lib` alias and custom `tsconfig.json` `compilerOptions.paths` aliases are resolved, alongside relative and re-export specifiers.
 
@@ -717,7 +852,7 @@ svelte-doctor graph --format dot > graph.dot
 svelte-doctor graph --format json
 ```
 
-### `svelte-doctor where-used <component> [directory] [options]`
+#### `svelte-doctor where-used <component> [directory] [options]`
 
 Find every place a component is imported or rendered, with line-accurate locations and source snippets. Useful for impact analysis before refactoring or removing a component.
 
@@ -761,7 +896,7 @@ svelte-doctor where-used Button --scope src/pages
 svelte-doctor where-used Button --direction uses
 ```
 
-### `svelte-doctor dead-stores [directory] [options]`
+#### `svelte-doctor dead-stores [directory] [options]`
 
 Detect `writable` stores that are never written to anywhere in the project. A `writable` that is only ever read should be a `readable` store or migrated to Svelte 5 runes `$state`. This is especially useful when migrating a codebase from stores to runes: it identifies stores that can be safely converted to read-only values without changing any write sites.
 
@@ -786,7 +921,7 @@ svelte-doctor dead-stores packages/app
 
 Sample text output:
 
-```
+```text
   Dead store report: 1 never-written, 1 ok, 2 total
 
   Never written (candidates for readable or $state):
@@ -804,22 +939,7 @@ Sample text output:
     src/stores/counter.ts:3             counter.set()
 ```
 
-### `svelte-doctor bundle-impact [directory] [options]`
-
-Estimate potential bundle savings from fixable bundle-size diagnostics. Current estimates cover heavy imports such as `moment`, full `lodash`, and wildcard icon package imports.
-
-| Option   | Description                  |
-| -------- | ---------------------------- |
-| `--json` | Output machine-readable JSON |
-
-Examples:
-
-```bash
-svelte-doctor bundle-impact
-svelte-doctor bundle-impact --json
-```
-
-### `svelte-doctor test-gaps [directory] [options]`
+#### `svelte-doctor test-gaps [directory] [options]`
 
 Find source files that do not have a nearby matching test file. It also marks critical SvelteKit paths, such as server load modules and form actions, so CI can prioritize missing tests for production-sensitive code.
 
@@ -834,15 +954,9 @@ svelte-doctor test-gaps
 svelte-doctor test-gaps --json
 ```
 
-### `svelte-doctor create-rule <name> [directory] [options]`
+#### `svelte-doctor bundle-impact [directory] [options]`
 
-Scaffold a custom rule package with a rule template, test template, and docs template. Rule names must be kebab-case, for example `no-custom-pattern`. Existing files are never overwritten.
-
-Generated files:
-
-- `src/rules/custom/<name>/index.ts`
-- `src/rules/custom/<name>/README.md`
-- `test/<name>.test.mjs`
+Estimate potential bundle savings from fixable bundle-size diagnostics. Current estimates cover heavy imports such as `moment`, full `lodash`, and wildcard icon package imports.
 
 | Option   | Description                  |
 | -------- | ---------------------------- |
@@ -851,11 +965,11 @@ Generated files:
 Examples:
 
 ```bash
-svelte-doctor create-rule no-custom-pattern
-svelte-doctor create-rule no-custom-pattern --json
+svelte-doctor bundle-impact
+svelte-doctor bundle-impact --json
 ```
 
-### `svelte-doctor render-profile [directory] [options]`
+#### `svelte-doctor render-profile [directory] [options]`
 
 Analyze Svelte components before runtime and rank the most expensive render surfaces. The profiler parses and compiles each `.svelte` file, then combines AST and compiled-output signals into a deterministic render cost model.
 
@@ -885,30 +999,66 @@ svelte-doctor render-profile --watch
 svelte-doctor render-profile --json
 ```
 
-### `svelte-doctor watch [directory] [options]`
+### Dependencies & Updates
 
-Watch for file changes and show live diagnostics. Runs an initial cached scan, then incrementally re-scans only changed files with 150ms debounced updates.
+#### `svelte-doctor deps [directory] [options]`
 
-| Option               | Description                                                |
-| -------------------- | ---------------------------------------------------------- |
-| `--dead-code <mode>` | Dead-code behavior in watch mode: `off`, `lazy`, or `full` |
+Check dependency health for Svelte ecosystem compatibility. Fully offline — no network requests.
 
+**Checks:**
+
+- **Deprecated packages** — sapper, svelte-routing, svelte-preprocess, etc.
+- **Svelte 5 compatibility** — packages not updated for runes/snippets
+- **Risky version ranges** — `*` or `latest` dependencies
+- **Better alternatives** — axios → fetch, moment → dayjs, lodash → lodash-es
+
+| Option   | Description                  |
+| -------- | ---------------------------- |
+| `--json` | Output machine-readable JSON |
+
+#### `svelte-doctor upgrade [directory] [options]`
+
+Check project dependencies against the npm registry and prepare safe upgrade suggestions. By default, major upgrades are excluded. Use `--dry-run` to report without touching `package.json`; without `--dry-run`, accepted suggestions are written atomically and the detected package manager runs install.
+
+The upgrade plan includes current version, lockfile-resolved version when available, latest version, wanted range, dependency block, major/minor/patch classification, deprecation signal, replacement alternative when known, breaking-change flag, changelog/repository URL when available, and risk score.
+
+| Option               | Description                                                   |
+| -------------------- | ------------------------------------------------------------- |
+| `--dry-run`          | Report upgrades without writing `package.json` or lockfile    |
+| `--interactive`      | Ask before applying each package upgrade (`y`, `n`, `a`, `q`) |
+| `--major`            | Include major-version upgrades                                |
+| `--json`             | Output machine-readable JSON                                  |
+| `--all-workspaces`   | Check every package.json workspace                            |
+| `--workspace <name>` | Check one workspace by name or relative path                  |
+
+Examples:
+
+```bash
+svelte-doctor upgrade --dry-run
+svelte-doctor upgrade --dry-run --major
+svelte-doctor upgrade --json
+svelte-doctor upgrade --all-workspaces --dry-run
 ```
-[12:34:56] src/Component.svelte changed — Score: 82 → 78 (⚠ 2 issues)
-[12:34:59] src/Layout.svelte changed — Score: 78 → 80 (✓ score improved +2)
-```
 
-### `svelte-doctor trend [directory] [options]`
+#### `svelte-doctor update [options]`
 
-Show score history and trend over time. Every `check` run automatically saves the score to `.svelte-doctor/history.json`. The `trend` command visualizes this data as a terminal bar chart.
+Checks the official npm registry for the latest `svelte-doctor` version and updates the **global CLI installation**. This command does not update local project dependencies.
 
-Monorepos can also query the latest trend snapshot per workspace with `--all-workspaces` or `--workspace <name>`.
+| Option                       | Description                                         |
+| ---------------------------- | --------------------------------------------------- |
+| `--check`                    | Check for an update without installing              |
+| `--dry-run`                  | Print the global install command without running it |
+| `--manager <npm\|pnpm\|bun>` | Override package manager detection                  |
+| `--tag <latest>`             | Release tag to install (`latest` only)              |
+| `--json`                     | Output machine-readable JSON                        |
 
-### `svelte-doctor rules [directory]`
+### Rules & Plugins
+
+#### `svelte-doctor rules [directory]`
 
 List every rule with its category and whether it supports deterministic autofix. Rules are grouped by source (built-in, plugin, or local), so custom rules appear alongside the built-ins.
 
-### `svelte-doctor explain <rule> [directory] [options]`
+#### `svelte-doctor explain <rule> [directory] [options]`
 
 Explain what a rule checks, why it matters, and what the safest remediation looks like. With `--fix`, shows before/after code examples and scans the project for occurrences that would be fixed — use it as a learning and discovery tool before running `apply --write` on the entire codebase.
 
@@ -935,225 +1085,69 @@ svelte-doctor explain no-moment --fix --json
 svelte-doctor explain no-full-lodash packages/app --fix
 ```
 
-### `svelte-doctor deps [directory] [options]`
+#### `svelte-doctor create-rule <name> [directory] [options]`
 
-Check dependency health for Svelte ecosystem compatibility. Fully offline — no network requests.
+Scaffold a custom rule package with a rule template, test template, and docs template. Rule names must be kebab-case, for example `no-custom-pattern`. Existing files are never overwritten.
 
-**Checks:**
+Generated files:
 
-- **Deprecated packages** — sapper, svelte-routing, svelte-preprocess, etc.
-- **Svelte 5 compatibility** — packages not updated for runes/snippets
-- **Risky version ranges** — `*` or `latest` dependencies
-- **Better alternatives** — axios → fetch, moment → dayjs, lodash → lodash-es
-
-| Option   | Description                  |
-| -------- | ---------------------------- |
-| `--json` | Output machine-readable JSON |
-
-### `svelte-doctor upgrade [directory] [options]`
-
-Check project dependencies against the npm registry and prepare safe upgrade suggestions. By default, major upgrades are excluded. Use `--dry-run` to report without touching `package.json`; without `--dry-run`, accepted suggestions are written atomically and the detected package manager runs install.
-
-The upgrade plan includes current version, lockfile-resolved version when available, latest version, wanted range, dependency block, major/minor/patch classification, deprecation signal, replacement alternative when known, breaking-change flag, changelog/repository URL when available, and risk score.
-
-| Option               | Description                                                   |
-| -------------------- | ------------------------------------------------------------- |
-| `--dry-run`          | Report upgrades without writing `package.json` or lockfile    |
-| `--interactive`      | Ask before applying each package upgrade (`y`, `n`, `a`, `q`) |
-| `--major`            | Include major-version upgrades                                |
-| `--json`             | Output machine-readable JSON                                  |
-| `--all-workspaces`   | Check every package.json workspace                            |
-| `--workspace <name>` | Check one workspace by name or relative path                  |
-
-Examples:
-
-```bash
-svelte-doctor upgrade --dry-run
-svelte-doctor upgrade --dry-run --major
-svelte-doctor upgrade --json
-svelte-doctor upgrade --all-workspaces --dry-run
-```
-
-### `svelte-doctor pr-check [directory] [options]`
-
-Analyze a branch diff for PR or CI feedback. The command lists files changed between `--base` and `--head`, scans isolated git worktrees for both refs, builds a Markdown PR summary, and can post that summary or review to GitHub with the `gh` CLI. When posting to GitHub, it also writes a `svelte-doctor` commit status for required-check workflows.
-
-| Option                                         | Description                                               |
-| ---------------------------------------------- | --------------------------------------------------------- |
-| `--pr <number>`                                | Pull request number for comment posting                   |
-| `--base <branch>`                              | Base branch or ref (default: `main`)                      |
-| `--head <branch>`                              | Head branch or ref (default: `HEAD`)                      |
-| `--comment`                                    | Post a summary comment via GitHub CLI                     |
-| `--inline`                                     | Submit a GitHub PR review with the generated summary      |
-| `--fail-on <never\|error\|warning>`            | Control exit behavior for new issues                      |
-| `--min-score <score>`                          | Fail if PR score is below the threshold                   |
-| `--json`                                       | Output machine-readable JSON                              |
-| `--platform <github\|gitlab\|bitbucket\|auto>` | Select PR platform adapter mode                           |
-| `--token <env-var>`                            | Token environment variable name (default: `GITHUB_TOKEN`) |
-
-Examples:
-
-```bash
-svelte-doctor pr-check --base main --head HEAD
-svelte-doctor pr-check --base origin/main --head HEAD --min-score 80
-svelte-doctor pr-check --pr 42 --comment --platform github
-svelte-doctor pr-check --json
-```
-
-### `svelte-doctor update [options]`
-
-Checks the official npm registry for the latest `svelte-doctor` version and updates the **global CLI installation**. This command does not update local project dependencies.
-
-| Option           | Description                                         |
-| ---------------- | --------------------------------------------------- |
-| `--check`        | Check for an update without installing              |
-| `--dry-run`      | Print the global install command without running it |
-| `--manager <npm  | pnpm                                                | bun>` | Override package manager detection |
-| `--tag <latest>` | Release tag to install (`latest` only)              |
-| `--json`         | Output machine-readable JSON                        |
-
-### `svelte-doctor quick [directory] [options]`
-
-Fast error-only scan with health score. Runs a lint scan with cache enabled and dead-code detection disabled for maximum speed. Only error-level diagnostics are reported, making it ideal for quick pre-commit checks or rapid feedback during development.
-
-| Option    | Description                   |
-| --------- | ----------------------------- |
-| `--json`  | Output machine-readable JSON  |
-| `--score` | Output only the numeric score |
-
-Examples:
-
-```bash
-svelte-doctor quick
-svelte-doctor quick --score
-svelte-doctor quick packages/app --json
-```
-
-### `svelte-doctor compare [directory] [options]`
-
-Compare diagnostics between two git refs (commits, branches, tags). Creates temporary git worktrees for both refs, runs independent scans, and reports the score delta along with newly introduced and fixed diagnostics. The comparison is symmetric: it shows both what got worse and what improved.
-
-| Option         | Description                                          |
-| -------------- | ---------------------------------------------------- |
-| `--base <ref>` | Base git ref (commit, branch, tag) (default: `main`) |
-| `--head <ref>` | Head git ref (default: `HEAD`)                       |
-| `--json`       | Output machine-readable JSON                         |
-
-Git refs are validated for injection-safe characters. Temporary worktrees are created in the OS temp directory and cleaned up automatically, even on scan failure.
-
-Examples:
-
-```bash
-svelte-doctor compare --base main --head HEAD
-svelte-doctor compare --base v1.0.0 --head v2.0.0
-svelte-doctor compare --base HEAD~5 --head HEAD --json
-svelte-doctor compare --base origin/main --head feature/xyz
-```
-
-### `svelte-doctor stats [directory] [options]`
-
-Show project metrics including total diagnostics by severity, category breakdown with error/warning counts and penalty weights, most frequently triggered rules, and most affected files. Useful for identifying systemic patterns and prioritizing cleanup efforts.
-
-| Option          | Description                                          |
-| --------------- | ---------------------------------------------------- |
-| `--json`        | Output machine-readable JSON                         |
-| `--top <count>` | Number of top items to show per list (default: `10`) |
-
-Examples:
-
-```bash
-svelte-doctor stats
-svelte-doctor stats --top 5
-svelte-doctor stats --json
-svelte-doctor stats --top 3 --json
-```
-
-### `svelte-doctor audit [directory] [options]`
-
-Security-focused scan that runs the full lint pipeline but filters results to only the Security category. Computes a dedicated security score from the filtered diagnostics. Useful for compliance checks, security reviews, and CI gates that focus exclusively on security posture.
-
-| Option    | Description                    |
-| --------- | ------------------------------ |
-| `--json`  | Output machine-readable JSON   |
-| `--score` | Output only the security score |
-
-Security rules include XSS via `{@html}`, hardcoded secrets, `eval()` usage, insecure cookies, broad CORS, shell injection, server secret leaks, dangerous redirect parameters, public env secret imports, external links without `rel="noopener"`, and raw error details exposed to clients.
-
-Examples:
-
-```bash
-svelte-doctor audit
-svelte-doctor audit --score
-svelte-doctor audit --json
-svelte-doctor audit packages/api --json
-```
-
-### `svelte-doctor config [directory] [options]`
-
-Display the active `svelte-doctor` configuration. Reads from `svelte-doctor.config.json` first, then falls back to the `"svelte-doctor"` key in `package.json`. Shows all active settings including lint, dead-code, cache, watch, fix, reports, and ignore rules.
-
-| Option   | Description                    |
-| -------- | ------------------------------ |
-| `--json` | Output machine-readable JSON   |
-| `--path` | Show only the config file path |
-
-Examples:
-
-```bash
-svelte-doctor config
-svelte-doctor config --json
-svelte-doctor config --path
-```
-
-### `svelte-doctor validate [directory] [options]`
-
-Validate the `svelte-doctor.config.json` file for syntax and schema errors. Checks for invalid JSON syntax, unknown top-level and nested keys, type mismatches (e.g., string where boolean expected), invalid enum values (e.g., `watch.deadCode`, `fix.verifyLevel`), empty report paths, and malformed ignore lists with non-string elements.
+- `src/rules/custom/<name>/index.ts`
+- `src/rules/custom/<name>/README.md`
+- `test/<name>.test.mjs`
 
 | Option   | Description                  |
 | -------- | ---------------------------- |
 | `--json` | Output machine-readable JSON |
 
-Validation covers:
-
-- **Unknown keys** at all nesting levels
-- **Type checks** for `lint`, `deadCode`, `cache`, `watch`, `fix`, `reports`, `ignore`
-- **Enum validation** for `watch.deadCode` (`off`/`lazy`/`full`), `fix.verifyLevel` (`diagnostics`/`typecheck`/`tests`/`full`)
-- **Numeric bounds** for `fix.maxFiles` (must be positive)
-- **Path validation** for `reports.html`, `reports.junit`, `reports.markdown` (must be non-empty strings)
-- **Array validation** for `ignore.rules` and `ignore.files` (must be arrays of non-empty strings)
-- **Symlink detection** — refuses to validate symlinked config files
-
 Examples:
 
 ```bash
-svelte-doctor validate
-svelte-doctor validate --json
-svelte-doctor validate packages/app
+svelte-doctor create-rule no-custom-pattern
+svelte-doctor create-rule no-custom-pattern --json
 ```
 
-### `svelte-doctor reset [directory] [options]`
+---
 
-Clean generated files (cache, baseline, score history) inside `.svelte-doctor/`. Useful when cache gets corrupted, baseline becomes stale, or you want to start fresh without manually deleting files.
+## Configuration
 
-By default (no flags), all generated files are removed and the `.svelte-doctor/` directory is cleaned up if empty afterwards.
+Create `svelte-doctor.config.json` in your project root:
 
-| Option       | Description                                                |
-| ------------ | ---------------------------------------------------------- |
-| `--all`      | Clean everything in `.svelte-doctor/` (default if no flag) |
-| `--cache`    | Clean only scan cache                                      |
-| `--baseline` | Clean only baseline                                        |
-| `--history`  | Clean only score history                                   |
-| `--dry-run`  | Show what would be deleted without deleting                |
-| `--json`     | Output machine-readable JSON                               |
+```json
+{
+  "ignore": {
+    "rules": ["no-console"],
+    "files": ["src/legacy/"]
+  },
+  "lint": true,
+  "deadCode": true,
+  "cache": true,
+  "watch": {
+    "deadCode": "off"
+  },
+  "fix": {
+    "verifyLevel": "diagnostics",
+    "maxFiles": 50
+  },
+  "reports": {
+    "html": ".svelte-doctor/report.html",
+    "junit": ".svelte-doctor/junit.xml",
+    "markdown": ".svelte-doctor/report.md"
+  }
+}
+```
 
-Examples:
+The `reports` block writes reports on every `check` run, even without `--html`, `--junit`, or `--markdown` flags. This also applies to workspace scans, where reports are written at the root project and include all prefixed workspace diagnostics. Report writes are symlink-hardened and create parent directories when needed.
 
-```bash
-svelte-doctor reset
-svelte-doctor reset --dry-run
-svelte-doctor reset --cache
-svelte-doctor reset --baseline --history
-svelte-doctor reset --all --json
+Or add a `"svelte-doctor"` key in `package.json`:
+
+```json
+{
+  "svelte-doctor": {
+    "ignore": {
+      "rules": ["no-console"]
+    }
+  }
+}
 ```
 
 ---
@@ -1166,7 +1160,7 @@ svelte-doctor reset --all --json
 > [`docs/plugins.md`](docs/plugins.md). Read the security section before adopting third-party
 > plugins in CI.
 
-### Security model (summary)
+### Security Model (summary)
 
 - **npm plugins are not auto-executed.** A `svelte-doctor-plugin-*` dependency is only loaded
   when you list it under `plugins.include` (or opt into `plugins.autoDiscoverNpm`, which is off
@@ -1181,7 +1175,7 @@ svelte-doctor reset --all --json
   `svelte-doctor-plugin-a11y-plus/no-broken-anchor`), so plugins can never silently collide and
   every diagnostic records its exact origin.
 
-### Authoring a local rule
+### Authoring a Local Rule
 
 The fastest path is `create-rule`, which scaffolds a runtime-loadable rule under
 `svelte-doctor.rules/`. The folder is auto-discovered on every scan, so no wiring is required.
@@ -1240,7 +1234,7 @@ default-exported `Rule`, a default-exported plugin object `{ name, rules }`, a n
 Rule ids are namespaced, so two plugins can never collide. Malformed plugin rules are reported
 as warnings and never crash a scan.
 
-### Browsing the catalog
+### Browsing the Catalog
 
 `svelte-doctor` ships a central, offline catalog of community plugins. It is contributable:
 open a pull request to add an entry.
@@ -1253,7 +1247,7 @@ svelte-doctor registry add a11y-plus        # installs via your package manager 
 svelte-doctor registry add a11y-plus --dry-run
 ```
 
-### Inspecting what is loaded
+### Inspecting What Is Loaded
 
 ```bash
 svelte-doctor plugins            # plugins + local rule folders, with source/version/entry paths
@@ -1264,7 +1258,9 @@ svelte-doctor explain <rule>     # shows the namespaced id and source plugin
 
 ---
 
-## Rules (69 source rules + 3 build artifact diagnostics)
+## Rules
+
+**78 source rules + 3 build artifact diagnostics**, grouped by category.
 
 ### Correctness (10)
 
@@ -1362,13 +1358,22 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `prefer-dynamic-import`      | warning  | Large dependency appears in an eagerly loaded build chunk |
 | `no-base64-inline-asset`     | warning  | Build output contains inline base64 image data            |
 
-### Accessibility (3)
+### Accessibility (12)
 
-| Rule                   | Severity | Description                                                       |
-| ---------------------- | -------- | ----------------------------------------------------------------- |
-| `img-missing-alt`      | warning  | `<img>` without `alt` attribute                                   |
-| `click-needs-keyboard` | warning  | Click handler on non-interactive element without keyboard support |
-| `anchor-no-content`    | warning  | `<a>` without text content or `aria-label`                        |
+| Rule                    | Severity | Description                                                       |
+| ----------------------- | -------- | ----------------------------------------------------------------- |
+| `img-missing-alt`       | warning  | `<img>` without `alt` attribute                                   |
+| `click-needs-keyboard`  | warning  | Click handler on non-interactive element without keyboard support |
+| `anchor-no-content`     | warning  | `<a>` without text content or `aria-label`                        |
+| `label-without-control` | warning  | `<label>` not associated with any form control                    |
+| `input-without-label`   | warning  | Form control missing an associated `<label>`                      |
+| `duplicate-id`          | warning  | Duplicate `id` attribute value                                    |
+| `heading-order`         | warning  | Heading levels are skipped (e.g. h1 → h3)                         |
+| `aria-hidden-focus`     | warning  | Focusable element inside `aria-hidden="true"`                     |
+| `no-positive-tabindex`  | warning  | Positive `tabindex` disrupts keyboard navigation order            |
+| `media-has-caption`     | warning  | `<video>`/`<audio>` missing captions or transcript track          |
+| `html-lang`             | warning  | `<html>` element missing a `lang` attribute                       |
+| `button-has-name`       | warning  | `<button>` without text content or `aria-label`                   |
 
 ### State & Reactivity (6)
 
@@ -1385,6 +1390,8 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 
 ## Node.js API
 
+`svelte-doctor` also exposes a programmatic API for embedding scans in your own tooling:
+
 ```typescript
 import { diagnose } from "svelte-doctor/api";
 
@@ -1393,50 +1400,6 @@ const result = await diagnose("./path/to/your/svelte-project");
 console.log(result.score); // { score: 82, label: "Good" }
 console.log(result.diagnostics); // Diagnostic[]
 console.log(result.project); // ProjectInfo
-```
-
----
-
-## Configuration
-
-Create `svelte-doctor.config.json` in your project root:
-
-```json
-{
-  "ignore": {
-    "rules": ["no-console"],
-    "files": ["src/legacy/"]
-  },
-  "lint": true,
-  "deadCode": true,
-  "cache": true,
-  "watch": {
-    "deadCode": "off"
-  },
-  "fix": {
-    "verifyLevel": "diagnostics",
-    "maxFiles": 50
-  },
-  "reports": {
-    "html": ".svelte-doctor/report.html",
-    "junit": ".svelte-doctor/junit.xml",
-    "markdown": ".svelte-doctor/report.md"
-  }
-}
-```
-
-The `reports` block writes reports on every `check` run, even without `--html`, `--junit`, or `--markdown` flags. This also applies to workspace scans, where reports are written at the root project and include all prefixed workspace diagnostics. Report writes are symlink-hardened and create parent directories when needed.
-
-Or add a `"svelte-doctor"` key in `package.json`:
-
-```json
-{
-  "svelte-doctor": {
-    "ignore": {
-      "rules": ["no-console"]
-    }
-  }
-}
 ```
 
 ---

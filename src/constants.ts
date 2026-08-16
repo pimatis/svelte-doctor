@@ -19,6 +19,7 @@ const readPackageVersion = (): string => {
 export const VERSION = readPackageVersion();
 
 export const SVELTE_FILE_PATTERN = /\.svelte$/;
+export const SVELTE_MODULE_FILE_PATTERN = /\.svelte\.(js|ts)$/;
 export const TS_FILE_PATTERN = /\.(ts|js)$/;
 
 export const PERFECT_SCORE = 100;

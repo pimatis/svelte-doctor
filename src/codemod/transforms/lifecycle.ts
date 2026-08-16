@@ -2,8 +2,8 @@ import type { CodemodTransform } from "../types.js";
 import {
   createNoopResult,
   createResult,
-  getInstanceScript,
-  replaceInstanceScript,
+  getScriptForFile,
+  replaceScriptForFile,
 } from "../utils.js";
 
 const LIFECYCLE_NAMES = new Set(["onMount", "onDestroy", "beforeUpdate", "afterUpdate"]);
@@ -11,8 +11,8 @@ const LIFECYCLE_NAMES = new Set(["onMount", "onDestroy", "beforeUpdate", "afterU
 export const lifecycleTransform: CodemodTransform = {
   name: "lifecycle",
   label: "lifecycle -> $effect",
-  run(source) {
-    const script = getInstanceScript(source);
+  run(source, context) {
+    const script = getScriptForFile(source, context);
     if (!script) return createNoopResult(source);
 
     let changed = false;
@@ -39,7 +39,7 @@ export const lifecycleTransform: CodemodTransform = {
 
     if (!changed) return createNoopResult(source);
     return createResult(
-      replaceInstanceScript(source, script, nextScript),
+      replaceScriptForFile(source, script, nextScript, context),
       "lifecycle",
       sawPreEffect ? "beforeUpdate/afterUpdate -> $effect.pre" : "lifecycle -> $effect",
     );

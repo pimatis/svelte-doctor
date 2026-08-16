@@ -246,10 +246,12 @@ export const checkCommand = new Command("check")
     "diagnostics",
   )
   .option("--max-files <count>", "maximum diagnostics to include in AI agent batch", "50")
+  .option("--jobs <count>", "number of parallel scan workers (0 = auto)", "1")
   .action(async (directory: string, flags: Record<string, unknown>) => {
     try {
       const resolvedDir = path.resolve(directory);
       const minScore = parsePositiveInt(flags.minScore as string, "min score");
+      const jobs = parsePositiveInt(flags.jobs as string, "jobs");
       const selectedFiles = resolveGitSelection(
         resolvedDir,
         flags as { changed?: boolean; staged?: boolean; since?: string },
@@ -292,6 +294,7 @@ export const checkCommand = new Command("check")
             quiet: true,
             baseline: (flags.baseline as boolean) ?? false,
             targetFiles: filterSelectedFilesForDirectory(workspace.directory, selectedFiles),
+            jobs,
           });
           aggregateResults.push({
             workspace,
@@ -375,6 +378,7 @@ export const checkCommand = new Command("check")
         quiet: sarifStdoutMode || inFixMode,
         baseline: (flags.baseline as boolean) ?? false,
         targetFiles: filterSelectedFilesForDirectory(resolvedDir, selectedFiles),
+        jobs,
       });
 
       // When not in fix mode, scan() already handles all output. Early return.
@@ -478,6 +482,7 @@ export const checkCommand = new Command("check")
               quiet: true,
               baseline: (flags.baseline as boolean) ?? false,
               targetFiles: filterSelectedFilesForDirectory(resolvedDir, selectedFiles),
+              jobs,
             });
             currentDiagnostics = afterResult.diagnostics;
           }
@@ -521,6 +526,7 @@ export const checkCommand = new Command("check")
               quiet: true,
               baseline: (flags.baseline as boolean) ?? false,
               targetFiles: filterSelectedFilesForDirectory(resolvedDir, selectedFiles),
+              jobs,
             });
             currentDiagnostics = afterResult.diagnostics;
           }
@@ -556,6 +562,7 @@ export const checkCommand = new Command("check")
             quiet: true,
             baseline: (flags.baseline as boolean) ?? false,
             targetFiles: filterSelectedFilesForDirectory(resolvedDir, selectedFiles),
+            jobs,
           });
           currentDiagnostics = afterResult.diagnostics;
         }

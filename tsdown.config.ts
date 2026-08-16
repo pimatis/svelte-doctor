@@ -20,4 +20,12 @@ export default defineConfig([
     splitting: false,
     sourcemap: false,
   },
+  {
+    entry: ["src/core/scan-worker.ts"],
+    format: "esm",
+    dts: false,
+    clean: false,
+    splitting: false,
+    sourcemap: false,
+  },
 ]);

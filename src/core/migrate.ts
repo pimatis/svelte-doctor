@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import pc from "picocolors";
-import { SVELTE_FILE_PATTERN, VERSION } from "../constants.js";
+import { SVELTE_FILE_PATTERN, SVELTE_MODULE_FILE_PATTERN, VERSION } from "../constants.js";
 import { runCodemod, type CodemodStageName } from "../codemod/index.js";
 import { detectComplexity } from "../codemod/detectors/detect-complexity.js";
 import { collectFiles } from "../fs/walker.js";
@@ -185,7 +185,7 @@ const printMigrateSummary = (result: MigrateResult, options: MigrateOptions): vo
 
   if (options.backup && !options.dryRun && result.backupsCreated > 0) {
     lines.push("");
-    lines.push(`  Backup files created: ${result.backupsCreated} (.svelte.bak)`);
+    lines.push(`  Backup files created: ${result.backupsCreated} (.bak)`);
   }
 
   for (const line of lines) {
@@ -219,7 +219,7 @@ const askApplyDecision = async (
 };
 
 const rollbackBackups = (directory: string): MigrateResult => {
-  const backupFiles = collectFiles(directory, /\.svelte\.bak$/);
+  const backupFiles = collectFiles(directory, /\.(svelte|svelte\.js|svelte\.ts)\.bak$/);
   let restored = 0;
 
   for (const backupPath of backupFiles) {
@@ -264,11 +264,15 @@ const migrateOnce = async (directory: string, options: MigrateOptions): Promise<
   const discoverSpinner =
     options.json || options.diff || options.plan
       ? null
-      : spinner("Discovering .svelte files...").start();
+      : spinner("Discovering .svelte and .svelte.js/.svelte.ts files...").start();
   const svelteFiles = collectFiles(directory, SVELTE_FILE_PATTERN);
-  discoverSpinner?.succeed(`Found ${highlighter.info(String(svelteFiles.length))} .svelte files`);
+  const moduleFiles = collectFiles(directory, SVELTE_MODULE_FILE_PATTERN);
+  const allFiles = [...svelteFiles, ...moduleFiles];
+  discoverSpinner?.succeed(
+    `Found ${highlighter.info(String(svelteFiles.length))} .svelte files, ${highlighter.info(String(moduleFiles.length))} .svelte.js/.svelte.ts files`,
+  );
 
-  if (svelteFiles.length === 0) {
+  if (allFiles.length === 0) {
     return {
       filesScanned: 0,
       filesModified: 0,
@@ -279,9 +283,9 @@ const migrateOnce = async (directory: string, options: MigrateOptions): Promise<
   }
 
   if (options.plan) {
-    const plan = collectMigrationPlan(directory, svelteFiles, options.stage);
+    const plan = collectMigrationPlan(directory, allFiles, options.stage);
     return {
-      filesScanned: svelteFiles.length,
+      filesScanned: allFiles.length,
       filesModified: 0,
       totalChanges: 0,
       fileResults: [],
@@ -296,11 +300,14 @@ const migrateOnce = async (directory: string, options: MigrateOptions): Promise<
   const rl = options.interactive ? readline.createInterface({ input, output }) : null;
 
   try {
-    for (const filePath of svelteFiles) {
+    for (const filePath of allFiles) {
       const relativePath = toPosix(path.relative(directory, filePath));
       const sanitizedPath = sanitize(relativePath);
       const source = fs.readFileSync(filePath, "utf-8");
-      const codemodResult = runCodemod(source, { stage: options.stage }, filePath);
+      const fileKind: "component" | "module" = SVELTE_MODULE_FILE_PATTERN.test(filePath)
+        ? "module"
+        : "component";
+      const codemodResult = runCodemod(source, { stage: options.stage, fileKind }, filePath);
       const changes = [...new Set(codemodResult.changes.map((change) => change.label))];
       const warnings = codemodResult.warnings.map((warning) => warning.message);
 
@@ -341,7 +348,7 @@ const migrateOnce = async (directory: string, options: MigrateOptions): Promise<
   }
 
   return {
-    filesScanned: svelteFiles.length,
+    filesScanned: allFiles.length,
     filesModified: fileResults.filter((file) => file.modified).length,
     totalChanges: fileResults.reduce((sum, file) => sum + file.changes.length, 0),
     fileResults,

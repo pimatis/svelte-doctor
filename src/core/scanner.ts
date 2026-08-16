@@ -1,3 +1,4 @@
+import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { SCAN_CACHE_VERSION, VERSION } from "../constants.js";
@@ -170,6 +171,66 @@ export const runLintPass = (
   return { diagnostics, cache };
 };
 
+export const runLintPassParallel = async (
+  directory: string,
+  manifest: ProjectFileManifest,
+  projectInfo: ProjectInfo,
+  useCache: boolean,
+  existingCache: ScanCacheData | undefined,
+  _rules: Rule[],
+  warnings: string[],
+  jobs: number,
+  userConfig: SvelteDoctorConfig | null,
+): Promise<LintPassResult> => {
+  const { ScanWorkerPool } = await import("./scan-pool.js");
+
+  const cache = existingCache ?? { version: SCAN_CACHE_VERSION, files: {} };
+  const diagnostics: Diagnostic[] = [];
+  const files = [...manifest.svelteFiles, ...manifest.scriptFiles];
+  const filesToScan: string[] = [];
+
+  for (const file of files) {
+    const relativePath = toPosix(path.relative(directory, file));
+
+    if (useCache && matchesCacheEntry(cache.files[relativePath], file)) {
+      diagnostics.push(...cache.files[relativePath].diagnostics);
+      continue;
+    }
+
+    filesToScan.push(file);
+  }
+
+  if (filesToScan.length > 0) {
+    const effectiveJobs = Math.min(jobs, filesToScan.length);
+    const pool = new ScanWorkerPool(directory, projectInfo, userConfig, effectiveJobs);
+
+    try {
+      const results = await pool.scanAll(filesToScan, directory);
+
+      for (const [relativePath, { diagnostics: fileDiagnostics, signature }] of results) {
+        diagnostics.push(...fileDiagnostics);
+
+        if (signature) {
+          cache.files[relativePath] = {
+            filePath: relativePath,
+            mtimeMs: signature.mtimeMs,
+            size: signature.size,
+            diagnostics: fileDiagnostics,
+          } satisfies ScanCacheEntry;
+        }
+      }
+
+      warnings.push(...pool.getWarnings());
+    } finally {
+      await pool.terminate();
+    }
+  }
+
+  pruneCacheToManifest(cache, directory, manifest);
+
+  return { diagnostics, cache };
+};
+
 const getEffectiveOptions = (
   inputOptions: ScanOptions,
   userConfig: SvelteDoctorConfig | null,
@@ -185,7 +246,20 @@ const getEffectiveOptions = (
   baseline: inputOptions.baseline ?? false,
   failOn: inputOptions.failOn ?? "error",
   minScore: inputOptions.minScore ?? 0,
+  jobs: inputOptions.jobs ?? 1,
 });
+
+const resolveJobs = (requested: number): number => {
+  if (requested > 1) return requested;
+  if (requested === 0) {
+    const cpus =
+      typeof os.availableParallelism === "function"
+        ? os.availableParallelism()
+        : os.cpus().length;
+    return Math.max(2, cpus || 4);
+  }
+  return 1;
+};
 
 export const scan = async (
   directory: string,
@@ -294,6 +368,9 @@ export const scan = async (
     if (options.cache) completeStep(`Scan cache: ${highlighter.info("Enabled")}.`);
     if (targetMode === "subset")
       completeStep(`Target mode: ${highlighter.info("Changed files only")}.`);
+    const effectiveJobs = resolveJobs(options.jobs);
+    if (effectiveJobs > 1)
+      completeStep(`Parallel scan: ${highlighter.info(`${effectiveJobs} workers`)}.`);
     logger.break();
   }
 
@@ -304,15 +381,49 @@ export const scan = async (
     const lintSpinner = silent ? null : spinner("Running lint checks...").start();
 
     try {
-      const lintResult = runLintPass(
-        directory,
-        selectedManifest,
-        projectInfo,
-        options.cache,
-        scanCache,
-        projectRules.rules,
-        ruleRuntimeWarnings,
-      );
+      const effectiveJobs = resolveJobs(options.jobs);
+      let lintResult: LintPassResult;
+
+      if (effectiveJobs > 1) {
+        try {
+          lintResult = await runLintPassParallel(
+            directory,
+            selectedManifest,
+            projectInfo,
+            options.cache,
+            scanCache,
+            projectRules.rules,
+            ruleRuntimeWarnings,
+            effectiveJobs,
+            userConfig,
+          );
+        } catch (parallelError) {
+          if (!silent)
+            logger.dim(
+              `  ⚠ Parallel scan failed, falling back to sequential.${parallelError instanceof Error ? ` ${parallelError.message}` : ""}`,
+            );
+          lintResult = runLintPass(
+            directory,
+            selectedManifest,
+            projectInfo,
+            options.cache,
+            scanCache,
+            projectRules.rules,
+            ruleRuntimeWarnings,
+          );
+        }
+      } else {
+        lintResult = runLintPass(
+          directory,
+          selectedManifest,
+          projectInfo,
+          options.cache,
+          scanCache,
+          projectRules.rules,
+          ruleRuntimeWarnings,
+        );
+      }
+
       lintDiagnostics = lintResult.diagnostics;
       lintSpinner?.succeed("Running lint checks.");
       shouldSaveCache = options.cache;

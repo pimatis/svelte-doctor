@@ -28,7 +28,7 @@ const KNOWN_TOP_KEYS = new Set([
   "ci",
 ]);
 
-const KNOWN_WATCH_KEYS = new Set(["deadCode"]);
+const KNOWN_WATCH_KEYS = new Set(["deadCode", "fix"]);
 const KNOWN_FIX_KEYS = new Set(["verifyLevel", "maxFiles"]);
 const KNOWN_REPORTS_KEYS = new Set(["html", "junit", "markdown"]);
 const KNOWN_IGNORE_KEYS = new Set(["rules", "files"]);
@@ -76,6 +76,26 @@ const validateTypes = (raw: Record<string, unknown>): ValidationIssue[] => {
       watch.deadCode !== "full"
     ) {
       issues.push({ field: "watch.deadCode", message: 'Expected "off", "lazy", or "full"' });
+    }
+    if ("fix" in watch) {
+      const fix = watch.fix;
+      if (typeof fix === "boolean") {
+        // boolean form is valid
+      } else if (isRecord(fix)) {
+        if ("rules" in fix && !Array.isArray(fix.rules)) {
+          issues.push({ field: "watch.fix.rules", message: "Expected array of strings" });
+        } else if (
+          Array.isArray(fix.rules) &&
+          fix.rules.some((rule) => typeof rule !== "string" || rule.length === 0)
+        ) {
+          issues.push({
+            field: "watch.fix.rules",
+            message: "Expected array of non-empty strings",
+          });
+        }
+      } else {
+        issues.push({ field: "watch.fix", message: "Expected boolean or object" });
+      }
     }
   }
 

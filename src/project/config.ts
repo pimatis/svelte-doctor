@@ -21,9 +21,20 @@ const sanitizeConfig = (raw: unknown): SvelteDoctorConfig | null => {
 
   if (typeof obj.watch === "object" && obj.watch !== null) {
     const watch = obj.watch as Record<string, unknown>;
-    if (isDeadCodeMode(watch.deadCode)) {
-      result.watch = { deadCode: watch.deadCode };
+    const nextWatch: NonNullable<SvelteDoctorConfig["watch"]> = {};
+    if (isDeadCodeMode(watch.deadCode)) nextWatch.deadCode = watch.deadCode;
+
+    if (watch.fix === true) {
+      nextWatch.fix = true;
+    } else if (typeof watch.fix === "object" && watch.fix !== null) {
+      const fix = watch.fix as Record<string, unknown>;
+      const rules = Array.isArray(fix.rules)
+        ? fix.rules.filter((r): r is string => typeof r === "string" && r.length > 0)
+        : [];
+      nextWatch.fix = rules.length > 0 ? { rules } : true;
     }
+
+    if (Object.keys(nextWatch).length > 0) result.watch = nextWatch;
   }
 
   if (typeof obj.fix === "object" && obj.fix !== null) {

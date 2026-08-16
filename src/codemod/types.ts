@@ -14,6 +14,7 @@ export type CodemodStageName =
 
 export interface CodemodOptions {
   stage?: CodemodStageName;
+  fileKind?: "component" | "module";
 }
 
 export interface CodemodWarning {
@@ -34,6 +35,7 @@ export interface CodemodResult {
 
 export interface CodemodTransformContext {
   filePath?: string;
+  fileKind?: "component" | "module";
 }
 
 export interface CodemodTransform {

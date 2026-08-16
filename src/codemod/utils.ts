@@ -152,6 +152,56 @@ export const validateSvelteSyntax = (source: string): boolean => {
   }
 };
 
+export const validateModuleSyntax = (source: string): boolean => {
+  try {
+    const sf = ts.createSourceFile(
+      "module.ts",
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    const diagnostics = (sf as unknown as { parseDiagnostics: ts.Diagnostic[] }).parseDiagnostics;
+    return !diagnostics.some((d) => d.category === ts.DiagnosticCategory.Error);
+  } catch {
+    return false;
+  }
+};
+
+// treat the entire file as a script block for .svelte.js/.svelte.ts module files
+export const getModuleScript = (source: string, filePath?: string): ScriptBlock => {
+  const isTs = filePath?.endsWith(".svelte.ts") ?? false;
+  return {
+    start: 0,
+    end: source.length,
+    contentStart: 0,
+    contentEnd: source.length,
+    openTag: isTs ? `<script lang="ts">` : `<script>`,
+    content: source,
+    module: false,
+  };
+};
+
+// resolve the script block: instance script for .svelte, whole file for .svelte.js/.svelte.ts
+export const getScriptForFile = (
+  source: string,
+  context: { filePath?: string; fileKind?: "component" | "module" },
+): ScriptBlock | null => {
+  if (context.fileKind === "module") return getModuleScript(source, context.filePath);
+  return getInstanceScript(source);
+};
+
+// replace script content: in-place for .svelte, full replacement for .svelte.js/.svelte.ts
+export const replaceScriptForFile = (
+  source: string,
+  script: ScriptBlock,
+  nextContent: string,
+  context: { fileKind?: "component" | "module" },
+): string => {
+  if (context.fileKind === "module") return nextContent;
+  return replaceInstanceScript(source, script, nextContent);
+};
+
 export const normalizeLineEnd = (source: string, text: string): string => {
   if (source.includes("\r\n")) return text.replace(/\n/g, "\r\n");
   return text;

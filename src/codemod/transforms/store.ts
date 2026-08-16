@@ -1,11 +1,11 @@
 import type { CodemodTransform } from "../types.js";
-import { createNoopResult, getInstanceScript } from "../utils.js";
+import { createNoopResult, getScriptForFile } from "../utils.js";
 
 export const storeTransform: CodemodTransform = {
   name: "store",
   label: "stores -> runes review",
-  run(source) {
-    const script = getInstanceScript(source);
+  run(source, context) {
+    const script = getScriptForFile(source, context);
     if (!script) return createNoopResult(source);
     if (!/from\s+["']svelte\/store["']/.test(script.content)) return createNoopResult(source);
 

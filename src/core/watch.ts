@@ -1,7 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { IGNORED_DIRS } from "../constants.js";
-import type { DeadCodeMode, Diagnostic, ProjectInfo, SvelteDoctorConfig } from "../types.js";
+import type {
+  Diagnostic,
+  ProjectInfo,
+  Rule,
+  SvelteDoctorConfig,
+  WatchFixOptions,
+  WatchOptions,
+} from "../types.js";
 import { calculateScore } from "./score.js";
 import { filterIgnored } from "./filter.js";
 import { runDeadCodeAnalysis } from "./deadcode.js";
@@ -13,6 +20,8 @@ import { discoverProject } from "../project/discover.js";
 import { loadConfig } from "../project/config.js";
 import { highlighter, logger, sanitize } from "../output/logger.js";
 import { runLintPass, scanSingleFile } from "./scanner.js";
+import { applyFileFixes } from "./apply.js";
+import { writeFileAtomicSafe } from "../fs/safe-write.js";
 import { loadProjectRules } from "../plugins/loader.js";
 
 const DEBOUNCE_MS = 150;
@@ -67,20 +76,35 @@ const colorScore = (score: number): string => {
   return highlighter.error(String(score));
 };
 
-export const watch = async (
-  directory: string,
-  deadCodeMode: DeadCodeMode = "off",
-): Promise<void> => {
+export const watch = async (directory: string, options: WatchOptions = {}): Promise<void> => {
   validateDirectory(directory);
 
+  const cliDeadCode = options.deadCode ?? "off";
+  const cliFix = options.fix ?? null;
   const diagnosticsMap = new Map<string, Diagnostic[]>();
   let deadCodeDiagnostics: Diagnostic[] = [];
   const runeFiles = new Set<string>();
   const scanCache = loadScanCache(directory);
   let userConfig = loadConfig(directory);
   let effectiveDeadCodeMode =
-    deadCodeMode === "off" ? (userConfig?.watch?.deadCode ?? "off") : deadCodeMode;
+    cliDeadCode === "off" ? (userConfig?.watch?.deadCode ?? "off") : cliDeadCode;
   let projectRules = await loadProjectRules(directory, userConfig);
+
+  // CLI flags win over config; config only applies when no CLI flag is passed
+  const resolveFixOptions = (): WatchFixOptions => {
+    if (cliFix) return cliFix;
+    const configFix = userConfig?.watch?.fix;
+    if (configFix === true) return { enabled: true };
+    if (configFix && typeof configFix === "object") {
+      return { enabled: true, rules: configFix.rules };
+    }
+    return { enabled: false };
+  };
+
+  let fixOptions = resolveFixOptions();
+  let ruleMap = new Map<string, Rule>(
+    projectRules.rules.map((rule) => [rule.id ?? rule.name, rule]),
+  );
 
   const syncRuneFiles = (manifest: ReturnType<typeof collectProjectFiles>): boolean => {
     runeFiles.clear();
@@ -159,6 +183,9 @@ export const watch = async (
   );
   logger.break();
   logger.dim(`  Dead code mode: ${highlighter.info(effectiveDeadCodeMode)}`);
+  logger.dim(
+    `  Auto-fix: ${fixOptions.enabled ? highlighter.success("enabled") : highlighter.dim("disabled")}${fixOptions.enabled && fixOptions.rules?.length ? highlighter.dim(` (rules: ${fixOptions.rules.join(", ")})`) : ""}`,
+  );
   logger.dim(`  Watching for changes... Press ${highlighter.bold("Ctrl+C")} to stop.`);
   logger.break();
 
@@ -216,8 +243,12 @@ export const watch = async (
           if (isProjectInfoFile(posixPath)) {
             userConfig = loadConfig(directory);
             effectiveDeadCodeMode =
-              deadCodeMode === "off" ? (userConfig?.watch?.deadCode ?? "off") : deadCodeMode;
+              cliDeadCode === "off" ? (userConfig?.watch?.deadCode ?? "off") : cliDeadCode;
+            fixOptions = resolveFixOptions();
             projectRules = await loadProjectRules(directory, userConfig);
+            ruleMap = new Map<string, Rule>(
+              projectRules.rules.map((rule) => [rule.id ?? rule.name, rule]),
+            );
             projectInfo = createProjectInfo();
 
             if (!projectInfo.svelteVersion) {
@@ -257,7 +288,44 @@ export const watch = async (
             }
           }
 
-          const fileDiags = scanSingleFile(fullPath, relativeToRoot, projectInfo);
+          let fileDiags = scanSingleFile(fullPath, relativeToRoot, projectInfo);
+          let fixedRules: string[] = [];
+
+          // auto-fix deterministic issues on save (watch --fix / watch.fix config)
+          if (fixOptions.enabled) {
+            const requested = fixOptions.rules ? new Set(fixOptions.rules) : null;
+            const fixable = fileDiags.filter((diagnostic) => {
+              if (diagnostic.fixable !== true) return false;
+              if (!requested) return true;
+              const rule = ruleMap.get(diagnostic.rule);
+              return requested.has(diagnostic.rule) || (rule ? requested.has(rule.name) : false);
+            });
+
+            if (fixable.length > 0) {
+              try {
+                const source = fs.readFileSync(fullPath, "utf-8");
+                const result = applyFileFixes(source, fixable, ruleMap);
+                if (result.content !== source) {
+                  writeFileAtomicSafe(directory, fullPath, result.content, {
+                    mode: 0o644,
+                    pathMessage: "Watch fix target must stay inside project root.",
+                    symlinkFileMessage:
+                      "Refusing to write watch fix target through symlinked file.",
+                    symlinkDirectoryMessage:
+                      "Refusing to write watch fix target through symlinked directory.",
+                  });
+                  fixedRules = result.appliedRules;
+                  // re-scan the fixed content so the report reflects the saved file
+                  fileDiags = scanSingleFile(fullPath, relativeToRoot, projectInfo);
+                }
+              } catch (error) {
+                if (error instanceof Error) {
+                  logger.error(`  Error applying fixes to ${safePath}: ${error.message}`);
+                }
+              }
+            }
+          }
+
           diagnosticsMap.set(posixPath, fileDiags);
 
           if (effectiveDeadCodeMode === "full") {
@@ -267,12 +335,15 @@ export const watch = async (
           const allDiags = getAllDiagnostics(diagnosticsMap, userConfig, deadCodeDiagnostics);
           const newScore = calculateScore(allDiags);
           const diff = newScore.score - previousScore;
-          const currentFileDiags = diagnosticsMap.get(posixPath) ?? [];
+          const currentFileDiags = fileDiags;
 
           let scoreChange = highlighter.dim(`${previousScore} → ${newScore.score}`);
           let statusMsg = highlighter.dim(" (no change)");
 
-          if (diff > 0) {
+          if (fixedRules.length > 0) {
+            scoreChange = highlighter.success(`${previousScore} → ${newScore.score}`);
+            statusMsg = highlighter.success(` (✓ fixed: ${fixedRules.join(", ")})`);
+          } else if (diff > 0) {
             scoreChange = highlighter.success(`${previousScore} → ${newScore.score}`);
             statusMsg = highlighter.success(` (✓ score improved +${diff})`);
           }

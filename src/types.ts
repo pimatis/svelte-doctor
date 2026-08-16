@@ -191,6 +191,7 @@ export interface ScanOptions {
   baseline?: boolean;
   failOn?: FailOn;
   minScore?: number;
+  jobs?: number;
 }
 
 export interface PackageJson {
@@ -213,6 +214,8 @@ export interface SvelteDoctorConfig {
   cache?: boolean;
   watch?: {
     deadCode?: DeadCodeMode;
+    // auto-apply deterministic fixes when a file is saved in watch mode
+    fix?: boolean | { rules?: string[] };
   };
   fix?: {
     verifyLevel?: VerificationLevel;
@@ -367,6 +370,18 @@ export interface ApplyOptions {
   rules?: string[];
   write?: boolean;
   targetFiles?: string[];
+}
+
+export interface WatchFixOptions {
+  // auto-apply deterministic fixes to saved files
+  enabled: boolean;
+  // restrict auto-fixes to specific rules (rule names or namespaced ids)
+  rules?: string[];
+}
+
+export interface WatchOptions {
+  deadCode?: DeadCodeMode;
+  fix?: WatchFixOptions;
 }
 
 export interface ApplyFileChange {

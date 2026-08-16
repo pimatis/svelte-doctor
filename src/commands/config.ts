@@ -39,7 +39,15 @@ export const configCommand = new Command("config")
         logger.log(`  deadCode: ${highlighter.info(String(config.deadCode))}`);
       if (config.cache !== undefined)
         logger.log(`  cache: ${highlighter.info(String(config.cache))}`);
-      if (config.watch) logger.log(`  watch.deadCode: ${infoSafe(config.watch.deadCode ?? "off")}`);
+      if (config.watch) {
+        logger.log(`  watch.deadCode: ${infoSafe(config.watch.deadCode ?? "off")}`);
+        if (config.watch.fix === true) logger.log("  watch.fix: enabled");
+        else if (config.watch.fix && typeof config.watch.fix === "object") {
+          logger.log(
+            `  watch.fix: enabled${config.watch.fix.rules?.length ? ` (rules: ${warnSafe(config.watch.fix.rules.join(", "))})` : ""}`,
+          );
+        }
+      }
       if (config.fix) {
         if (config.fix.verifyLevel)
           logger.log(`  fix.verifyLevel: ${infoSafe(config.fix.verifyLevel)}`);

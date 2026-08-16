@@ -4,9 +4,9 @@ import {
   applyTextEdits,
   createNoopResult,
   createResult,
-  getInstanceScript,
+  getScriptForFile,
   parseScript,
-  replaceInstanceScript,
+  replaceScriptForFile,
 } from "../utils.js";
 
 const isDeclared = (ast: ts.SourceFile, name: string): boolean => {
@@ -84,8 +84,8 @@ const transformStatement = (statement: ts.LabeledStatement, ast: ts.SourceFile):
 export const reactiveStatementTransform: CodemodTransform = {
   name: "reactive-statement",
   label: "$: -> $derived/$effect",
-  run(source) {
-    const script = getInstanceScript(source);
+  run(source, context) {
+    const script = getScriptForFile(source, context);
     if (!script) return createNoopResult(source);
 
     const ast = parseScript(script);
@@ -102,7 +102,7 @@ export const reactiveStatementTransform: CodemodTransform = {
 
     const nextScript = applyTextEdits(script.content, edits);
     return createResult(
-      replaceInstanceScript(source, script, nextScript),
+      replaceScriptForFile(source, script, nextScript, context),
       "reactive-statement",
       "$: -> $derived/$effect",
     );
