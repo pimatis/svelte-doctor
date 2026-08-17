@@ -1260,7 +1260,7 @@ svelte-doctor explain <rule>     # shows the namespaced id and source plugin
 
 ## Rules
 
-**78 source rules + 3 build artifact diagnostics**, grouped by category.
+**82 source rules + 3 build artifact diagnostics**, grouped by category.
 
 ### Correctness (10)
 
@@ -1385,6 +1385,17 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `no-unwritten-store`                | warning  | `writable` store that is never written via `.set()`, `.update()` or `$store =` |
 | `no-mixed-runes-and-stores`         | warning  | Both `$state`/`$derived` and `svelte/store` used in the same component         |
 | `no-unnecessary-derived-dependency` | warning  | `$derived()` reads no reactive state — should be a plain `const`               |
+
+### Deep Runes (4)
+
+Rules in this category catch subtle Svelte 5 runes anti-patterns that degrade reactivity correctness or runtime performance. They operate on both `.svelte` files and `.svelte.js`/`.svelte.ts` module files using TypeScript AST.
+
+| Rule                          | Severity | Description                                                              |
+| ----------------------------- | -------- | ------------------------------------------------------------------------ |
+| `no-untrack-misuse`           | warning  | Reactive read inside `untrack()` breaks reactivity tracking (fixable)    |
+| `no-unnecessary-snapshot`     | warning  | `$state.snapshot()` creates an unnecessary deep copy where spread works (fixable) |
+| `no-deep-derived-chain`       | warning  | Chain of 3+ `$derived` values reading each other causes cascading recomputation |
+| `no-expensive-props-destructure` | warning | `$props()` destructuring with default objects/arrays allocates on every render |
 
 ---
 

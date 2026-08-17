@@ -7,6 +7,7 @@ import { sveltekitRules } from "./sveltekit/index.js";
 import { bundleRules } from "./bundle/index.js";
 import { accessibilityRules } from "./accessibility/index.js";
 import { reactivityRules } from "./reactivity/index.js";
+import { deepRunesRules } from "./deep-runes/index.js";
 
 const ruleRegistry = {
   Correctness: correctnessRules,
@@ -16,7 +17,7 @@ const ruleRegistry = {
   SvelteKit: sveltekitRules,
   "Bundle Size": bundleRules,
   Accessibility: accessibilityRules,
-  "State & Reactivity": reactivityRules,
+  "State & Reactivity": [...reactivityRules, ...deepRunesRules],
 } satisfies Record<string, Rule[]>;
 
 // All rules combined so the scanner iterates this against every file.

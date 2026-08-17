@@ -1,5 +1,6 @@
 import type { Diagnostic, Rule, RuleContext, ScriptAstContext } from "../../types.js";
 import { getLineAndColumn, isIdentifierNamed, ts, walkSourceFile } from "../../parser/script.js";
+import { isRuneCall } from "../../parser/runes.js";
 import { fixNoEffectForDerived } from "../../core/fixers.js";
 
 // builds a line-index → boolean map in a single O(n) pass
@@ -256,17 +257,6 @@ const extractSelectors = (css: string): Array<{ selector: string; index: number 
 
 const stripCssComments = (css: string): string =>
   css.replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, " "));
-
-const isRuneCall = (node: ts.CallExpression, runeName: "$effect" | "$derived"): boolean => {
-  if (ts.isIdentifier(node.expression) && node.expression.text === runeName) return true;
-
-  if (runeName === "$derived" && ts.isPropertyAccessExpression(node.expression)) {
-    if (!isIdentifierNamed(node.expression.expression, "$derived")) return false;
-    return node.expression.name.text === "by";
-  }
-
-  return false;
-};
 
 const getFunctionBody = (node: ts.Node | undefined): ts.ConciseBody | ts.Block | undefined => {
   if (!node) return undefined;
