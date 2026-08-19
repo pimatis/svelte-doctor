@@ -115,6 +115,156 @@ const postGithubReview = (directory: string, pr: string | undefined, body: strin
   });
 };
 
+const getRemoteRepository = (directory: string): string =>
+  git(directory, ["config", "--get", "remote.origin.url"])
+    .replace(/\.git$/, "")
+    .replace(/^git@[^:]+:/, "")
+    .replace(/^https?:\/\/[^/]+\//, "");
+
+const getEnvToken = (platform: "gitlab" | "bitbucket", tokenEnv?: string): string => {
+  const envName = tokenEnv ?? (platform === "gitlab" ? "GITLAB_TOKEN" : "BITBUCKET_TOKEN");
+  const token = process.env[envName];
+  if (!token) throw new Error(`Missing ${envName} for ${platform} PR integration.`);
+  return token;
+};
+
+const requestJson = async (
+  url: string,
+  init: RequestInit,
+  platform: string,
+): Promise<void> => {
+  const response = await fetch(url, init);
+  if (response.ok) return;
+  const detail = (await response.text()).trim();
+  throw new Error(`${platform} API request failed (${response.status})${detail ? `: ${detail}` : "."}`);
+};
+
+const getGitlabProject = (directory: string): string =>
+  process.env.CI_PROJECT_ID ?? getRemoteRepository(directory);
+
+const postGitlab = async (
+  directory: string,
+  pr: string | undefined,
+  baseSha: string,
+  headSha: string,
+  state: "success" | "failure",
+  description: string,
+  body: string,
+  inline: boolean,
+  inlineDiagnostic: Diagnostic | undefined,
+  tokenEnv?: string,
+): Promise<void> => {
+  const safePr = validatePullRequestNumber(pr);
+  if (!safePr) return;
+  const token = getEnvToken("gitlab", tokenEnv);
+  const api = process.env.SVELTE_DOCTOR_GITLAB_API_URL ?? "https://gitlab.com/api/v4";
+  const project = encodeURIComponent(getGitlabProject(directory));
+  const mergeRequest = `${api}/projects/${project}/merge_requests/${safePr}`;
+  await requestJson(
+    inline
+      ? `${mergeRequest}/discussions`
+      : `${mergeRequest}/notes`,
+    {
+      method: "POST",
+      headers: { "PRIVATE-TOKEN": token, "Content-Type": "application/json" },
+      body: JSON.stringify(
+        inline
+          ? {
+              body,
+              position: {
+                position_type: "text",
+                base_sha: baseSha,
+                start_sha: baseSha,
+                head_sha: headSha,
+                new_path: inlineDiagnostic?.filePath ?? "",
+                new_line: inlineDiagnostic?.line ?? 1,
+              },
+            }
+          : { body },
+      ),
+    },
+    "GitLab",
+  );
+  await requestJson(
+    `${api}/projects/${project}/statuses/${headSha}`,
+    {
+      method: "POST",
+      headers: { "PRIVATE-TOKEN": token, "Content-Type": "application/json" },
+      body: JSON.stringify({ state, name: "svelte-doctor", description }),
+    },
+    "GitLab",
+  );
+};
+
+const getBitbucketRepository = (directory: string): { workspace: string; repo: string } => {
+  const remote = getRemoteRepository(directory);
+  const [workspace, repo] = remote.split("/");
+  if (!workspace || !repo) throw new Error("Cannot determine Bitbucket workspace and repository.");
+  return {
+    workspace: process.env.BITBUCKET_WORKSPACE ?? workspace,
+    repo: process.env.BITBUCKET_REPO_SLUG ?? repo,
+  };
+};
+
+const postBitbucket = async (
+  directory: string,
+  pr: string | undefined,
+  headSha: string,
+  state: "success" | "failure",
+  description: string,
+  body: string,
+  inline: boolean,
+  inlineDiagnostic: Diagnostic | undefined,
+  tokenEnv?: string,
+): Promise<void> => {
+  const safePr = validatePullRequestNumber(pr);
+  if (!safePr) return;
+  const token = getEnvToken("bitbucket", tokenEnv);
+  const { workspace, repo } = getBitbucketRepository(directory);
+  const api = process.env.SVELTE_DOCTOR_BITBUCKET_API_URL ?? "https://api.bitbucket.org/2.0";
+  const repository = `${api}/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repo)}`;
+  await requestJson(
+    `${repository}/pullrequests/${safePr}/comments`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: { raw: body },
+        ...(inline && inlineDiagnostic
+          ? {
+              inline: {
+                to: inlineDiagnostic.line,
+                path: inlineDiagnostic.filePath,
+              },
+            }
+          : {}),
+      }),
+    },
+    "Bitbucket",
+  );
+  await requestJson(
+    `${repository}/commits/${headSha}/statuses/build`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        key: "svelte-doctor",
+        name: "svelte-doctor",
+        state: state === "success" ? "SUCCESSFUL" : "FAILED",
+        description,
+      }),
+    },
+    "Bitbucket",
+  );
+};
+
+const resolvePrPlatform = (platform: PrCheckOptions["platform"]): "github" | "gitlab" | "bitbucket" => {
+  if (platform && platform !== "auto") return platform;
+  if (process.env.GITLAB_CI || process.env.CI_MERGE_REQUEST_IID) return "gitlab";
+  if (process.env.BITBUCKET_BUILD_NUMBER || process.env.BITBUCKET_PR_ID) return "bitbucket";
+  return "github";
+};
+
 const setGithubStatus = (
   directory: string,
   headSha: string,
@@ -208,22 +358,41 @@ export const runPrCheck = async (directory: string, options: PrCheckOptions): Pr
     logger.log(markdown);
     logger.break();
   }
-  if (
-    options.comment &&
-    (options.platform === "github" || options.platform === "auto" || !options.platform)
-  )
-    postGithubComment(resolvedDir, options.pr, markdown);
-  if (
-    options.inline &&
-    (options.platform === "github" || options.platform === "auto" || !options.platform)
-  )
-    postGithubReview(resolvedDir, options.pr, markdown);
-  if (options.comment || options.inline)
-    setGithubStatus(
-      resolvedDir,
-      headSha,
-      failed ? "failure" : "success",
-      failed ? "svelte-doctor found PR issues" : "svelte-doctor PR check passed",
-    );
+  const platform = resolvePrPlatform(options.platform);
+  const description = failed ? "svelte-doctor found PR issues" : "svelte-doctor PR check passed";
+  if (options.comment || options.inline) {
+    if (platform === "github") {
+      if (options.comment) postGithubComment(resolvedDir, options.pr, markdown);
+      if (options.inline) postGithubReview(resolvedDir, options.pr, markdown);
+      setGithubStatus(resolvedDir, headSha, failed ? "failure" : "success", description);
+    }
+    if (platform === "gitlab") {
+      await postGitlab(
+        resolvedDir,
+        options.pr ?? process.env.CI_MERGE_REQUEST_IID,
+        git(resolvedDir, ["rev-parse", `${baseRef}^{commit}`]),
+        headSha,
+        failed ? "failure" : "success",
+        description,
+        markdown,
+        options.inline === true,
+        diff.newIssues[0],
+        options.token,
+      );
+    }
+    if (platform === "bitbucket") {
+      await postBitbucket(
+        resolvedDir,
+        options.pr ?? process.env.BITBUCKET_PR_ID,
+        headSha,
+        failed ? "failure" : "success",
+        description,
+        markdown,
+        options.inline === true,
+        diff.newIssues[0],
+        options.token,
+      );
+    }
+  }
   if (failed) process.exitCode = 1;
 };

@@ -9,13 +9,13 @@ export const prCheckCommand = new Command("pr-check")
   .option("--pr <number>", "pull request number")
   .option("--base <branch>", "base branch", "main")
   .option("--head <branch>", "head branch", "HEAD")
-  .option("--comment", "post summary comment via GitHub CLI")
-  .option("--inline", "reserved for inline review comments")
+  .option("--comment", "post a summary comment to the selected PR platform")
+  .option("--inline", "post an inline review comment to the selected PR platform")
   .option("--fail-on <mode>", "exit policy: never, error, or warning", parseFailOn, "error")
   .option("--min-score <score>", "fail when PR score drops below this threshold", "0")
   .option("--json", "output machine-readable JSON")
   .option("--platform <type>", "github, gitlab, bitbucket, or auto", parsePrPlatform, "auto")
-  .option("--token <env-var>", "token environment variable name", "GITHUB_TOKEN")
+  .option("--token <env-var>", "token environment variable name")
   .action(async (directory: string, flags: Record<string, unknown>) => {
     try {
       await runPrCheck(directory, {

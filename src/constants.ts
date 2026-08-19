@@ -53,4 +53,5 @@ export const IGNORED_DIRS = new Set([
   ".git",
   ".worktrees",
   "static",
+  ".svelte-doctor",
 ]);

@@ -323,20 +323,20 @@ svelte-doctor install-hook --remove --pre-push
 
 #### `svelte-doctor pr-check [directory] [options]`
 
-Analyze a branch diff for PR or CI feedback. The command lists files changed between `--base` and `--head`, scans isolated git worktrees for both refs, builds a Markdown PR summary, and can post that summary or review to GitHub with the `gh` CLI. When posting to GitHub, it also writes a `svelte-doctor` commit status for required-check workflows.
+Analyze a branch diff for PR or CI feedback. The command lists files changed between `--base` and `--head`, scans isolated git worktrees for both refs, builds a Markdown PR summary, and can post it to GitHub, GitLab, or Bitbucket. GitHub uses the `gh` CLI; GitLab and Bitbucket use their APIs and write a `svelte-doctor` commit status for required-check workflows.
 
 | Option                                         | Description                                               |
 | ---------------------------------------------- | --------------------------------------------------------- |
 | `--pr <number>`                                | Pull request number for comment posting                   |
 | `--base <branch>`                              | Base branch or ref (default: `main`)                      |
 | `--head <branch>`                              | Head branch or ref (default: `HEAD`)                      |
-| `--comment`                                    | Post a summary comment via GitHub CLI                     |
-| `--inline`                                     | Submit a GitHub PR review with the generated summary      |
+| `--comment`                                    | Post a summary comment to the selected PR platform        |
+| `--inline`                                     | Submit an inline review comment to the selected platform  |
 | `--fail-on <never\|error\|warning>`            | Control exit behavior for new issues                      |
 | `--min-score <score>`                          | Fail if PR score is below the threshold                   |
 | `--json`                                       | Output machine-readable JSON                              |
 | `--platform <github\|gitlab\|bitbucket\|auto>` | Select PR platform adapter mode                           |
-| `--token <env-var>`                            | Token environment variable name (default: `GITHUB_TOKEN`) |
+| `--token <env-var>`                            | Token environment variable name                          |
 
 Examples:
 
