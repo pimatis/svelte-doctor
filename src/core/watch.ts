@@ -81,7 +81,10 @@ export const watch = async (directory: string, options: WatchOptions = {}): Prom
 
   const cliDeadCode = options.deadCode ?? "off";
   const cliFix = options.fix ?? null;
+  let incremental = options.incremental ?? false;
+  const targetFiles = new Set((options.targetFiles ?? []).map((file) => path.resolve(file)));
   const diagnosticsMap = new Map<string, Diagnostic[]>();
+  const knownFiles = new Set<string>();
   let deadCodeDiagnostics: Diagnostic[] = [];
   const runeFiles = new Set<string>();
   const scanCache = loadScanCache(directory);
@@ -125,6 +128,9 @@ export const watch = async (directory: string, options: WatchOptions = {}): Prom
 
   const createProjectInfo = (): ProjectInfo => {
     const manifest = collectProjectFiles(directory);
+    for (const file of [...manifest.svelteFiles, ...manifest.scriptFiles]) {
+      knownFiles.add(path.resolve(file));
+    }
     const usesRunes = syncRuneFiles(manifest);
     return discoverProject(directory, manifest, { usesRunes });
   };
@@ -146,9 +152,25 @@ export const watch = async (directory: string, options: WatchOptions = {}): Prom
 
   const refreshManifestAndLint = (): void => {
     diagnosticsMap.clear();
-    const manifest = collectProjectFiles(directory);
-    const usesRunes = syncRuneFiles(manifest);
-    projectInfo = discoverProject(directory, manifest, { usesRunes });
+    const fullManifest = collectProjectFiles(directory);
+    knownFiles.clear();
+    for (const file of [...fullManifest.svelteFiles, ...fullManifest.scriptFiles]) {
+      knownFiles.add(path.resolve(file));
+    }
+    const manifest = incremental
+      ? {
+          svelteFiles: fullManifest.svelteFiles.filter((file) =>
+            targetFiles.has(path.resolve(file)),
+          ),
+          scriptFiles: fullManifest.scriptFiles.filter((file) =>
+            targetFiles.has(path.resolve(file)),
+          ),
+          sourceFileCount: 0,
+        }
+      : fullManifest;
+    manifest.sourceFileCount = manifest.svelteFiles.length + manifest.scriptFiles.length;
+    const usesRunes = syncRuneFiles(fullManifest);
+    projectInfo = discoverProject(directory, fullManifest, { usesRunes });
     const lintResult = runLintPass(
       directory,
       manifest,
@@ -241,6 +263,7 @@ export const watch = async (directory: string, options: WatchOptions = {}): Prom
           const exists = fs.existsSync(fullPath);
 
           if (isProjectInfoFile(posixPath)) {
+            incremental = false;
             userConfig = loadConfig(directory);
             effectiveDeadCodeMode =
               cliDeadCode === "off" ? (userConfig?.watch?.deadCode ?? "off") : cliDeadCode;
@@ -265,7 +288,8 @@ export const watch = async (directory: string, options: WatchOptions = {}): Prom
             return;
           }
 
-          if (!exists || !diagnosticsMap.has(posixPath)) {
+          if (!exists || (!diagnosticsMap.has(posixPath) && !knownFiles.has(fullPath))) {
+            incremental = false;
             await rescanProject(`${safePath} structure changed.`, false);
             return;
           }

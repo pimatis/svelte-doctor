@@ -100,7 +100,15 @@ export const getSelectedGitFiles = (directory: string, options: GitSelectionOpti
     }
   }
 
+  if (!options.staged) {
+    relativeFiles = [
+      ...relativeFiles,
+      ...readGitFileList(directory, ["ls-files", "--others", "--exclude-standard"]),
+    ];
+  }
+
   return relativeFiles
+    .filter((file, index, files) => files.indexOf(file) === index)
     .map((file) => path.resolve(directory, file))
     .filter((file) => {
       try {

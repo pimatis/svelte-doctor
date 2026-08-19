@@ -3,14 +3,20 @@ import { viewConfig } from "../core/config-view.js";
 import { logger, highlighter, sanitize } from "../output/logger.js";
 import { VERSION } from "../constants.js";
 import { infoSafe, warnSafe } from "./utils.js";
+import { configSchema } from "../core/config-schema.js";
 
 export const configCommand = new Command("config")
   .description("Show the active svelte-doctor configuration")
   .argument("[directory]", "project directory", ".")
   .option("--json", "output machine-readable JSON")
   .option("--path", "show only the config file path")
-  .action((directory: string, flags: { json?: boolean; path?: boolean }) => {
+  .option("--schema", "print the JSON Schema for svelte-doctor.config.json")
+  .action((directory: string, flags: { json?: boolean; path?: boolean; schema?: boolean }) => {
     try {
+      if (flags.schema) {
+        logger.log(JSON.stringify(configSchema, null, 2));
+        return;
+      }
       const result = viewConfig(directory);
       if (flags.json) {
         logger.log(JSON.stringify(result, null, 2));

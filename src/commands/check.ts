@@ -199,6 +199,7 @@ export const checkCommand = new Command("check")
   .option("--no-lint", "skip lint rules")
   .option("--no-dead-code", "skip dead code detection")
   .option("--no-cache", "disable scan cache for this run")
+  .option("--incremental", "scan only files changed relative to HEAD")
   .option("--score", "output only the numeric score (CI mode)")
   .option("--json", "output machine-readable JSON (for AI agents and scripts)")
   .option("--copy", "export diagnostics in an AI-friendly format")
@@ -253,10 +254,12 @@ export const checkCommand = new Command("check")
       const resolvedDir = path.resolve(directory);
       const minScore = parsePositiveInt(flags.minScore as string, "min score");
       const jobs = parsePositiveInt(flags.jobs as string, "jobs");
-      const selectedFiles = resolveGitSelection(
-        resolvedDir,
-        flags as { changed?: boolean; staged?: boolean; since?: string },
-      );
+      const selectedFiles = resolveGitSelection(resolvedDir, {
+        changed: flags.changed === true || flags.incremental === true,
+        staged: flags.staged as boolean | undefined,
+        since: flags.since as string | undefined,
+      });
+      const incremental = flags.incremental === true;
       const workspaces = getWorkspaceTargets(
         resolvedDir,
         flags.workspace as string | undefined,
@@ -292,6 +295,7 @@ export const checkCommand = new Command("check")
             lint: flags.lint as boolean,
             deadCode: flags.deadCode as boolean,
             cache: flags.cache as boolean,
+            incremental,
             quiet: true,
             baseline: (flags.baseline as boolean) ?? false,
             targetFiles: filterSelectedFilesForDirectory(workspace.directory, selectedFiles),
@@ -374,6 +378,7 @@ export const checkCommand = new Command("check")
         lint: flags.lint as boolean,
         deadCode: flags.deadCode as boolean,
         cache: flags.cache as boolean,
+        incremental,
         scoreOnly: !inFixMode ? (flags.score as boolean) : false,
         json: !inFixMode ? (flags.json as boolean) : false,
         quiet: sarifStdoutMode || inFixMode,

@@ -59,6 +59,7 @@ The tool is designed to be **safe by default**: deterministic fixes are opt-in, 
 - **0–100 health score** with actionable, line-specific diagnostics on every scan
 - **TypeScript AST-backed script analysis** for lower false-positive rates on security-sensitive checks
 - **Cached scans + incremental watch** for faster repeat checks and tighter feedback loops, with `watch --fix` auto-applying deterministic fixes on save
+- **Incremental checks** with `check --incremental` to scan only changed tracked and untracked files in large projects
 - **Diff-aware and workspace-aware scans** for staged files, changed files, and monorepos
 - **Parallel scanning** with `--jobs` for multi-worker file scanning in large codebases, with automatic CPU detection (`--jobs 0`)
 - **Focused scan modes** — `quick` (error-only), `audit` (security-only), `compare` (regression analysis), `stats` (project metrics)
@@ -407,6 +408,7 @@ Scan your project for issues and output a health score. The scanner analyzes sou
 | `--no-lint`                               | Skip lint rules                                                                      |
 | `--no-dead-code`                          | Skip dead code detection                                                             |
 | `--no-cache`                              | Disable the on-disk scan cache for this run                                          |
+| `--incremental`                           | Scan only files changed relative to `HEAD`, including untracked non-ignored files    |
 | `--copy`                                  | Export diagnostics in an AI-friendly format                                          |
 | `--copy-output <clipboard\|stdout\|file>` | Choose clipboard, stdout, or file output                                             |
 | `--copy-file <path>`                      | Write export output to a file inside the scanned project root                        |
@@ -474,6 +476,7 @@ svelte-doctor check --copy --copy-errors-only
 svelte-doctor check --copy --copy-output stdout
 svelte-doctor check --copy --copy-output file --copy-file .svelte-doctor/diagnostics.txt
 svelte-doctor check --changed
+svelte-doctor check --incremental
 svelte-doctor check --fix --diff --dry-run
 svelte-doctor check --sarif --sarif-file .svelte-doctor/report.sarif
 svelte-doctor check --html --html-file .svelte-doctor/report.html
@@ -543,12 +546,13 @@ svelte-doctor baseline --all-workspaces
 
 #### `svelte-doctor config [directory] [options]`
 
-Display the active `svelte-doctor` configuration. Reads from `svelte-doctor.config.json` first, then falls back to the `"svelte-doctor"` key in `package.json`. Shows all active settings including lint, dead-code, cache, watch, fix, reports, and ignore rules.
+Display the active `svelte-doctor` configuration. Reads from `svelte-doctor.config.json` first, then falls back to the `"svelte-doctor"` key in `package.json`. Shows all active settings including lint, dead-code, cache, watch, fix, reports, ignore, plugins, rules, and ci fields.
 
-| Option   | Description                    |
-| -------- | ------------------------------ |
-| `--json` | Output machine-readable JSON   |
-| `--path` | Show only the config file path |
+| Option     | Description                                           |
+| ---------- | ----------------------------------------------------- |
+| `--json`   | Output machine-readable JSON                          |
+| `--path`   | Show only the config file path                        |
+| `--schema` | Print the JSON Schema for `svelte-doctor.config.json` |
 
 Examples:
 
@@ -556,11 +560,26 @@ Examples:
 svelte-doctor config
 svelte-doctor config --json
 svelte-doctor config --path
+svelte-doctor config --schema
+svelte-doctor config --schema > svelte-doctor.config.schema.json
+```
+
+To use the schema in VS Code, point `json.schemas` at the generated file:
+
+```json
+{
+  "json.schemas": [
+    {
+      "fileMatch": ["svelte-doctor.config.json"],
+      "url": "./svelte-doctor.config.schema.json"
+    }
+  ]
+}
 ```
 
 #### `svelte-doctor validate [directory] [options]`
 
-Validate the `svelte-doctor.config.json` file for syntax and schema errors. Checks for invalid JSON syntax, unknown top-level and nested keys, type mismatches (e.g., string where boolean expected), invalid enum values (e.g., `watch.deadCode`, `fix.verifyLevel`), empty report paths, and malformed ignore lists with non-string elements.
+Validate the `svelte-doctor.config.json` file for syntax and schema errors. Checks for invalid JSON syntax, unknown top-level and nested keys, type mismatches (e.g., string where boolean expected), invalid enum values (e.g., `watch.deadCode`, `fix.verifyLevel`), empty report paths, and malformed ignore lists with non-string elements. The schema printed by `svelte-doctor config --schema` covers lint, deadCode, cache, watch, fix, reports, ignore, plugins, rules, and ci.
 
 | Option   | Description                  |
 | -------- | ---------------------------- |
@@ -647,6 +666,7 @@ Watch for file changes and show live diagnostics. Runs an initial cached scan, t
 | Option               | Description                                                               |
 | -------------------- | ------------------------------------------------------------------------- |
 | `--dead-code <mode>` | Dead-code behavior in watch mode: `off`, `lazy`, or `full`                |
+| `--incremental`      | Start with only tracked and untracked non-ignored files changed from `HEAD` |
 | `--fix`              | Auto-apply deterministic fixes to saved files                             |
 | `--fix-rules <csv>`  | With `--fix`: limit auto-fixes to comma-separated rules (implies `--fix`) |
 
@@ -667,6 +687,12 @@ CLI flags (`--fix`, `--fix-rules`) take precedence over config. Only determinist
 [12:34:56] src/Component.svelte changed — Score: 82 → 78 (⚠ 2 issues)
 [12:34:59] src/Layout.svelte changed — Score: 78 → 80 (✓ fixed: no-transition-all)
 [12:35:02] src/Card.svelte changed — Score: 80 → 84 (✓ score improved +4)
+```
+
+Use `watch --incremental` to start with the current Git working-tree changes while continuing to watch the project. Existing files changed after startup are scanned individually; newly created files trigger a full rescan so they are added to the watch state.
+
+```bash
+svelte-doctor watch --incremental
 ```
 
 #### `svelte-doctor trend [directory] [options]`

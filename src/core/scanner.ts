@@ -61,12 +61,13 @@ const buildSelectedManifest = (
   directory: string,
   manifest: ProjectFileManifest,
   targetFiles: string[] | undefined,
+  incremental: boolean,
 ): ProjectFileManifest => {
-  if (!targetFiles || targetFiles.length === 0) {
+  if (!incremental && (!targetFiles || targetFiles.length === 0)) {
     return manifest;
   }
 
-  const selected = new Set(targetFiles.map((file) => path.resolve(file)));
+  const selected = new Set((targetFiles ?? []).map((file) => path.resolve(file)));
   const svelteFiles = manifest.svelteFiles.filter((file) => selected.has(path.resolve(file)));
   const scriptFiles = manifest.scriptFiles.filter((file) => selected.has(path.resolve(file)));
 
@@ -239,6 +240,7 @@ const getEffectiveOptions = (
   deadCode: inputOptions.deadCode ?? userConfig?.deadCode ?? true,
   deadCodeMode: inputOptions.deadCodeMode ?? userConfig?.watch?.deadCode ?? "full",
   cache: inputOptions.cache ?? userConfig?.cache ?? true,
+  incremental: inputOptions.incremental ?? false,
   scoreOnly: inputOptions.scoreOnly ?? false,
   json: inputOptions.json ?? false,
   quiet: inputOptions.quiet ?? false,
@@ -272,8 +274,16 @@ export const scan = async (
   const ruleRuntimeWarnings: string[] = [];
   const silent = options.scoreOnly || options.json || options.quiet;
   const fullManifest = collectProjectFiles(directory);
-  const selectedManifest = buildSelectedManifest(directory, fullManifest, options.targetFiles);
-  const targetMode = options.targetFiles && options.targetFiles.length > 0 ? "subset" : "full";
+  const selectedManifest = buildSelectedManifest(
+    directory,
+    fullManifest,
+    options.targetFiles,
+    options.incremental,
+  );
+  const targetMode =
+    options.incremental || (options.targetFiles && options.targetFiles.length > 0)
+      ? "subset"
+      : "full";
   const notes: string[] = [];
   const usesRunes = detectRunesUsage(fullManifest);
   const projectInfo = discoverProject(directory, fullManifest, { usesRunes });

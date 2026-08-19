@@ -184,6 +184,7 @@ export interface ScanOptions {
   deadCode?: boolean;
   deadCodeMode?: DeadCodeMode;
   cache?: boolean;
+  incremental?: boolean;
   scoreOnly?: boolean;
   json?: boolean;
   quiet?: boolean;
@@ -382,6 +383,8 @@ export interface WatchFixOptions {
 export interface WatchOptions {
   deadCode?: DeadCodeMode;
   fix?: WatchFixOptions;
+  incremental?: boolean;
+  targetFiles?: string[];
 }
 
 export interface ApplyFileChange {
