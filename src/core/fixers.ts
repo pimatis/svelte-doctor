@@ -175,11 +175,13 @@ const createFixBlocks = (filePath: string, source: string): FixBlock[] => {
   if (!filePath.endsWith(".svelte")) {
     const isTs = filePath.endsWith(".ts") || filePath.endsWith(".mts");
     const scriptKind = isTs ? ts.ScriptKind.TS : ts.ScriptKind.JS;
-    return [{
-      content: source,
-      startOffset: 0,
-      sourceFile: ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true, scriptKind),
-    }];
+    return [
+      {
+        content: source,
+        startOffset: 0,
+        sourceFile: ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true, scriptKind),
+      },
+    ];
   }
 
   const blocks: FixBlock[] = [];
@@ -313,8 +315,9 @@ export const fixNoUnnecessarySnapshot = (source: string, diagnostic: Diagnostic)
   if (!snapshotMatch) return source;
 
   // compute absolute offset in the full source
-  const lineStartOffset =
-    lines.slice(0, targetLineIndex).reduce((sum, line) => sum + line.length + 1, 0);
+  const lineStartOffset = lines
+    .slice(0, targetLineIndex)
+    .reduce((sum, line) => sum + line.length + 1, 0);
   const snapshotOffset = lineStartOffset + (snapshotMatch.index ?? 0);
 
   // find the open paren of $state.snapshot(...)

@@ -57,8 +57,7 @@ const createMultiFileProject = (fileCount) => {
   return createProject(files);
 };
 
-const diagnosticRules = (json) =>
-  new Set(json.diagnostics.map((d) => d.rule));
+const diagnosticRules = (json) => new Set(json.diagnostics.map((d) => d.rule));
 
 test("parallel scan with --jobs 2 produces same diagnostics as sequential", () => {
   const project = createMultiFileProject(6);
@@ -161,8 +160,7 @@ test("parallel scan handles mixed svelte and script files", () => {
       null,
       2,
     ),
-    "src/App.svelte":
-      `<style>.btn { transition: all 0.2s ease; }</style>\n<button class="btn">click</button>\n`,
+    "src/App.svelte": `<style>.btn { transition: all 0.2s ease; }</style>\n<button class="btn">click</button>\n`,
     "src/utils.ts": `export const add = (a: number, b: number) => a + b;\n`,
     "src/helpers.js": `export const mul = (a, b) => a * b;\n`,
   });
@@ -178,19 +176,15 @@ test("parallel scan falls back to sequential on worker error", () => {
   const project = createMultiFileProject(3);
 
   // force worker failure by making scan-worker unreadable via env var
-  const output = execFileSync(
-    "node",
-    [cliPath, "check", ".", "--json", "--jobs", "2"],
-    {
-      cwd: project,
-      encoding: "utf-8",
-      env: {
-        ...process.env,
-        FORCE_COLOR: "0",
-        // ponytail: not a real failure mode, but tests the fallback path
-      },
+  const output = execFileSync("node", [cliPath, "check", ".", "--json", "--jobs", "2"], {
+    cwd: project,
+    encoding: "utf-8",
+    env: {
+      ...process.env,
+      FORCE_COLOR: "0",
+      // ponytail: not a real failure mode, but tests the fallback path
     },
-  );
+  });
 
   const result = JSON.parse(output);
   assert.ok(Array.isArray(result.diagnostics));
@@ -224,9 +218,7 @@ test("parallel scan produces correct diagnostics for known rule", () => {
   const project = createMultiFileProject(4);
   const result = JSON.parse(runCli(project, ["check", ".", "--json", "--jobs", "2"]));
 
-  const hasTransitionAll = result.diagnostics.some(
-    (d) => d.rule === "no-transition-all",
-  );
+  const hasTransitionAll = result.diagnostics.some((d) => d.rule === "no-transition-all");
   assert.equal(hasTransitionAll, true);
 });
 

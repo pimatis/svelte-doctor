@@ -234,6 +234,7 @@ export const checkCommand = new Command("check")
   .option("--all-workspaces", "scan every package.json workspace")
   .option("--workspace <name>", "scan a specific workspace by name or relative path")
   .option("--fix", "apply deterministic auto-fixes after scan")
+  .option("--diff", "with --fix: preview unified diffs for automatic fixes")
   .option("--fix-ai", "also run AI agent fix after deterministic fixes")
   .option("--interactive", "with --fix: confirm each fix individually [y/n/a/q]")
   .option("--dry-run", "with --fix: preview fixes without writing files")
@@ -510,6 +511,14 @@ export const checkCommand = new Command("check")
                 logger.log(
                   `  ${highlighter.success("✓")} ${rule}  ${dryRun ? "would fix" : "fixed"} in ${filesForRule.length} file${filesForRule.length === 1 ? "" : "s"}`,
                 );
+              }
+              if (flags.diff === true) {
+                for (const file of applyResult.files) {
+                  if (file.diff) {
+                    logger.break();
+                    logger.log(file.diff);
+                  }
+                }
               }
             } else {
               logger.log(`  ${highlighter.dim("No changes applied.")}`);

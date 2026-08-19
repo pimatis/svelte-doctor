@@ -103,7 +103,7 @@ export class ScanWorkerPool {
 
     return new Promise<ScanResponse>((resolve, reject) => {
       const onResult = (msg: ScanResponse | ReadyMessage) => {
-    if (msg.type === "result" && msg.relativePath === relativePath) {
+        if (msg.type === "result" && msg.relativePath === relativePath) {
           worker.off("message", onResult);
           worker.off("error", onError);
           resolve(msg);
@@ -127,10 +127,7 @@ export class ScanWorkerPool {
     });
   }
 
-  async scanAll(
-    files: string[],
-    directory: string,
-  ): Promise<Map<string, FileScanResult>> {
+  async scanAll(files: string[], directory: string): Promise<Map<string, FileScanResult>> {
     await this.init();
 
     const results = new Map<string, FileScanResult>();

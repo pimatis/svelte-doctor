@@ -388,6 +388,7 @@ export interface ApplyFileChange {
   filePath: string;
   changed: boolean;
   appliedRules: string[];
+  diff?: string;
 }
 
 export interface ApplyResult {

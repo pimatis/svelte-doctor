@@ -452,7 +452,12 @@ test("deep runes rules are included in the default scan", () => {
   const output = runCli(project, ["check", project, "--json"]);
   const diags = getDiagnostics(output);
   const deepRules = diags.filter((d) =>
-    ["no-untrack-misuse", "no-unnecessary-snapshot", "no-deep-derived-chain", "no-expensive-props-destructure"].includes(d.rule),
+    [
+      "no-untrack-misuse",
+      "no-unnecessary-snapshot",
+      "no-deep-derived-chain",
+      "no-expensive-props-destructure",
+    ].includes(d.rule),
   );
 
   assert.ok(deepRules.length >= 1, "at least one deep runes rule should fire");
@@ -744,8 +749,14 @@ test("no-untrack-misuse fix extracts reactive read from untrack", () => {
   const after = fs.readFileSync(path.join(project, "App.svelte"), "utf-8");
 
   assert.notEqual(before, after, "source should change after fix");
-  assert.ok(after.includes("const _count = count;"), "should extract reactive read as const _count");
-  assert.ok(after.includes("console.log(_count)"), "should replace count with _count inside untrack");
+  assert.ok(
+    after.includes("const _count = count;"),
+    "should extract reactive read as const _count",
+  );
+  assert.ok(
+    after.includes("console.log(_count)"),
+    "should replace count with _count inside untrack",
+  );
   assert.ok(!after.match(/untrack.*\bcount\b/), "should not have reactive count inside untrack");
 });
 
@@ -908,9 +919,7 @@ test("deep runes fix shows up in check --fix --json fixableSummary", () => {
   const json = JSON.parse(output);
 
   assert.ok(json.fixableCount > 0, "should report fixable diagnostics");
-  const deepFixable = json.diagnostics.filter(
-    (d) => d.fixable && d.rule === "no-untrack-misuse",
-  );
+  const deepFixable = json.diagnostics.filter((d) => d.fixable && d.rule === "no-untrack-misuse");
   assert.ok(deepFixable.length > 0, "no-untrack-misuse should be marked fixable");
 });
 
@@ -1000,7 +1009,10 @@ test("no-untrack-misuse fix does not replace property name access", () => {
   const after = fs.readFileSync(path.join(project, "App.svelte"), "utf-8");
 
   assert.ok(after.includes("obj.count"), "should not replace property name access obj.count");
-  assert.ok(after.includes("console.log(obj.count, _count)"), "should replace standalone reactive read");
+  assert.ok(
+    after.includes("console.log(obj.count, _count)"),
+    "should replace standalone reactive read",
+  );
 });
 
 test("no-untrack-misuse fix is idempotent", () => {
@@ -1037,7 +1049,10 @@ test("no-untrack-misuse fix handles multi-line $state declaration", () => {
   runCli(project, ["check", project, "--fix", "--json"]);
   const after = fs.readFileSync(path.join(project, "App.svelte"), "utf-8");
 
-  assert.ok(after.includes("const _state = state;"), "should extract reactive var from multi-line $state");
+  assert.ok(
+    after.includes("const _state = state;"),
+    "should extract reactive var from multi-line $state",
+  );
   assert.ok(after.includes("console.log(_state)"), "should replace read inside untrack");
 });
 
@@ -1054,7 +1069,10 @@ test("no-untrack-misuse fix handles expression-body arrow", () => {
   runCli(project, ["check", project, "--fix", "--json"]);
   const after = fs.readFileSync(path.join(project, "App.svelte"), "utf-8");
 
-  assert.ok(after.includes("const _count = count;"), "should extract reactive read from expression-body arrow");
+  assert.ok(
+    after.includes("const _count = count;"),
+    "should extract reactive read from expression-body arrow",
+  );
   assert.ok(after.includes("untrack(() => _count)"), "should replace read in expression-body");
 });
 
@@ -1072,7 +1090,11 @@ test("no-untrack-misuse fix creates one const per variable for multiple reads", 
   const after = fs.readFileSync(path.join(project, "App.svelte"), "utf-8");
 
   const constMatches = after.match(/const _count = count;/g);
-  assert.equal(constMatches?.length, 1, "should create only one const declaration for multiple reads");
+  assert.equal(
+    constMatches?.length,
+    1,
+    "should create only one const declaration for multiple reads",
+  );
   assert.ok(after.includes("console.log(_count)"), "should replace both reads");
 });
 
@@ -1165,10 +1187,7 @@ test("parseScriptFile keeps ast null for regular .ts files", () => {
     "lib/utils.ts": `export const add = (a, b) => a + b;\n`,
   });
 
-  const ctx = parseScriptFile(
-    path.join(project, "lib/utils.ts"),
-    parserProjectInfo(project),
-  );
+  const ctx = parseScriptFile(path.join(project, "lib/utils.ts"), parserProjectInfo(project));
 
   assert.ok(ctx, "context should not be null");
   assert.equal(ctx.ast, null, "ast should be null for regular .ts");
@@ -1180,10 +1199,7 @@ test("parseScriptFile keeps ast null for regular .js files", () => {
     "lib/utils.js": `export const add = (a, b) => a + b;\n`,
   });
 
-  const ctx = parseScriptFile(
-    path.join(project, "lib/utils.js"),
-    parserProjectInfo(project),
-  );
+  const ctx = parseScriptFile(path.join(project, "lib/utils.js"), parserProjectInfo(project));
 
   assert.ok(ctx, "context should not be null");
   assert.equal(ctx.ast, null, "ast should be null for regular .js");
@@ -1195,10 +1211,7 @@ test("parseSvelteFile still returns svelte markup AST (not null)", () => {
     "App.svelte": `<script>let count = $state(0);</script>\n<button>{count}</button>\n`,
   });
 
-  const ctx = parseSvelteFile(
-    path.join(project, "App.svelte"),
-    parserProjectInfo(project),
-  );
+  const ctx = parseSvelteFile(path.join(project, "App.svelte"), parserProjectInfo(project));
 
   assert.ok(ctx, "context should not be null");
   assert.ok(ctx.ast, "ast should not be null for .svelte");

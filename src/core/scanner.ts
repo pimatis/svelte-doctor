@@ -253,9 +253,7 @@ const resolveJobs = (requested: number): number => {
   if (requested > 1) return requested;
   if (requested === 0) {
     const cpus =
-      typeof os.availableParallelism === "function"
-        ? os.availableParallelism()
-        : os.cpus().length;
+      typeof os.availableParallelism === "function" ? os.availableParallelism() : os.cpus().length;
     return Math.max(2, cpus || 4);
   }
   return 1;

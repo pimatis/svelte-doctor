@@ -8,6 +8,85 @@ import { loadProjectRules } from "../plugins/loader.js";
 import { loadConfig } from "../project/config.js";
 import { logger } from "../output/logger.js";
 
+const buildUnifiedDiff = (filePath: string, before: string, after: string): string => {
+  const beforeLines = before.split("\n");
+  const afterLines = after.split("\n");
+  // ponytail: O(n*m) LCS keeps multi-hunk previews correct; use Myers if large files make this visible
+  const table = Array.from({ length: beforeLines.length + 1 }, () =>
+    new Array<number>(afterLines.length + 1).fill(0),
+  );
+  for (let beforeIndex = beforeLines.length - 1; beforeIndex >= 0; beforeIndex--) {
+    for (let afterIndex = afterLines.length - 1; afterIndex >= 0; afterIndex--) {
+      table[beforeIndex][afterIndex] =
+        beforeLines[beforeIndex] === afterLines[afterIndex]
+          ? table[beforeIndex + 1][afterIndex + 1] + 1
+          : Math.max(table[beforeIndex + 1][afterIndex], table[beforeIndex][afterIndex + 1]);
+    }
+  }
+
+  type Operation =
+    | { type: "equal"; beforeIndex: number; afterIndex: number; line: string }
+    | { type: "delete"; beforeIndex: number; line: string }
+    | { type: "insert"; afterIndex: number; line: string };
+  const operations: Operation[] = [];
+  let beforeIndex = 0;
+  let afterIndex = 0;
+  while (beforeIndex < beforeLines.length || afterIndex < afterLines.length) {
+    if (
+      beforeIndex < beforeLines.length &&
+      afterIndex < afterLines.length &&
+      beforeLines[beforeIndex] === afterLines[afterIndex]
+    ) {
+      operations.push({ type: "equal", beforeIndex, afterIndex, line: beforeLines[beforeIndex] });
+      beforeIndex++;
+      afterIndex++;
+      continue;
+    }
+    if (
+      afterIndex >= afterLines.length ||
+      (beforeIndex < beforeLines.length &&
+        table[beforeIndex + 1][afterIndex] >= table[beforeIndex][afterIndex + 1])
+    ) {
+      operations.push({ type: "delete", beforeIndex, line: beforeLines[beforeIndex] });
+      beforeIndex++;
+      continue;
+    }
+    operations.push({ type: "insert", afterIndex, line: afterLines[afterIndex] });
+    afterIndex++;
+  }
+
+  const changed = operations.flatMap((operation, index) =>
+    operation.type === "equal" ? [] : [index],
+  );
+  const ranges: Array<[number, number]> = [];
+  for (const index of changed) {
+    const start = Math.max(0, index - 3);
+    const end = Math.min(operations.length, index + 4);
+    const previous = ranges[ranges.length - 1];
+    if (previous && start <= previous[1]) previous[1] = end;
+    else ranges.push([start, end]);
+  }
+
+  const hunks = ranges.map(([start, end]) => {
+    const hunk = operations.slice(start, end);
+    const first = hunk[0];
+    const beforeStart = first.type === "insert" ? first.afterIndex : first.beforeIndex;
+    const afterStart = first.type === "delete" ? first.beforeIndex : first.afterIndex;
+    const beforeCount = hunk.filter((operation) => operation.type !== "insert").length;
+    const afterCount = hunk.filter((operation) => operation.type !== "delete").length;
+    return [
+      `@@ -${beforeStart + 1},${beforeCount} +${afterStart + 1},${afterCount} @@`,
+      ...hunk.map((operation) => {
+        if (operation.type === "equal") return ` ${operation.line}`;
+        if (operation.type === "delete") return `-${operation.line}`;
+        return `+${operation.line}`;
+      }),
+    ];
+  });
+
+  return [`--- a/${filePath}`, `+++ b/${filePath}`, ...hunks.flat()].join("\n");
+};
+
 const MIGRATION_RULES = new Set([
   "no-legacy-reactive",
   "no-export-let",
@@ -216,6 +295,7 @@ export const runApply = async (
       filePath: relativePath,
       changed,
       appliedRules: result.appliedRules,
+      ...(changed ? { diff: buildUnifiedDiff(relativePath, source, result.content) } : {}),
     });
   }
 

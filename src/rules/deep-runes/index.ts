@@ -4,7 +4,6 @@ import {
   containsReactiveRead,
   collectReactiveVars,
   hasRunesInSource,
-  isReactiveRead,
   isRuneCall,
   isRunesFile,
 } from "../../parser/runes.js";
@@ -114,8 +113,9 @@ const noUnnecessarySnapshot: Rule = {
 
       // flag when snapshot result is used in comparison/log/stringify/discarded
       const isComparison = /^\s*(?:\.[\w.]+)*\s*(?:[=!]==?|>|<|>=|<=)/.test(afterClose);
-      const isLogOrStringify =
-        /(?:console\.\w+|JSON\.stringify|String\()\s*\(\s*$/.test(precedingCode);
+      const isLogOrStringify = /(?:console\.\w+|JSON\.stringify|String\()\s*\(\s*$/.test(
+        precedingCode,
+      );
       const isStandalone = /^\s*;?\s*$/.test(afterClose);
 
       if (!isComparison && !isLogOrStringify && !isStandalone) continue;

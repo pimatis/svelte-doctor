@@ -11,11 +11,7 @@ import { storeTransform } from "./transforms/store.js";
 import { svelteOptionsTransform } from "./transforms/svelte-options.js";
 import { moduleExportTransform } from "./transforms/module-export.js";
 import type { CodemodOptions, CodemodResult, CodemodStageName, CodemodTransform } from "./types.js";
-import {
-  mergeResult,
-  validateModuleSyntax,
-  validateSvelteSyntax,
-} from "./utils.js";
+import { mergeResult, validateModuleSyntax, validateSvelteSyntax } from "./utils.js";
 
 export const codemodTransforms: CodemodTransform[] = [
   exportLetTransform,
@@ -61,9 +57,10 @@ export const runCodemod = (
 
   for (const transform of transforms) {
     const result = transform.run(content, { filePath, fileKind });
-    const isValid = fileKind === "module"
-      ? validateModuleSyntax(result.content)
-      : validateSvelteSyntax(result.content);
+    const isValid =
+      fileKind === "module"
+        ? validateModuleSyntax(result.content)
+        : validateSvelteSyntax(result.content);
     if (result.content !== content && !isValid) {
       warnings.push({ stage: transform.name, message: "transform output did not parse, skipped" });
       continue;

@@ -41,7 +41,10 @@ $: console.log(doubled);
 
   const result = runCodemod(source, { fileKind: "module" }, "lib/utils.svelte.js");
 
-  assert.ok(result.changes.some((c) => c.label.includes("$derived")), "should have $derived change");
+  assert.ok(
+    result.changes.some((c) => c.label.includes("$derived")),
+    "should have $derived change",
+  );
   assert.match(result.content, /const doubled = \$derived\(count \* 2\);/);
   assert.match(result.content, /\$effect\(\(\) => \{ console\.log\(doubled\); \}\);/);
 });

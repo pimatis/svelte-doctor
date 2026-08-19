@@ -128,15 +128,13 @@ const getEnvToken = (platform: "gitlab" | "bitbucket", tokenEnv?: string): strin
   return token;
 };
 
-const requestJson = async (
-  url: string,
-  init: RequestInit,
-  platform: string,
-): Promise<void> => {
+const requestJson = async (url: string, init: RequestInit, platform: string): Promise<void> => {
   const response = await fetch(url, init);
   if (response.ok) return;
   const detail = (await response.text()).trim();
-  throw new Error(`${platform} API request failed (${response.status})${detail ? `: ${detail}` : "."}`);
+  throw new Error(
+    `${platform} API request failed (${response.status})${detail ? `: ${detail}` : "."}`,
+  );
 };
 
 const getGitlabProject = (directory: string): string =>
@@ -161,9 +159,7 @@ const postGitlab = async (
   const project = encodeURIComponent(getGitlabProject(directory));
   const mergeRequest = `${api}/projects/${project}/merge_requests/${safePr}`;
   await requestJson(
-    inline
-      ? `${mergeRequest}/discussions`
-      : `${mergeRequest}/notes`,
+    inline ? `${mergeRequest}/discussions` : `${mergeRequest}/notes`,
     {
       method: "POST",
       headers: { "PRIVATE-TOKEN": token, "Content-Type": "application/json" },
@@ -258,7 +254,9 @@ const postBitbucket = async (
   );
 };
 
-const resolvePrPlatform = (platform: PrCheckOptions["platform"]): "github" | "gitlab" | "bitbucket" => {
+const resolvePrPlatform = (
+  platform: PrCheckOptions["platform"],
+): "github" | "gitlab" | "bitbucket" => {
   if (platform && platform !== "auto") return platform;
   if (process.env.GITLAB_CI || process.env.CI_MERGE_REQUEST_IID) return "gitlab";
   if (process.env.BITBUCKET_BUILD_NUMBER || process.env.BITBUCKET_PR_ID) return "bitbucket";

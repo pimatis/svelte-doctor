@@ -325,17 +325,17 @@ svelte-doctor install-hook --remove --pre-push
 
 Analyze a branch diff for PR or CI feedback. The command lists files changed between `--base` and `--head`, scans isolated git worktrees for both refs, builds a Markdown PR summary, and can post it to GitHub, GitLab, or Bitbucket. GitHub uses the `gh` CLI; GitLab and Bitbucket use their APIs and write a `svelte-doctor` commit status for required-check workflows.
 
-| Option                                         | Description                                               |
-| ---------------------------------------------- | --------------------------------------------------------- |
-| `--pr <number>`                                | Pull request number for comment posting                   |
-| `--base <branch>`                              | Base branch or ref (default: `main`)                      |
-| `--head <branch>`                              | Head branch or ref (default: `HEAD`)                      |
-| `--comment`                                    | Post a summary comment to the selected PR platform        |
-| `--inline`                                     | Submit an inline review comment to the selected platform  |
-| `--fail-on <never\|error\|warning>`            | Control exit behavior for new issues                      |
-| `--min-score <score>`                          | Fail if PR score is below the threshold                   |
-| `--json`                                       | Output machine-readable JSON                              |
-| `--platform <github\|gitlab\|bitbucket\|auto>` | Select PR platform adapter mode                           |
+| Option                                         | Description                                              |
+| ---------------------------------------------- | -------------------------------------------------------- |
+| `--pr <number>`                                | Pull request number for comment posting                  |
+| `--base <branch>`                              | Base branch or ref (default: `main`)                     |
+| `--head <branch>`                              | Head branch or ref (default: `HEAD`)                     |
+| `--comment`                                    | Post a summary comment to the selected PR platform       |
+| `--inline`                                     | Submit an inline review comment to the selected platform |
+| `--fail-on <never\|error\|warning>`            | Control exit behavior for new issues                     |
+| `--min-score <score>`                          | Fail if PR score is below the threshold                  |
+| `--json`                                       | Output machine-readable JSON                             |
+| `--platform <github\|gitlab\|bitbucket\|auto>` | Select PR platform adapter mode                          |
 | `--token <env-var>`                            | Token environment variable name                          |
 
 Examples:
@@ -431,6 +431,7 @@ Scan your project for issues and output a health score. The scanner analyzes sou
 | `--all-workspaces`                        | Scan all package.json workspaces                                                     |
 | `--workspace <name>`                      | Scan one workspace by name or relative path                                          |
 | `--fix`                                   | Apply deterministic auto-fixes after scan                                            |
+| `--diff`                                  | With `--fix`: preview automatic fixes as unified diffs                               |
 | `--interactive`                           | With `--fix`: confirm each fix individually (`y`, `n`, `a`, `q`)                     |
 | `--fix-ai`                                | Also run AI agent fix after deterministic fixes                                      |
 | `--dry-run`                               | With `--fix`: preview fixes without writing files                                    |
@@ -473,6 +474,7 @@ svelte-doctor check --copy --copy-errors-only
 svelte-doctor check --copy --copy-output stdout
 svelte-doctor check --copy --copy-output file --copy-file .svelte-doctor/diagnostics.txt
 svelte-doctor check --changed
+svelte-doctor check --fix --diff --dry-run
 svelte-doctor check --sarif --sarif-file .svelte-doctor/report.sarif
 svelte-doctor check --html --html-file .svelte-doctor/report.html
 svelte-doctor check --junit --junit-file .svelte-doctor/junit.xml
@@ -642,11 +644,11 @@ svelte-doctor compare --base origin/main --head feature/xyz
 
 Watch for file changes and show live diagnostics. Runs an initial cached scan, then incrementally re-scans only changed files with 150ms debounced updates. With `--fix`, deterministic fixes are applied automatically when a file is saved — the watch loop closes the feedback gap between "see the issue" and "fix the issue".
 
-| Option                | Description                                                                              |
-| --------------------- | ---------------------------------------------------------------------------------------- |
-| `--dead-code <mode>`  | Dead-code behavior in watch mode: `off`, `lazy`, or `full`                                |
-| `--fix`               | Auto-apply deterministic fixes to saved files                                            |
-| `--fix-rules <csv>`   | With `--fix`: limit auto-fixes to comma-separated rules (implies `--fix`)                 |
+| Option               | Description                                                               |
+| -------------------- | ------------------------------------------------------------------------- |
+| `--dead-code <mode>` | Dead-code behavior in watch mode: `off`, `lazy`, or `full`                |
+| `--fix`              | Auto-apply deterministic fixes to saved files                             |
+| `--fix-rules <csv>`  | With `--fix`: limit auto-fixes to comma-separated rules (implies `--fix`) |
 
 Auto-fix can also be enabled permanently in `svelte-doctor.config.json` — no CLI flag needed:
 
@@ -654,8 +656,8 @@ Auto-fix can also be enabled permanently in `svelte-doctor.config.json` — no C
 {
   "watch": {
     "deadCode": "lazy",
-    "fix": true // or { "rules": ["no-transition-all", "no-moment"] }
-  }
+    "fix": true, // or { "rules": ["no-transition-all", "no-moment"] }
+  },
 }
 ```
 
@@ -787,8 +789,8 @@ Auto-migrate Svelte 4 syntax to Svelte 5. The migration engine uses a modular co
 | `--interactive`   | Show each file diff and ask before applying (`y`, `n`, `a`, `q`)                                                                                                                                              |
 | `--plan`          | Report total files, auto-migratable files, manual-review files, and top issue categories without writing files                                                                                                |
 | `--commit-stages` | Run supported migration stages and create one git commit per stage                                                                                                                                            |
-| `--rollback`      | Restore files from `.bak` backups and remove the backup files                                                                                                                                                |
-| `--no-backup`     | Skip creating `.bak` backup files                                                                                                                                                                            |
+| `--rollback`      | Restore files from `.bak` backups and remove the backup files                                                                                                                                                 |
+| `--no-backup`     | Skip creating `.bak` backup files                                                                                                                                                                             |
 | `--stage <name>`  | Run only one stage: `reactive-statement`, `export-let`, `event-dispatcher`, `slot`, `on-directive`, `lifecycle`, `let-directive`, `store`, `class-directive`, `module-export`, `snippet`, or `svelte-options` |
 | `--json`          | Output machine-readable JSON                                                                                                                                                                                  |
 
@@ -1390,12 +1392,12 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 
 Rules in this category catch subtle Svelte 5 runes anti-patterns that degrade reactivity correctness or runtime performance. They operate on both `.svelte` files and `.svelte.js`/`.svelte.ts` module files using TypeScript AST.
 
-| Rule                          | Severity | Description                                                              |
-| ----------------------------- | -------- | ------------------------------------------------------------------------ |
-| `no-untrack-misuse`           | warning  | Reactive read inside `untrack()` breaks reactivity tracking (fixable)    |
-| `no-unnecessary-snapshot`     | warning  | `$state.snapshot()` creates an unnecessary deep copy where spread works (fixable) |
-| `no-deep-derived-chain`       | warning  | Chain of 3+ `$derived` values reading each other causes cascading recomputation |
-| `no-expensive-props-destructure` | warning | `$props()` destructuring with default objects/arrays allocates on every render |
+| Rule                             | Severity | Description                                                                       |
+| -------------------------------- | -------- | --------------------------------------------------------------------------------- |
+| `no-untrack-misuse`              | warning  | Reactive read inside `untrack()` breaks reactivity tracking (fixable)             |
+| `no-unnecessary-snapshot`        | warning  | `$state.snapshot()` creates an unnecessary deep copy where spread works (fixable) |
+| `no-deep-derived-chain`          | warning  | Chain of 3+ `$derived` values reading each other causes cascading recomputation   |
+| `no-expensive-props-destructure` | warning  | `$props()` destructuring with default objects/arrays allocates on every render    |
 
 ---
 

@@ -11,13 +11,14 @@ export const isRunesFile = (filePath: string): boolean =>
   filePath.endsWith(".svelte.ts");
 
 // check if a call expression is a rune call ($state, $derived, $derived.by, $effect, $props)
-export const isRuneCall = (
-  node: ts.CallExpression,
-  runeName: string,
-): boolean => {
+export const isRuneCall = (node: ts.CallExpression, runeName: string): boolean => {
   if (ts.isIdentifier(node.expression) && node.expression.text === runeName) return true;
   if (runeName === "$derived" && ts.isPropertyAccessExpression(node.expression)) {
-    if (!ts.isIdentifier(node.expression.expression) || node.expression.expression.text !== "$derived") return false;
+    if (
+      !ts.isIdentifier(node.expression.expression) ||
+      node.expression.expression.text !== "$derived"
+    )
+      return false;
     return node.expression.name.text === "by";
   }
   return false;
@@ -61,10 +62,7 @@ export const isReactiveRead = (node: ts.Identifier, reactiveVars: Set<string>): 
 };
 
 // find any reactive variable read inside a node subtree
-export const containsReactiveRead = (
-  node: ts.Node,
-  reactiveVars: Set<string>,
-): boolean => {
+export const containsReactiveRead = (node: ts.Node, reactiveVars: Set<string>): boolean => {
   let found = false;
   const visit = (candidate: ts.Node) => {
     if (found) return;
