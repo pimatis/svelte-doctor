@@ -570,8 +570,10 @@ const noRunesInServerOnlyFile: Rule = {
   cost: "low",
   docs: {
     summary: "Detects `$state` and `$effect` usage in `+page.server.*` and `+server.*` files.",
-    whyItMatters: "Server-only modules do not have a browser render cycle, so client reactivity adds confusion and can break server execution.",
-    safeFix: "Replace client runes with plain server values, or move the reactive code into a universal component.",
+    whyItMatters:
+      "Server-only modules do not have a browser render cycle, so client reactivity adds confusion and can break server execution.",
+    safeFix:
+      "Replace client runes with plain server values, or move the reactive code into a universal component.",
   },
   check: (ctx: RuleContext): Diagnostic[] => {
     if (ctx.projectInfo.framework !== "sveltekit" || !ctx.analysisMeta.isServerOnly) return [];

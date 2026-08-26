@@ -1156,8 +1156,10 @@ const performanceBudget: Rule = {
   cost: "low",
   docs: {
     summary: "Estimates Lighthouse-like LCP and CLS risk from component markup.",
-    whyItMatters: "Unbounded media dimensions and heavy initial markup can delay the largest paint and shift content during loading.",
-    safeFix: "Add width and height or aspect-ratio to media, reserve dynamic content space, and defer below-the-fold work.",
+    whyItMatters:
+      "Unbounded media dimensions and heavy initial markup can delay the largest paint and shift content during loading.",
+    safeFix:
+      "Add width and height or aspect-ratio to media, reserve dynamic content space, and defer below-the-fold work.",
   },
   check: (ctx): Diagnostic[] => {
     const images = ctx.source.match(/<(?:img|video)\b/g)?.length ?? 0;
@@ -1172,10 +1174,12 @@ const performanceBudget: Rule = {
 
     if (lcpMs <= 2500 && clsEstimate <= 0.1) return [];
 
-    return [{
-      ...createPerformanceDiagnostic(ctx, performanceBudget, 1, 1),
-      message: `Estimated LCP is ${lcpMs}ms and CLS is ${clsEstimate} (media: ${images}, media without dimensions: ${mediaWithoutDimensions}, blocks: ${structuralBlocks}).`,
-    }];
+    return [
+      {
+        ...createPerformanceDiagnostic(ctx, performanceBudget, 1, 1),
+        message: `Estimated LCP is ${lcpMs}ms and CLS is ${clsEstimate} (media: ${images}, media without dimensions: ${mediaWithoutDimensions}, blocks: ${structuralBlocks}).`,
+      },
+    ];
   },
 };
 
@@ -1195,10 +1199,12 @@ const excessiveReactiveSubscriptions: Rule = {
     const total = reactiveStatements + storeSubscriptions;
     if (total <= 5) return [];
 
-    return [{
-      ...createPerformanceDiagnostic(ctx, excessiveReactiveSubscriptions, 1, 1),
-      message: `Component has ${storeSubscriptions} store subscriptions and ${reactiveStatements} reactive statements (${total} total).`,
-    }];
+    return [
+      {
+        ...createPerformanceDiagnostic(ctx, excessiveReactiveSubscriptions, 1, 1),
+        message: `Component has ${storeSubscriptions} store subscriptions and ${reactiveStatements} reactive statements (${total} total).`,
+      },
+    ];
   },
 };
 
@@ -1212,20 +1218,25 @@ const componentRenderCost: Rule = {
   cost: "medium",
   docs: {
     summary: "Estimates render cost from derived state chains and collection transforms.",
-    whyItMatters: "Each derived dependency can invalidate downstream state and repeat collection work on component updates.",
-    safeFix: "Keep derived values shallow and reuse precomputed data for repeated map, filter, reduce, or sort operations.",
+    whyItMatters:
+      "Each derived dependency can invalidate downstream state and repeat collection work on component updates.",
+    safeFix:
+      "Keep derived values shallow and reuse precomputed data for repeated map, filter, reduce, or sort operations.",
   },
   check: (ctx): Diagnostic[] => {
     const derivedStates = ctx.source.match(/\$derived(?:\.by)?\s*\(/g)?.length ?? 0;
-    const derivedTransforms = ctx.source.match(/\$derived[\s\S]{0,400}\.(?:map|filter|reduce|sort)\s*\(/g)?.length ?? 0;
+    const derivedTransforms =
+      ctx.source.match(/\$derived[\s\S]{0,400}\.(?:map|filter|reduce|sort)\s*\(/g)?.length ?? 0;
     const effects = ctx.source.match(/\$effect(?:\.pre)?\s*\(/g)?.length ?? 0;
     const cost = derivedStates * 3 + derivedTransforms * 4 + effects * 2;
     if (cost < 12) return [];
 
-    return [{
-      ...createPerformanceDiagnostic(ctx, componentRenderCost, 1, 1),
-      message: `Estimated component render cost is ${cost} (derived states: ${derivedStates}, collection transforms: ${derivedTransforms}, effects: ${effects}).`,
-    }];
+    return [
+      {
+        ...createPerformanceDiagnostic(ctx, componentRenderCost, 1, 1),
+        message: `Estimated component render cost is ${cost} (derived states: ${derivedStates}, collection transforms: ${derivedTransforms}, effects: ${effects}).`,
+      },
+    ];
   },
 };
 

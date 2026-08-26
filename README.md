@@ -1337,9 +1337,9 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `no-id-selector`                        | warning  | ID selector creates high specificity in component styles                       |
 | `no-important-override`                 | warning  | CSS uses `!important` override                                                 |
 | `no-style-tag-props`                    | warning  | Inline style attribute can conflict with CSP and maintainability               |
-| `performance-budget`                    | warning  | Estimated LCP and CLS budget risk in component markup                           |
-| `excessive-reactive-subscriptions`     | warning  | Too many store subscriptions or legacy `$:` reactive statements                |
-| `component-render-cost`                 | warning  | Derived state chains may cause expensive component re-renders                   |
+| `performance-budget`                    | warning  | Estimated LCP and CLS budget risk in component markup                          |
+| `excessive-reactive-subscriptions`      | warning  | Too many store subscriptions or legacy `$:` reactive statements                |
+| `component-render-cost`                 | warning  | Derived state chains may cause expensive component re-renders                  |
 | `prefer-snippet-over-passed-function`   | warning  | Function prop where `{#snippet}` + `{@render}` should be used                  |
 
 ### Architecture (5)
@@ -1382,7 +1382,7 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `no-missing-prefetch`             | warning  | Navigation link missing `data-sveltekit-prefetch`            |
 | `no-form-action-without-redirect` | warning  | POST form action missing `redirect()` after mutation         |
 | `no-non-serializable-load-return` | error    | Server load returns non-serializable value (function, class) |
-| `no-runes-in-server-only-file`    | warning  | `$state` or `$effect` used in server-only route files         |
+| `no-runes-in-server-only-file`    | warning  | `$state` or `$effect` used in server-only route files        |
 
 ### Bundle Size (5 source rules + 3 build artifact diagnostics)
 

@@ -61,7 +61,6 @@
     "check": "tsc --noEmit",
     "prepack": "bun run build",
     "typecheck": "tsc --noEmit",
-    "test": "bun run build && bun test test",
     "lint": "eslint src/",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

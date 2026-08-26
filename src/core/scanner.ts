@@ -60,8 +60,7 @@ const shouldRunRule = (rule: Rule, fileKind: "svelte" | "script"): boolean => {
 const isServerOnlyFile = (filePath: string): boolean =>
   /(?:^|\/)(?:\+server|\+(?:page|layout)\.server)\.(?:ts|js)$/.test(filePath);
 
-const isUniversalFile = (filePath: string): boolean =>
-  !isServerOnlyFile(filePath);
+const isUniversalFile = (filePath: string): boolean => !isServerOnlyFile(filePath);
 
 const buildSelectedManifest = (
   directory: string,
