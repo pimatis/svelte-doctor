@@ -1146,6 +1146,89 @@ const preferSnippetOverPassedFunction: Rule = {
   },
 };
 
+const performanceBudget: Rule = {
+  name: "performance-budget",
+  category: "Performance",
+  severity: "warning",
+  message: "Estimated component performance budget is exceeded",
+  help: "Reserve stable dimensions for media and reduce above-the-fold render work to keep estimated LCP below 2.5s and CLS below 0.1.",
+  appliesTo: ["svelte"],
+  cost: "low",
+  docs: {
+    summary: "Estimates Lighthouse-like LCP and CLS risk from component markup.",
+    whyItMatters: "Unbounded media dimensions and heavy initial markup can delay the largest paint and shift content during loading.",
+    safeFix: "Add width and height or aspect-ratio to media, reserve dynamic content space, and defer below-the-fold work.",
+  },
+  check: (ctx): Diagnostic[] => {
+    const images = ctx.source.match(/<(?:img|video)\b/g)?.length ?? 0;
+    const mediaWithoutDimensions =
+      ctx.source.match(/<(?:img|video)\b(?![^>]*(?:width|height|aspect-ratio)\s*=)[^>]*>/g)
+        ?.length ?? 0;
+    const structuralBlocks = ctx.source.match(/\{#(?:if|each|await|key)\b/g)?.length ?? 0;
+    const lcpMs = 1200 + images * 250 + mediaWithoutDimensions * 450 + structuralBlocks * 100;
+    const clsEstimate = Number(
+      Math.min(0.5, mediaWithoutDimensions * 0.08 + structuralBlocks * 0.01).toFixed(2),
+    );
+
+    if (lcpMs <= 2500 && clsEstimate <= 0.1) return [];
+
+    return [{
+      ...createPerformanceDiagnostic(ctx, performanceBudget, 1, 1),
+      message: `Estimated LCP is ${lcpMs}ms and CLS is ${clsEstimate} (media: ${images}, media without dimensions: ${mediaWithoutDimensions}, blocks: ${structuralBlocks}).`,
+    }];
+  },
+};
+
+const excessiveReactiveSubscriptions: Rule = {
+  name: "excessive-reactive-subscriptions",
+  category: "Performance",
+  severity: "warning",
+  message: "Component has too many store subscriptions or legacy reactive statements",
+  help: "Reduce repeated `$store` reads and consolidate independent `$:` statements to lower invalidation and re-render work.",
+  appliesTo: ["svelte"],
+  cost: "low",
+  check: (ctx): Diagnostic[] => {
+    const reactiveStatements = ctx.source.match(/^\s*\$:\s+/gm)?.length ?? 0;
+    const storeSubscriptions = (ctx.source.match(/\$[A-Za-z_][\w$]*/g) ?? []).filter(
+      (name) => !["$state", "$derived", "$effect", "$props", "$bindable", "$host"].includes(name),
+    ).length;
+    const total = reactiveStatements + storeSubscriptions;
+    if (total <= 5) return [];
+
+    return [{
+      ...createPerformanceDiagnostic(ctx, excessiveReactiveSubscriptions, 1, 1),
+      message: `Component has ${storeSubscriptions} store subscriptions and ${reactiveStatements} reactive statements (${total} total).`,
+    }];
+  },
+};
+
+const componentRenderCost: Rule = {
+  name: "component-render-cost",
+  category: "Performance",
+  severity: "warning",
+  message: "Derived state chain may cause expensive component re-renders",
+  help: "Flatten derived state chains, move expensive transforms into bounded helpers, and avoid repeatedly allocating collections during render.",
+  appliesTo: ["svelte"],
+  cost: "medium",
+  docs: {
+    summary: "Estimates render cost from derived state chains and collection transforms.",
+    whyItMatters: "Each derived dependency can invalidate downstream state and repeat collection work on component updates.",
+    safeFix: "Keep derived values shallow and reuse precomputed data for repeated map, filter, reduce, or sort operations.",
+  },
+  check: (ctx): Diagnostic[] => {
+    const derivedStates = ctx.source.match(/\$derived(?:\.by)?\s*\(/g)?.length ?? 0;
+    const derivedTransforms = ctx.source.match(/\$derived[\s\S]{0,400}\.(?:map|filter|reduce|sort)\s*\(/g)?.length ?? 0;
+    const effects = ctx.source.match(/\$effect(?:\.pre)?\s*\(/g)?.length ?? 0;
+    const cost = derivedStates * 3 + derivedTransforms * 4 + effects * 2;
+    if (cost < 12) return [];
+
+    return [{
+      ...createPerformanceDiagnostic(ctx, componentRenderCost, 1, 1),
+      message: `Estimated component render cost is ${cost} (derived states: ${derivedStates}, collection transforms: ${derivedTransforms}, effects: ${effects}).`,
+    }];
+  },
+};
+
 export const performanceRules: Rule[] = [
   noEffectForDerived,
   eachMissingKey,
@@ -1168,4 +1251,7 @@ export const performanceRules: Rule[] = [
   noImportantOverride,
   noStyleTagProps,
   preferSnippetOverPassedFunction,
+  performanceBudget,
+  excessiveReactiveSubscriptions,
+  componentRenderCost,
 ];

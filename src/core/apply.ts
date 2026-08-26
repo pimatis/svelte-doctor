@@ -11,7 +11,6 @@ import { logger } from "../output/logger.js";
 const buildUnifiedDiff = (filePath: string, before: string, after: string): string => {
   const beforeLines = before.split("\n");
   const afterLines = after.split("\n");
-  // ponytail: O(n*m) LCS keeps multi-hunk previews correct; use Myers if large files make this visible
   const table = Array.from({ length: beforeLines.length + 1 }, () =>
     new Array<number>(afterLines.length + 1).fill(0),
   );

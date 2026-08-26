@@ -243,6 +243,8 @@ export interface ScoreHistoryEntry {
 export interface RuleContextMeta {
   hasScript: boolean;
   hasStyle: boolean;
+  isServerOnly: boolean;
+  isUniversal: boolean;
 }
 
 export interface RuleContext {

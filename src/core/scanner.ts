@@ -57,6 +57,12 @@ const shouldRunRule = (rule: Rule, fileKind: "svelte" | "script"): boolean => {
   return appliesTo.includes("all") || appliesTo.includes(fileKind);
 };
 
+const isServerOnlyFile = (filePath: string): boolean =>
+  /(?:^|\/)(?:\+server|\+(?:page|layout)\.server)\.(?:ts|js)$/.test(filePath);
+
+const isUniversalFile = (filePath: string): boolean =>
+  !isServerOnlyFile(filePath);
+
 const buildSelectedManifest = (
   directory: string,
   manifest: ProjectFileManifest,
@@ -95,6 +101,11 @@ export const scanSingleFile = (
   if (!ctx) return [];
 
   ctx.filePath = posixPath;
+  ctx.analysisMeta = {
+    ...ctx.analysisMeta,
+    isServerOnly: isServerOnlyFile(posixPath),
+    isUniversal: isUniversalFile(posixPath),
+  };
 
   const diagnostics: Diagnostic[] = [];
   for (const rule of rules) {

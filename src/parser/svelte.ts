@@ -25,6 +25,8 @@ const buildContext = (
   analysisMeta: {
     hasScript: /<script[\s>]/.test(source),
     hasStyle: /<style[\s>]/.test(source),
+    isServerOnly: false,
+    isUniversal: true,
   },
 });
 

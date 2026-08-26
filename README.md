@@ -90,6 +90,8 @@ The tool is designed to be **safe by default**: deterministic fixes are opt-in, 
 - **Bundle-aware dead code detection** for unused function exports, unused components imported by `+page.svelte`, and tree-shaking compatibility risks
 - **Test coverage gap finder** via `test-gaps` for source-to-test matching and SvelteKit critical path checks
 - **Component render profiler** via `render-profile` for compile-time DOM, reactivity, hydration, and re-render cost ranking
+- **Performance budgets** with estimated LCP/CLS risk, excessive store/reactive subscription warnings, and derived-state render cost estimation
+- **Server-side code detection** for client runes in server-only routes, with universal and server-only rule filtering
 - **Score history and trends** via `trend` and live feedback via `watch`
 
 ### Automation & DX
@@ -1311,7 +1313,7 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `no-$state-frozen-misuse`     | warning  | `.push()` or `.splice()` on `$state.frozen()` objects              |
 | `no-class-instance-as-$state` | warning  | Class instance passed to `$state()` breaks fine-grained reactivity |
 
-### Performance (21)
+### Performance (24)
 
 | Rule                                    | Severity | Description                                                                    |
 | --------------------------------------- | -------- | ------------------------------------------------------------------------------ |
@@ -1335,6 +1337,9 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `no-id-selector`                        | warning  | ID selector creates high specificity in component styles                       |
 | `no-important-override`                 | warning  | CSS uses `!important` override                                                 |
 | `no-style-tag-props`                    | warning  | Inline style attribute can conflict with CSP and maintainability               |
+| `performance-budget`                    | warning  | Estimated LCP and CLS budget risk in component markup                           |
+| `excessive-reactive-subscriptions`     | warning  | Too many store subscriptions or legacy `$:` reactive statements                |
+| `component-render-cost`                 | warning  | Derived state chains may cause expensive component re-renders                   |
 | `prefer-snippet-over-passed-function`   | warning  | Function prop where `{#snippet}` + `{@render}` should be used                  |
 
 ### Architecture (5)
@@ -1363,7 +1368,7 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `no-plain-external-anchor`    | warning  | External `<a>` link missing `rel="noopener noreferrer"`    |
 | `no-exposed-error-details`    | error    | Raw `error.message` or `error.stack` returned to client    |
 
-### SvelteKit (10)
+### SvelteKit (11)
 
 | Rule                              | Severity | Description                                                  |
 | --------------------------------- | -------- | ------------------------------------------------------------ |
@@ -1377,6 +1382,7 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `no-missing-prefetch`             | warning  | Navigation link missing `data-sveltekit-prefetch`            |
 | `no-form-action-without-redirect` | warning  | POST form action missing `redirect()` after mutation         |
 | `no-non-serializable-load-return` | error    | Server load returns non-serializable value (function, class) |
+| `no-runes-in-server-only-file`    | warning  | `$state` or `$effect` used in server-only route files         |
 
 ### Bundle Size (5 source rules + 3 build artifact diagnostics)
 
