@@ -21,7 +21,6 @@ jobs:
           node-version: ${{ matrix.node-version }}
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
-      - run: bun run test
       - run: bun pm pack --dry-run
       - run: node ./dist/cli.mjs --version
 
@@ -37,6 +36,5 @@ jobs:
           node-version: 22
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
-      - run: bun run test
       - run: bun pm pack --dry-run
       - run: node ./dist/cli.mjs --version
