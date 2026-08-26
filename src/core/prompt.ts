@@ -142,6 +142,9 @@ export const formatDiagnosticsForPrompt = (
       if (diagnostic.help) {
         lines.push(`  Fix      : ${redactSecrets(diagnostic.help)}`);
       }
+      if (diagnostic.suggestedFix) {
+        lines.push(`  Snippet  : ${redactSecrets(diagnostic.suggestedFix)}`);
+      }
       lines.push("");
     }
   }
@@ -173,6 +176,7 @@ export const formatDiagnosticsAsRawText = (
           `Location: ${redactSecrets(location)}`,
           `Problem: ${redactSecrets(diagnostic.message)}`,
           diagnostic.help ? `Fix: ${redactSecrets(diagnostic.help)}` : "",
+          diagnostic.suggestedFix ? `Suggested fix: ${redactSecrets(diagnostic.suggestedFix)}` : "",
         ]
           .filter(Boolean)
           .join("\n");

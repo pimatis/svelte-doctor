@@ -123,6 +123,7 @@ export interface Diagnostic {
   weight?: number;
   fingerprint?: string;
   fixable?: boolean;
+  suggestedFix?: string;
   workspace?: string;
   // origin plugin name when the diagnostic was produced by a custom rule
   plugin?: string;

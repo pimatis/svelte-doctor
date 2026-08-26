@@ -560,6 +560,7 @@ export const scan = async (
             column: d.column,
             fingerprint: d.fingerprint,
             fixable: d.fixable ?? false,
+            ...(d.suggestedFix ? { suggestedFix: d.suggestedFix } : {}),
             plugin: d.plugin ?? null,
           })),
         },

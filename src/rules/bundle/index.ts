@@ -190,4 +190,53 @@ const noFullIconImport: Rule = {
   },
 };
 
-export const bundleRules: Rule[] = [noBarrelImport, noFullLodashImport, noMoment, noFullIconImport];
+const noTreeShakingIncompatibleExport: Rule = {
+  name: "no-tree-shaking-incompatible-export",
+  category: "Bundle Size",
+  severity: "warning",
+  message: "Tree-shaking incompatible module pattern detected",
+  help: "Prefer named exports and direct imports. `export *`, namespace imports, and CommonJS exports make it harder for bundlers to remove unused code.",
+  docs: {
+    summary: "Flags module patterns that can retain unused code in client bundles.",
+    whyItMatters:
+      "Bundlers need statically discoverable exports and imports to eliminate unused modules and functions.",
+    safeFix:
+      "Replace wildcard re-exports or namespace imports with named exports and direct imports after checking the public API.",
+  },
+  check: (ctx) => {
+    const diagnostics: Diagnostic[] = [];
+    const patterns = [
+      /\bexport\s+\*\s+from\s+["'][^"']+["']/,
+      /\bimport\s+\*\s+as\s+\w+\s+from\s+["']\.[^"']*["']/,
+      /\bmodule\.exports\s*=/,
+    ];
+
+    for (const [index, line] of ctx.source.split("\n").entries()) {
+      const trimmed = line.trimStart();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
+      const match = patterns.map((pattern) => pattern.exec(line)).find(Boolean);
+      if (!match) continue;
+
+      diagnostics.push({
+        filePath: ctx.filePath,
+        rule: noTreeShakingIncompatibleExport.name,
+        severity: noTreeShakingIncompatibleExport.severity,
+        message: noTreeShakingIncompatibleExport.message,
+        help: noTreeShakingIncompatibleExport.help,
+        line: index + 1,
+        column: (match.index ?? 0) + 1,
+        category: noTreeShakingIncompatibleExport.category,
+      });
+    }
+
+    return diagnostics;
+  },
+};
+
+export const bundleRules: Rule[] = [
+  noBarrelImport,
+  noFullLodashImport,
+  noMoment,
+  noFullIconImport,
+  noTreeShakingIncompatibleExport,
+];

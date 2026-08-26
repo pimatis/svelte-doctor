@@ -58,6 +58,7 @@ The tool is designed to be **safe by default**: deterministic fixes are opt-in, 
 - **78 source diagnostic rules + 3 build artifact diagnostics** covering correctness, performance, security, architecture, SvelteKit reliability, runtime performance, hydration safety, CSS specificity, and accessibility
 - **0–100 health score** with actionable, line-specific diagnostics on every scan
 - **TypeScript AST-backed script analysis** for lower false-positive rates on security-sensitive checks
+- **Accessibility autofix and suggestions** with automatic decorative-image `alt=""` fixes and contextual ARIA snippets for manual decisions
 - **Cached scans + incremental watch** for faster repeat checks and tighter feedback loops, with `watch --fix` auto-applying deterministic fixes on save
 - **Incremental checks** with `check --incremental` to scan only changed tracked and untracked files in large projects
 - **Diff-aware and workspace-aware scans** for staged files, changed files, and monorepos
@@ -86,6 +87,7 @@ The tool is designed to be **safe by default**: deterministic fixes are opt-in, 
 - **Component where-used lookup** via `where-used` with line-accurate import/render locations, `$lib` and tsconfig alias resolution, dynamic import detection, render trees, scope filtering, and reverse direction
 - **Bundle impact preview** via `bundle-impact` for estimated savings from fixable bundle-size diagnostics
 - **Dead store detection** via `dead-stores` for `writable` stores never written, with cross-file write tracking and runes migration suggestions
+- **Bundle-aware dead code detection** for unused function exports, unused components imported by `+page.svelte`, and tree-shaking compatibility risks
 - **Test coverage gap finder** via `test-gaps` for source-to-test matching and SvelteKit critical path checks
 - **Component render profiler** via `render-profile` for compile-time DOM, reactivity, hydration, and re-render cost ranking
 - **Score history and trends** via `trend` and live feedback via `watch`
@@ -663,12 +665,12 @@ svelte-doctor compare --base origin/main --head feature/xyz
 
 Watch for file changes and show live diagnostics. Runs an initial cached scan, then incrementally re-scans only changed files with 150ms debounced updates. With `--fix`, deterministic fixes are applied automatically when a file is saved — the watch loop closes the feedback gap between "see the issue" and "fix the issue".
 
-| Option               | Description                                                               |
-| -------------------- | ------------------------------------------------------------------------- |
-| `--dead-code <mode>` | Dead-code behavior in watch mode: `off`, `lazy`, or `full`                |
+| Option               | Description                                                                 |
+| -------------------- | --------------------------------------------------------------------------- |
+| `--dead-code <mode>` | Dead-code behavior in watch mode: `off`, `lazy`, or `full`                  |
 | `--incremental`      | Start with only tracked and untracked non-ignored files changed from `HEAD` |
-| `--fix`              | Auto-apply deterministic fixes to saved files                             |
-| `--fix-rules <csv>`  | With `--fix`: limit auto-fixes to comma-separated rules (implies `--fix`) |
+| `--fix`              | Auto-apply deterministic fixes to saved files                               |
+| `--fix-rules <csv>`  | With `--fix`: limit auto-fixes to comma-separated rules (implies `--fix`)   |
 
 Auto-fix can also be enabled permanently in `svelte-doctor.config.json` — no CLI flag needed:
 
@@ -929,6 +931,8 @@ svelte-doctor where-used Button --direction uses
 Detect `writable` stores that are never written to anywhere in the project. A `writable` that is only ever read should be a `readable` store or migrated to Svelte 5 runes `$state`. This is especially useful when migrating a codebase from stores to runes: it identifies stores that can be safely converted to read-only values without changing any write sites.
 
 The analysis is cross-file: it tracks `.set()`, `.update()`, `this.store.set()` in classes, and `$store =` auto-subscription writes in `.svelte` templates, resolving imports and re-exports back to the original declaration. Stores that are written in any file are reported as OK with their write sites listed.
+
+Full checks also use Knip for function-level unused export diagnostics and detect component imports that are never rendered in `+page.svelte`. Bundle analysis reports wildcard, namespace, and CommonJS patterns that can prevent tree-shaking from removing unused code.
 
 | Option   | Description                  |
 | -------- | ---------------------------- |
@@ -1333,14 +1337,15 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `no-style-tag-props`                    | warning  | Inline style attribute can conflict with CSP and maintainability               |
 | `prefer-snippet-over-passed-function`   | warning  | Function prop where `{#snippet}` + `{@render}` should be used                  |
 
-### Architecture (4)
+### Architecture (5)
 
-| Rule                 | Severity | Description                                  |
-| -------------------- | -------- | -------------------------------------------- |
-| `no-giant-component` | warning  | Component exceeds 300 lines                  |
-| `no-deep-nesting`    | warning  | More than 3 levels of template block nesting |
-| `no-console`         | warning  | `console.*` left in components               |
-| `no-multi-script`    | warning  | Multiple instance `<script>` blocks          |
+| Rule                         | Severity | Description                                              |
+| ---------------------------- | -------- | -------------------------------------------------------- |
+| `no-giant-component`         | warning  | Component exceeds 300 lines                              |
+| `no-deep-nesting`            | warning  | More than 3 levels of template block nesting             |
+| `no-console`                 | warning  | `console.*` left in components                           |
+| `no-multi-script`            | warning  | Multiple instance `<script>` blocks                      |
+| `component-complexity-score` | warning  | Combined component complexity score and split suggestion |
 
 ### Security (11)
 
@@ -1373,35 +1378,36 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `no-form-action-without-redirect` | warning  | POST form action missing `redirect()` after mutation         |
 | `no-non-serializable-load-return` | error    | Server load returns non-serializable value (function, class) |
 
-### Bundle Size (4 source rules + 3 build artifact diagnostics)
+### Bundle Size (5 source rules + 3 build artifact diagnostics)
 
-| Rule                         | Severity | Description                                               |
-| ---------------------------- | -------- | --------------------------------------------------------- |
-| `no-barrel-import`           | warning  | Barrel imports prevent tree-shaking                       |
-| `no-full-lodash`             | warning  | Full `lodash` import (~70kb) (fixable)                    |
-| `no-moment`                  | warning  | `moment.js` is heavy (~300kb) (fixable)                   |
-| `no-full-icon-import`        | warning  | Wildcard icon imports prevent tree-shaking (fixable)      |
-| `chunk-size-limit`           | warning  | Build output chunk exceeds recommended size limit         |
-| `no-duplicate-lib-in-chunks` | warning  | Same package appears across multiple generated chunks     |
-| `prefer-dynamic-import`      | warning  | Large dependency appears in an eagerly loaded build chunk |
-| `no-base64-inline-asset`     | warning  | Build output contains inline base64 image data            |
+| Rule                                  | Severity | Description                                                      |
+| ------------------------------------- | -------- | ---------------------------------------------------------------- |
+| `no-barrel-import`                    | warning  | Barrel imports prevent tree-shaking                              |
+| `no-full-lodash`                      | warning  | Full `lodash` import (~70kb) (fixable)                           |
+| `no-moment`                           | warning  | `moment.js` is heavy (~300kb) (fixable)                          |
+| `no-full-icon-import`                 | warning  | Wildcard icon imports prevent tree-shaking (fixable)             |
+| `no-tree-shaking-incompatible-export` | warning  | Wildcard, namespace, or CommonJS patterns may retain unused code |
+| `chunk-size-limit`                    | warning  | Build output chunk exceeds recommended size limit                |
+| `no-duplicate-lib-in-chunks`          | warning  | Same package appears across multiple generated chunks            |
+| `prefer-dynamic-import`               | warning  | Large dependency appears in an eagerly loaded build chunk        |
+| `no-base64-inline-asset`              | warning  | Build output contains inline base64 image data                   |
 
 ### Accessibility (12)
 
-| Rule                    | Severity | Description                                                       |
-| ----------------------- | -------- | ----------------------------------------------------------------- |
-| `img-missing-alt`       | warning  | `<img>` without `alt` attribute                                   |
-| `click-needs-keyboard`  | warning  | Click handler on non-interactive element without keyboard support |
-| `anchor-no-content`     | warning  | `<a>` without text content or `aria-label`                        |
-| `label-without-control` | warning  | `<label>` not associated with any form control                    |
-| `input-without-label`   | warning  | Form control missing an associated `<label>`                      |
-| `duplicate-id`          | warning  | Duplicate `id` attribute value                                    |
-| `heading-order`         | warning  | Heading levels are skipped (e.g. h1 → h3)                         |
-| `aria-hidden-focus`     | warning  | Focusable element inside `aria-hidden="true"`                     |
-| `no-positive-tabindex`  | warning  | Positive `tabindex` disrupts keyboard navigation order            |
-| `media-has-caption`     | warning  | `<video>`/`<audio>` missing captions or transcript track          |
-| `html-lang`             | warning  | `<html>` element missing a `lang` attribute                       |
-| `button-has-name`       | warning  | `<button>` without text content or `aria-label`                   |
+| Rule                    | Severity | Description                                                         |
+| ----------------------- | -------- | ------------------------------------------------------------------- |
+| `img-missing-alt`       | warning  | `<img>` without `alt` attribute (autofixable with `alt=""`)         |
+| `click-needs-keyboard`  | warning  | Click handler on non-interactive element without keyboard support   |
+| `anchor-no-content`     | warning  | `<a>` without text content or `aria-label` (suggested snippet)      |
+| `label-without-control` | warning  | `<label>` not associated with any form control                      |
+| `input-without-label`   | warning  | Form control missing an associated `<label>` (suggested snippet)    |
+| `duplicate-id`          | warning  | Duplicate `id` attribute value                                      |
+| `heading-order`         | warning  | Heading levels are skipped (e.g. h1 → h3)                           |
+| `aria-hidden-focus`     | warning  | Focusable element inside `aria-hidden="true"`                       |
+| `no-positive-tabindex`  | warning  | Positive `tabindex` disrupts keyboard navigation order              |
+| `media-has-caption`     | warning  | `<video>`/`<audio>` missing captions or transcript track            |
+| `html-lang`             | warning  | `<html>` element missing a `lang` attribute                         |
+| `button-has-name`       | warning  | `<button>` without text content or `aria-label` (suggested snippet) |
 
 ### State & Reactivity (6)
 

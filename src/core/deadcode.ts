@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Diagnostic } from "../types.js";
 import { toPosix } from "../fs/normalize.js";
+import { collectFiles } from "../fs/walker.js";
 
 interface KnipIssue {
   filePath: string;
@@ -39,6 +40,26 @@ const HELP_MAP: Record<string, string> = {
   duplicates: "Consolidate duplicate exports into a single canonical export",
 };
 
+const getExportRule = (issue: KnipIssue, rootDir: string): string => {
+  if (issue.type === "function") return "unused-function-export";
+
+  try {
+    const source = fs.readFileSync(path.resolve(rootDir, issue.filePath), "utf-8");
+    const escaped = issue.symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (
+      new RegExp(
+        `export\\s+(?:async\\s+)?function\\s+${escaped}\\b|export\\s+const\\s+${escaped}\\s*=\\s*(?:async\\s*)?(?:function|\\([^)]*\\)|[A-Za-z_$][\\w$]*)\\s*=>`,
+      ).test(source)
+    ) {
+      return "unused-function-export";
+    }
+  } catch {
+    // keep the generic Knip export rule when the source cannot be read
+  }
+
+  return "exports";
+};
+
 const collectRecords = (
   records: KnipIssueRecords,
   issueType: string,
@@ -48,17 +69,75 @@ const collectRecords = (
 
   for (const issues of Object.values(records)) {
     for (const issue of Object.values(issues)) {
+      const rule = issueType === "exports" ? getExportRule(issue, rootDir) : issueType;
       diagnostics.push({
         filePath: toPosix(path.relative(rootDir, issue.filePath)),
-        rule: issueType,
+        rule,
         severity: "warning",
-        message: `${MESSAGE_MAP[issueType] ?? issueType}: ${issue.symbol}`,
-        help: HELP_MAP[issueType] ?? "",
+        message: `${rule === "unused-function-export" ? "Unused function export" : (MESSAGE_MAP[issueType] ?? issueType)}: ${issue.symbol}`,
+        help:
+          rule === "unused-function-export"
+            ? "Remove the export when the function is private, or keep it only when it is part of a public API."
+            : (HELP_MAP[issueType] ?? ""),
         line: 0,
         column: 0,
         category: "Dead Code",
         weight: 1,
       });
+    }
+  }
+
+  return diagnostics;
+};
+
+const findUnusedPageComponents = (rootDir: string): Diagnostic[] => {
+  const diagnostics: Diagnostic[] = [];
+
+  for (const filePath of collectFiles(rootDir, /\.svelte$/)) {
+    if (path.basename(filePath) !== "+page.svelte") continue;
+
+    let source: string;
+    try {
+      source = fs.readFileSync(filePath, "utf-8");
+    } catch {
+      continue;
+    }
+
+    const importPattern = /^\s*import\s+(?:\{[^}]+\}|\w+)\s+from\s+["']([^"']+)["'];?/gm;
+    let match: RegExpExecArray | null;
+    while ((match = importPattern.exec(source)) !== null) {
+      const clause = match[0].match(/import\s+(.+?)\s+from\s+["']/)?.[1] ?? "";
+      const importedNames = clause.startsWith("{")
+        ? clause
+            .slice(1, -1)
+            .split(",")
+            .map(
+              (name) =>
+                name
+                  .trim()
+                  .split(/\s+as\s+/)
+                  .pop() ?? "",
+            )
+        : [clause.split(",")[0].trim()];
+      const afterImport = source.slice(importPattern.lastIndex);
+      const before = source.slice(0, match.index);
+      const line = before.split("\n").length;
+
+      for (const imported of importedNames) {
+        if (!/^[A-Z]/.test(imported)) continue;
+        if (new RegExp(`<${imported}(?:\\s|>)`).test(afterImport)) continue;
+        diagnostics.push({
+          filePath: toPosix(path.relative(rootDir, filePath)),
+          rule: "unused-page-component",
+          severity: "warning",
+          message: `Component import is unused in +page.svelte: ${imported}`,
+          help: "Remove the unused component import or render it in the page markup. Unused component imports still add module graph and bundle work.",
+          line,
+          column: 1,
+          category: "Dead Code",
+          weight: 1,
+        });
+      }
     }
   }
 
@@ -95,7 +174,8 @@ const hasNodeModules = (dir: string): boolean => {
 // Runs knip for dead code detection including exports, unused files, and duplicate exports.
 // returns empty array if node_modules isn't installed or knip crashes
 export const runDeadCodeAnalysis = async (rootDir: string): Promise<Diagnostic[]> => {
-  if (!hasNodeModules(rootDir)) return [];
+  const pageComponentDiagnostics = findUnusedPageComponents(rootDir);
+  if (!hasNodeModules(rootDir)) return pageComponentDiagnostics;
 
   try {
     // @ts-expect-error — knip exports types from types.d.ts but main is in index.d.ts
@@ -105,7 +185,7 @@ export const runDeadCodeAnalysis = async (rootDir: string): Promise<Diagnostic[]
     const options = await silenced(() => createOptions({ cwd: rootDir, isShowProgress: false }));
 
     const result = (await silenced(() => main(options))) as KnipResults;
-    const diagnostics: Diagnostic[] = [];
+    const diagnostics: Diagnostic[] = [...pageComponentDiagnostics];
 
     // guard against knip returning undefined or a non-iterable for files
     const unusedFiles: string[] = Array.isArray(result.issues?.files) ? result.issues.files : [];

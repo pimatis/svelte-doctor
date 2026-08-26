@@ -79,6 +79,9 @@ export const printDiagnostics = (diagnostics: Diagnostic[]) => {
     if (first.help) {
       logger.dim(`    ${sanitize(first.help)}`);
     }
+    if (first.suggestedFix) {
+      logger.dim(`    Suggested fix: ${sanitize(first.suggestedFix)}`);
+    }
 
     const fileLines = new Map<string, number[]>();
     for (const diag of ruleDiagnostics) {

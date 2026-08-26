@@ -1,3 +1,4 @@
+import ts from "typescript";
 import type { Rule, Diagnostic } from "../../types.js";
 
 // builds a line-index → boolean map in a single O(n) pass
@@ -21,6 +22,133 @@ const buildScriptLineMap = (source: string): boolean[] => {
   }
 
   return map;
+};
+
+const countProps = (ctx: Parameters<Rule["check"]>[0]): number => {
+  let count = 0;
+
+  for (const block of ctx.scriptBlocks.filter(
+    (item) => item.kind === "instance" || item.kind === "script",
+  )) {
+    for (const statement of block.sourceFile.statements) {
+      if (!ts.isVariableStatement(statement)) continue;
+      const isExported = statement.modifiers?.some(
+        (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+      );
+
+      for (const declaration of statement.declarationList.declarations) {
+        if (isExported && ts.isIdentifier(declaration.name)) count++;
+        if (!ts.isObjectBindingPattern(declaration.name)) continue;
+        if (!declaration.initializer || !ts.isCallExpression(declaration.initializer)) continue;
+        if (!ts.isIdentifier(declaration.initializer.expression)) continue;
+        if (declaration.initializer.expression.text !== "$props") continue;
+        count += declaration.name.elements.length;
+      }
+    }
+  }
+
+  return count;
+};
+
+const countDowngradeSignals = (source: string): number => {
+  const patterns = [
+    /\bexport\s+let\b/g,
+    /\bon:\w+\s*=/g,
+    /\bcreateEventDispatcher\b/g,
+    /<slot\b/g,
+    /\$\$(?:props|restProps)\b/g,
+    /<svelte:component\b/g,
+    /\b(?:beforeUpdate|afterUpdate)\b/g,
+  ];
+
+  return patterns.reduce((count, pattern) => count + (source.match(pattern)?.length ?? 0), 0);
+};
+
+const getMaxBlockDepth = (source: string): number => {
+  const lines = source.split("\n");
+  const scriptMap = buildScriptLineMap(source);
+  let insideStyle = false;
+  let depth = 0;
+  let maximum = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (/^<style[\s>]/.test(trimmed)) {
+      insideStyle = true;
+      continue;
+    }
+    if (trimmed === "</style>") {
+      insideStyle = false;
+      continue;
+    }
+    if (scriptMap[i] || insideStyle) continue;
+
+    const tokens = lines[i].match(/\{[#/]\s*(?:if|each|await|key)\b[^}]*\}/g) ?? [];
+    for (const token of tokens) {
+      if (token.startsWith("{/")) {
+        depth = Math.max(0, depth - 1);
+        continue;
+      }
+      depth++;
+      maximum = Math.max(maximum, depth);
+    }
+  }
+
+  return maximum;
+};
+
+const componentComplexityScore: Rule = {
+  name: "component-complexity-score",
+  category: "Architecture",
+  severity: "warning",
+  message: "Component complexity is high - consider splitting it into smaller components.",
+  help: "Split large scripts, prop-heavy APIs, migration-heavy code, and deeply nested templates into focused child components.",
+  docs: {
+    summary:
+      "Scores component complexity across script size, props, migration signals, and template nesting",
+    whyItMatters:
+      "Components with several independent complexity signals are harder to understand, test, and migrate.",
+    safeFix:
+      "Extract cohesive markup and state into child components, then pass only the props each child needs.",
+  },
+  check: (ctx): Diagnostic[] => {
+    if (!ctx.filePath.endsWith(".svelte")) return [];
+
+    const scriptLines = ctx.scriptBlocks
+      .filter((block) => block.kind === "instance" || block.kind === "script")
+      .reduce(
+        (total, block) =>
+          total + block.source.split("\n").filter((line) => line.trim().length > 0).length,
+        0,
+      );
+    const props = countProps(ctx);
+    const downgradeSignals = countDowngradeSignals(ctx.source);
+    const maxDepth = getMaxBlockDepth(ctx.source);
+    const score = Math.min(
+      100,
+      Math.round(
+        scriptLines * 0.5 +
+          Math.max(0, props - 5) * 4 +
+          downgradeSignals * 4 +
+          Math.max(0, maxDepth - 2) * 12,
+      ),
+    );
+
+    if (score < 40) return [];
+
+    return [
+      {
+        filePath: ctx.filePath,
+        rule: "component-complexity-score",
+        severity: "warning",
+        message: `Component complexity score is ${score}/100 (script: ${scriptLines} lines, props: ${props}, downgrade signals: ${downgradeSignals}, max nesting: ${maxDepth}). Consider breaking it into smaller components.`,
+        help: "Extract cohesive sections into child components and reduce the number of props and migration concerns handled by one component.",
+        line: 1,
+        column: 1,
+        category: "Architecture",
+      },
+    ];
+  },
 };
 
 // fires when a .svelte component exceeds a reasonable non-empty line count
@@ -236,4 +364,5 @@ export const architectureRules: Rule[] = [
   noDeepNesting,
   noConsole,
   noMultiScript,
+  componentComplexityScore,
 ];

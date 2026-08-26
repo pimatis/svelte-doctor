@@ -83,7 +83,12 @@ const getLineCol = (source: string, offset: number): { line: number; column: num
   return { line, column: offset - lastNewline };
 };
 
-const makeDiagnostic = (ctx: RuleContext, el: AstNode, rule: Rule): Diagnostic => {
+const makeDiagnostic = (
+  ctx: RuleContext,
+  el: AstNode,
+  rule: Rule,
+  suggestedFix?: string,
+): Diagnostic => {
   const { line, column } = getLineCol(ctx.source, el.start ?? 0);
   return {
     filePath: ctx.filePath,
@@ -94,7 +99,24 @@ const makeDiagnostic = (ctx: RuleContext, el: AstNode, rule: Rule): Diagnostic =
     line,
     column,
     category: rule.category,
+    ...(suggestedFix ? { suggestedFix } : {}),
   };
+};
+
+const addAttribute = (source: string, diagnostic: Diagnostic, attribute: string): string => {
+  const lines = source.split("\n");
+  const lineIndex = diagnostic.line - 1;
+  if (lineIndex < 0 || lineIndex >= lines.length) return source;
+
+  const lineStart = lines.slice(0, lineIndex).reduce((offset, line) => offset + line.length + 1, 0);
+  const tagStart = lineStart + Math.max(0, diagnostic.column - 1);
+  const tagEnd = source.indexOf(">", tagStart);
+  if (tagEnd < 0) return source;
+
+  const insertion = source[tagEnd - 1] === "/" ? tagEnd - 1 : tagEnd;
+  const before = source.slice(0, insertion).replace(/\s+$/, "");
+  const after = source.slice(insertion).replace(/^\s+/, " ");
+  return before + ` ${attribute}` + after;
 };
 
 const collectStaticIds = (nodes: AstNode[]): Set<string> => {
@@ -178,16 +200,25 @@ const imgMissingAlt: Rule = {
   message: "`<img>` element is missing an `alt` attribute",
   help: 'Add descriptive alt text: `<img alt="description" />`. For decorative images use `alt=""`. Dynamic bindings like `{alt}` or `alt={altVar}` are accepted.',
   requiresAst: true,
+  autofixable: true,
   check: (ctx) => {
     if (!ctx.ast) return [];
     const diagnostics: Diagnostic[] = [];
     walkMarkup(ctx.ast.fragment?.nodes ?? [], [], (el) => {
       if (!isElement(el) || el.name !== "img") return;
       if (getAttr(el, "alt")) return;
-      diagnostics.push(makeDiagnostic(ctx, el, imgMissingAlt));
+      diagnostics.push(
+        makeDiagnostic(
+          ctx,
+          el,
+          imgMissingAlt,
+          'Add descriptive text to `alt`, or keep the automatic `alt=""` for decorative images.',
+        ),
+      );
     });
     return diagnostics;
   },
+  fix: (source, diagnostic) => addAttribute(source, diagnostic, 'alt=""'),
 };
 
 // click on non-interactive elements must pair with keyboard handlers for a11y
@@ -223,7 +254,14 @@ const clickNeedsKeyboard: Rule = {
       const hasRole = attributes.some((a: AstNode) => a.type === "Attribute" && a.name === "role");
 
       if (hasKeyboard && hasRole) return;
-      diagnostics.push(makeDiagnostic(ctx, el, clickNeedsKeyboard));
+      diagnostics.push(
+        makeDiagnostic(
+          ctx,
+          el,
+          clickNeedsKeyboard,
+          '<div ... role="button" tabindex="0" onkeydown={handleKeydown}>',
+        ),
+      );
     });
 
     return diagnostics;
@@ -256,7 +294,14 @@ const anchorNoContent: Rule = {
         child.type === "Text" ? child.data?.trim() === "" : child.type === "Comment",
       );
       if (!isEmpty) return;
-      diagnostics.push(makeDiagnostic(ctx, el, anchorNoContent));
+      diagnostics.push(
+        makeDiagnostic(
+          ctx,
+          el,
+          anchorNoContent,
+          '<a ... aria-label="Describe the link destination">',
+        ),
+      );
     });
     return diagnostics;
   },
@@ -288,7 +333,9 @@ const labelWithoutControl: Rule = {
         if (target && ids.has(target)) return;
       }
 
-      diagnostics.push(makeDiagnostic(ctx, el, labelWithoutControl));
+      diagnostics.push(
+        makeDiagnostic(ctx, el, labelWithoutControl, '<label for="control-id">Field label</label>'),
+      );
     });
 
     return diagnostics;
@@ -335,7 +382,9 @@ const inputWithoutLabel: Rule = {
       );
       if (wrappedInLabel) return;
 
-      diagnostics.push(makeDiagnostic(ctx, el, inputWithoutLabel));
+      diagnostics.push(
+        makeDiagnostic(ctx, el, inputWithoutLabel, '<input ... aria-label="Describe the field">'),
+      );
     });
 
     return diagnostics;
@@ -361,7 +410,7 @@ const duplicateId: Rule = {
       if (!id) return;
 
       if (seen.has(id)) {
-        diagnostics.push(makeDiagnostic(ctx, el, duplicateId));
+        diagnostics.push(makeDiagnostic(ctx, el, duplicateId, "Rename the duplicate `id` value."));
       } else {
         seen.set(id, el);
       }
@@ -391,7 +440,9 @@ const headingOrder: Rule = {
 
       const level = Number(match[1]);
       if (lastLevel > 0 && level > lastLevel + 1) {
-        diagnostics.push(makeDiagnostic(ctx, el, headingOrder));
+        diagnostics.push(
+          makeDiagnostic(ctx, el, headingOrder, "Use the next heading level without skipping."),
+        );
       }
       lastLevel = level;
     });
@@ -417,7 +468,14 @@ const ariaHiddenFocus: Rule = {
         isAriaHidden(el) ||
         ancestors.some((ancestor) => isElement(ancestor) && isAriaHidden(ancestor))
       ) {
-        diagnostics.push(makeDiagnostic(ctx, el, ariaHiddenFocus));
+        diagnostics.push(
+          makeDiagnostic(
+            ctx,
+            el,
+            ariaHiddenFocus,
+            'Remove `aria-hidden="true"` or remove the focusable child.',
+          ),
+        );
       }
     });
     return diagnostics;
@@ -444,7 +502,14 @@ const noPositiveTabindex: Rule = {
       if (value === null) return; // dynamic — cannot verify
       const numeric = Number(value);
       if (Number.isInteger(numeric) && numeric > 0) {
-        diagnostics.push(makeDiagnostic(ctx, el, noPositiveTabindex));
+        diagnostics.push(
+          makeDiagnostic(
+            ctx,
+            el,
+            noPositiveTabindex,
+            'Replace `tabindex="1"` with `tabindex="0"` or `tabindex="-1"` based on intent.',
+          ),
+        );
       }
     });
     return diagnostics;
@@ -471,7 +536,9 @@ const mediaHasCaption: Rule = {
       });
 
       if (!hasTrack) {
-        diagnostics.push(makeDiagnostic(ctx, el, mediaHasCaption));
+        diagnostics.push(
+          makeDiagnostic(ctx, el, mediaHasCaption, '<track kind="captions" src="captions.vtt">'),
+        );
       }
     });
     return diagnostics;
@@ -492,7 +559,7 @@ const htmlLang: Rule = {
     walkMarkup(ctx.ast.fragment?.nodes ?? [], [], (el) => {
       if (!isElement(el) || el.name !== "html") return;
       if (hasAttr(el, "lang")) return;
-      diagnostics.push(makeDiagnostic(ctx, el, htmlLang));
+      diagnostics.push(makeDiagnostic(ctx, el, htmlLang, '<html lang="en">'));
     });
     return diagnostics;
   },
@@ -524,7 +591,9 @@ const buttonHasName: Rule = {
       });
 
       if (hasContent) return;
-      diagnostics.push(makeDiagnostic(ctx, el, buttonHasName));
+      diagnostics.push(
+        makeDiagnostic(ctx, el, buttonHasName, '<button ... aria-label="Describe the action">'),
+      );
     });
     return diagnostics;
   },
