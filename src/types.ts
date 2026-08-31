@@ -20,6 +20,7 @@ export type VerificationLevel = "diagnostics" | "typecheck" | "tests" | "full";
 export type PackageManager = "npm" | "pnpm" | "bun";
 export type CopyOutput = "clipboard" | "stdout" | "file";
 export type CopyFormat = "prompt" | "raw";
+export type CheckFormat = "text" | "table";
 export type FailOn = "never" | "error" | "warning";
 export type ScriptBlockKind = "instance" | "module" | "script";
 export type RegressionRisk = "low" | "medium" | "high" | "critical";
@@ -190,6 +191,7 @@ export interface ScanOptions {
   incremental?: boolean;
   scoreOnly?: boolean;
   json?: boolean;
+  format?: CheckFormat;
   quiet?: boolean;
   targetFiles?: string[];
   baseline?: boolean;

@@ -38,6 +38,7 @@ import { loadConfig } from "../project/config.js";
 import { parseSvelteFile, parseScriptFile } from "../parser/svelte.js";
 import { highlighter, logger } from "../output/logger.js";
 import { printCategoryBreakdown, printDiagnostics, printSummary } from "../output/summary.js";
+import { printDiagnosticsTable } from "../output/table.js";
 import { spinner } from "../output/spinner.js";
 import {
   buildFixableSummary,
@@ -257,6 +258,7 @@ const getEffectiveOptions = (
   incremental: inputOptions.incremental ?? false,
   scoreOnly: inputOptions.scoreOnly ?? false,
   json: inputOptions.json ?? false,
+  format: inputOptions.format ?? "text",
   quiet: inputOptions.quiet ?? false,
   targetFiles: inputOptions.targetFiles,
   baseline: inputOptions.baseline ?? false,
@@ -612,7 +614,11 @@ export const scan = async (
     return { diagnostics, scoreResult, meta };
   }
 
-  printDiagnostics(diagnostics);
+  if (options.format === "table") {
+    printDiagnosticsTable(diagnostics);
+  } else {
+    printDiagnostics(diagnostics);
+  }
   printSummary(diagnostics, elapsedMs, scoreResult, selectedManifest.sourceFileCount, meta);
   logger.log(
     `  Ignore suggestions: ${ignoreSuggestions.length} diagnostic${ignoreSuggestions.length === 1 ? "" : "s"} can likely be ignored.`,

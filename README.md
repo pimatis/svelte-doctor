@@ -410,6 +410,7 @@ Scan your project for issues and output a health score. The scanner analyzes sou
 | ----------------------------------------- | ------------------------------------------------------------------------------------ |
 | `--score`                                 | Output only the numeric score                                                        |
 | `--json`                                  | Output machine-readable JSON                                                         |
+| `--format <text\|table>`                  | Output format for diagnostics: default text listing or aligned table                 |
 | `--no-lint`                               | Skip lint rules                                                                      |
 | `--no-dead-code`                          | Skip dead code detection                                                             |
 | `--no-cache`                              | Disable the on-disk scan cache for this run                                          |
@@ -450,6 +451,8 @@ Scan your project for issues and output a health score. The scanner analyzes sou
 
 `--copy` is designed for cases where you want to paste diagnostics into a different AI agent instead of using `svelte-doctor fix`. The default mode tries the system clipboard first, then falls back to stdout if no clipboard integration is available. If you need deterministic output for scripts, use `--copy-output file`.
 
+`--format table` prints one row per diagnostic with aligned `Severity`, `Rule`, `File`, `Line`, and `Message` columns, errors first, then sorted by file and line. It works with `--all-workspaces` too, where the workspace summary is rendered as a table. `--json` and `--score` keep their machine-readable output regardless of `--format`.
+
 JSON output includes structured fix metrics:
 
 | Field              | Type     | Description                                          |
@@ -476,6 +479,7 @@ Rich reports also work with `--all-workspaces` and `--workspace`. Workspace repo
 Examples:
 
 ```bash
+svelte-doctor check --format table
 svelte-doctor check --copy
 svelte-doctor check --copy --copy-errors-only
 svelte-doctor check --copy --copy-output stdout
@@ -653,9 +657,9 @@ Detailed metrics beyond the score: how long each scan phase takes, how many scor
 - **Rule gains** — per rule: the score points you would gain by fixing all of its diagnostics alone, with diagnostic counts, category, and estimated fix time
 - **Technical debt estimate** — total estimated remediation time (split into deterministic/AI-fixable vs manual work) and a per-category breakdown
 
-| Option          | Description                                          |
-| --------------- | ---------------------------------------------------- |
-| `--json`        | Output machine-readable JSON                         |
+| Option          | Description                                               |
+| --------------- | --------------------------------------------------------- |
+| `--json`        | Output machine-readable JSON                              |
 | `--top <count>` | Number of rules to show in the gain table (default: `15`) |
 
 Examples:

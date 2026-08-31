@@ -3,6 +3,7 @@ import { highlighter, sanitize } from "../output/logger.js";
 import { getSelectedGitFiles } from "../core/git.js";
 import { discoverWorkspaces, findWorkspace } from "../project/workspaces.js";
 import type {
+  CheckFormat,
   DeadCodeMode,
   FailOn,
   PackageManager,
@@ -40,6 +41,11 @@ export const parseCopyOutput = (value: string): "clipboard" | "stdout" | "file" 
 export const parseCopyFormat = (value: string): "prompt" | "raw" => {
   if (value === "prompt" || value === "raw") return value;
   throw new Error(`Invalid copy format "${value}". Use prompt or raw.`);
+};
+
+export const parseCheckFormat = (value: string): CheckFormat => {
+  if (value === "text" || value === "table") return value;
+  throw new Error(`Invalid check format "${value}". Use text or table.`);
 };
 
 export const parseFailOn = (value: string): FailOn => {

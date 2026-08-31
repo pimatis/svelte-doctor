@@ -25,13 +25,16 @@ import {
   parsePositiveInt,
   parseCopyOutput,
   parseCopyFormat,
+  parseCheckFormat,
   parseFailOn,
   parseVerifyLevel,
   getWorkspaceTargets,
   filterSelectedFilesForDirectory,
   resolveGitSelection,
 } from "./utils.js";
+import { renderTable, type TableColumn } from "../output/table.js";
 import type {
+  CheckFormat,
   CopyFormat,
   CopyOutput,
   Diagnostic,
@@ -106,16 +109,36 @@ const buildWorkspaceReportContext = (
 const printWorkspaceAggregate = (
   workspaces: WorkspaceInfo[],
   results: Array<{ workspace: WorkspaceInfo; score: number; diagnostics: Diagnostic[] }>,
+  format: CheckFormat,
 ) => {
   logger.break();
   logger.log(`  ${highlighter.bold("Workspace Summary")}`);
   logger.break();
-  for (const entry of results) {
-    const errors = entry.diagnostics.filter((d) => d.severity === "error").length;
-    const warnings = entry.diagnostics.filter((d) => d.severity === "warning").length;
-    logger.log(
-      `  ${highlighter.info(entry.workspace.name)} (${entry.workspace.relativePath})  score ${entry.score}  ${highlighter.error(`${errors} error${errors === 1 ? "" : "s"}`)}  ${highlighter.warn(`${warnings} warning${warnings === 1 ? "" : "s"}`)}`,
-    );
+  if (format === "table") {
+    const columns: TableColumn<(typeof results)[number]>[] = [
+      { header: "Workspace", render: (e) => e.workspace.name },
+      { header: "Path", render: (e) => e.workspace.relativePath },
+      { header: "Score", align: "right", render: (e) => String(e.score) },
+      {
+        header: "Errors",
+        align: "right",
+        render: (e) => String(e.diagnostics.filter((d) => d.severity === "error").length),
+      },
+      {
+        header: "Warnings",
+        align: "right",
+        render: (e) => String(e.diagnostics.filter((d) => d.severity === "warning").length),
+      },
+    ];
+    for (const line of renderTable(columns, results)) logger.log(`  ${line}`);
+  } else {
+    for (const entry of results) {
+      const errors = entry.diagnostics.filter((d) => d.severity === "error").length;
+      const warnings = entry.diagnostics.filter((d) => d.severity === "warning").length;
+      logger.log(
+        `  ${highlighter.info(entry.workspace.name)} (${entry.workspace.relativePath})  score ${entry.score}  ${highlighter.error(`${errors} error${errors === 1 ? "" : "s"}`)}  ${highlighter.warn(`${warnings} warning${warnings === 1 ? "" : "s"}`)}`,
+      );
+    }
   }
   const scores = results.map((e) => e.score);
   const average =
@@ -202,6 +225,7 @@ export const checkCommand = new Command("check")
   .option("--incremental", "scan only files changed relative to HEAD")
   .option("--score", "output only the numeric score (CI mode)")
   .option("--json", "output machine-readable JSON (for AI agents and scripts)")
+  .option("--format <format>", "output format: text or table", parseCheckFormat, "text")
   .option("--copy", "export diagnostics in an AI-friendly format")
   .option(
     "--copy-output <target>",
@@ -333,7 +357,7 @@ export const checkCommand = new Command("check")
         } else if (flags.score) {
           logger.log(String(worstScore));
         } else if (!sarifStdoutMode) {
-          printWorkspaceAggregate(workspaces, aggregateResults);
+          printWorkspaceAggregate(workspaces, aggregateResults, flags.format as CheckFormat);
         }
         if (flags.copy) {
           await exportDiagnosticsForAi(resolvedDir, prefixedDiagnostics, {
@@ -381,6 +405,7 @@ export const checkCommand = new Command("check")
         incremental,
         scoreOnly: !inFixMode ? (flags.score as boolean) : false,
         json: !inFixMode ? (flags.json as boolean) : false,
+        format: flags.format as CheckFormat,
         quiet: sarifStdoutMode || inFixMode,
         baseline: (flags.baseline as boolean) ?? false,
         targetFiles: filterSelectedFilesForDirectory(resolvedDir, selectedFiles),

@@ -4,8 +4,7 @@ import { logger, highlighter, sanitize } from "../output/logger.js";
 import { VERSION } from "../constants.js";
 import { parsePositiveInt, infoSafe } from "./utils.js";
 
-const formatMs = (ms: number): string =>
-  ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
+const formatMs = (ms: number): string => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`);
 
 export const metricsCommand = new Command("metrics")
   .description(
@@ -26,9 +25,7 @@ export const metricsCommand = new Command("metrics")
       logger.break();
       logger.log(`  ${highlighter.bold("svelte-doctor metrics")} v${VERSION}`);
       logger.break();
-      logger.log(
-        `  Score: ${highlighter.info(String(result.score))} / 100  ${result.label}`,
-      );
+      logger.log(`  Score: ${highlighter.info(String(result.score))} / 100  ${result.label}`);
       logger.log(
         `  Potential score (all fixes applied): ${highlighter.success(String(result.potentialScore))}  (+${result.totalGain})`,
       );
@@ -59,7 +56,9 @@ export const metricsCommand = new Command("metrics")
         `    Total: ${highlighter.warn(result.debt.formatted)}  (fixable: ~${formatDebt(result.debt.fixableMinutes)}, manual: ~${formatDebt(result.debt.manualMinutes)})`,
       );
       for (const c of result.debt.byCategory)
-        logger.log(`    ${sanitize(c.category)}: ${c.count} diagnostics, ~${formatDebt(c.estimatedMinutes)}`);
+        logger.log(
+          `    ${sanitize(c.category)}: ${c.count} diagnostics, ~${formatDebt(c.estimatedMinutes)}`,
+        );
       logger.break();
     } catch (error) {
       if (error instanceof Error) logger.error(`  Error: ${error.message}`);

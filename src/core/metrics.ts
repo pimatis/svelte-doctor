@@ -1,11 +1,7 @@
 import path from "node:path";
 import { scan } from "./scanner.js";
 import { validateDirectory } from "../fs/validate.js";
-import {
-  CATEGORY_MULTIPLIERS,
-  SEVERITY_WEIGHTS,
-  scoreFromPenalty,
-} from "./score.js";
+import { CATEGORY_MULTIPLIERS, SEVERITY_WEIGHTS, scoreFromPenalty } from "./score.js";
 import { estimateDiagnosticMinutes, estimateTotalMinutes } from "./fix-metrics.js";
 import { PERFECT_SCORE } from "../constants.js";
 import type { Diagnostic, RuleCategory, ScanResult } from "../types.js";
@@ -99,7 +95,10 @@ export const runMetrics = async (
     .map(([rule, diags]) => {
       const penalty = diags.reduce(
         (sum, d) =>
-          sum + (SEVERITY_WEIGHTS[d.severity] ?? 1) * (CATEGORY_MULTIPLIERS[d.category] ?? 1) * (d.weight ?? 1),
+          sum +
+          (SEVERITY_WEIGHTS[d.severity] ?? 1) *
+            (CATEGORY_MULTIPLIERS[d.category] ?? 1) *
+            (d.weight ?? 1),
         0,
       );
       return {
