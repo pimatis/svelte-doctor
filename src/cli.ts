@@ -19,6 +19,7 @@ import { configCommand } from "./commands/config.js";
 import { validateCommand } from "./commands/validate.js";
 import { quickCommand } from "./commands/quick.js";
 import { statsCommand } from "./commands/stats.js";
+import { metricsCommand } from "./commands/metrics.js";
 import { auditCommand } from "./commands/audit.js";
 import { compareCommand } from "./commands/compare.js";
 import { doctorCommand } from "./commands/doctor.js";
@@ -60,6 +61,7 @@ program
   .addCommand(validateCommand)
   .addCommand(quickCommand)
   .addCommand(statsCommand)
+  .addCommand(metricsCommand)
   .addCommand(auditCommand)
   .addCommand(compareCommand)
   .addCommand(doctorCommand)

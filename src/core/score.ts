@@ -29,6 +29,14 @@ const getLabel = (score: number): string => {
 };
 
 // uses exponential decay so first issues hurt more (diminishing returns)
+export const PENALTY_DECAY = 80;
+
+export const scoreFromPenalty = (totalPenalty: number): number =>
+  Math.max(
+    0,
+    Math.min(PERFECT_SCORE, Math.round(PERFECT_SCORE * Math.exp(-totalPenalty / PENALTY_DECAY))),
+  );
+
 export const calculateScore = (diagnostics: Diagnostic[]): ScoreResult => {
   if (diagnostics.length === 0) {
     return {
@@ -62,8 +70,7 @@ export const calculateScore = (diagnostics: Diagnostic[]): ScoreResult => {
     categoryBreakdown[diag.category] = entry;
   }
 
-  const rawScore = PERFECT_SCORE * Math.exp(-totalPenalty / 80);
-  const score = Math.max(0, Math.min(PERFECT_SCORE, Math.round(rawScore)));
+  const score = scoreFromPenalty(totalPenalty);
 
   return {
     score,

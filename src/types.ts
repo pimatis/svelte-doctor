@@ -172,6 +172,8 @@ export interface ScanMeta {
   elapsedMs: number;
   baselineApplied: boolean;
   targetMode: "full" | "subset";
+  // per-phase wall clock durations in ms (discovery, lint, deadCode, artifacts)
+  phaseTimings?: Record<string, number>;
 }
 
 export interface ScanResult {

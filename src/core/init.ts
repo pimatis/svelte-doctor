@@ -56,13 +56,18 @@ const writeTextAtomic = (
 const readPackageJson = (directory: string): PackageJson =>
   JSON.parse(fs.readFileSync(path.join(directory, "package.json"), "utf-8")) as PackageJson;
 
+// reads lines via the async iterator instead of rl.question: question() drops
+// piped stdin lines that arrive before the next call, hanging or silently
+// exiting (readline emits all lines of a pipe chunk synchronously)
 const askBoolean = async (
-  rl: readline.Interface,
+  lines: AsyncIterableIterator<string>,
   question: string,
   fallback: boolean,
 ): Promise<boolean> => {
   const suffix = fallback ? "Y/n" : "y/N";
-  const answer = (await rl.question(`${question} (${suffix}) `)).trim().toLowerCase();
+  output.write(`${question} (${suffix}) `);
+  const { value } = await lines.next();
+  const answer = (value ?? "").trim().toLowerCase();
   if (answer === "y" || answer === "yes") return true;
   if (answer === "n" || answer === "no") return false;
   return fallback;
@@ -113,9 +118,10 @@ export const runInit = async (directory: string, options: InitOptions): Promise<
 
   if (!options.yes) {
     const rl = readline.createInterface({ input, output });
-    createBaseline = await askBoolean(rl, "Create baseline from current diagnostics?", true);
-    createHook = await askBoolean(rl, "Create direct git pre-commit hook?", false);
-    if (!ciPlatform && (await askBoolean(rl, "Create GitHub Actions workflow?", true)))
+    const lines = rl[Symbol.asyncIterator]();
+    createBaseline = await askBoolean(lines, "Create baseline from current diagnostics?", true);
+    createHook = await askBoolean(lines, "Create direct git pre-commit hook?", false);
+    if (!ciPlatform && (await askBoolean(lines, "Create GitHub Actions workflow?", true)))
       ciPlatform = "github-actions";
     rl.close();
   }

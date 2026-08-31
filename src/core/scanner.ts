@@ -52,6 +52,10 @@ const completeStep = (message: string) => {
   spinner(message).start().succeed(message);
 };
 
+// keep sub-ms precision so cache-served phases report their real (tiny) time
+// instead of rounding to 0
+const roundMs = (ms: number): number => Math.round(ms * 10) / 10;
+
 const shouldRunRule = (rule: Rule, fileKind: "svelte" | "script"): boolean => {
   const appliesTo = rule.appliesTo ?? ["all"];
   return appliesTo.includes("all") || appliesTo.includes(fileKind);
@@ -295,8 +299,11 @@ export const scan = async (
       ? "subset"
       : "full";
   const notes: string[] = [];
+  const phaseTimings: Record<string, number> = {};
+  const discoveryStart = performance.now();
   const usesRunes = detectRunesUsage(fullManifest);
   const projectInfo = discoverProject(directory, fullManifest, { usesRunes });
+  phaseTimings.discovery = roundMs(performance.now() - discoveryStart);
 
   if (!projectInfo.svelteVersion) {
     const emptyDiagnostics: Diagnostic[] = [];
@@ -396,6 +403,7 @@ export const scan = async (
   let shouldSaveCache = false;
 
   if (options.lint) {
+    const lintStart = performance.now();
     const lintSpinner = silent ? null : spinner("Running lint checks...").start();
 
     try {
@@ -450,11 +458,13 @@ export const scan = async (
       if (error instanceof Error) logger.error(error.message);
       if (error instanceof Error) notes.push(`Lint checks skipped: ${error.message}`);
     }
+    phaseTimings.lint = roundMs(performance.now() - lintStart);
   }
 
   let deadCodeDiagnostics: Diagnostic[] = [];
 
   if (targetMode === "full" && options.deadCode && options.deadCodeMode !== "off") {
+    const deadCodeStart = performance.now();
     const deadCodeSpinner = silent ? null : spinner("Detecting dead code...").start();
     try {
       const deadCodeSignature = buildDeadCodeSignature(directory, fullManifest);
@@ -475,14 +485,17 @@ export const scan = async (
       if (error instanceof Error) logger.error(error.message);
       if (error instanceof Error) notes.push(`Dead code detection skipped: ${error.message}`);
     }
+    phaseTimings.deadCode = roundMs(performance.now() - deadCodeStart);
   }
 
   if (shouldSaveCache) {
     saveScanCache(directory, scanCache);
   }
 
+  const artifactStart = performance.now();
   const artifactDiagnostics =
     targetMode === "full" && options.lint ? analyzeBuildArtifacts(directory) : [];
+  phaseTimings.artifacts = roundMs(performance.now() - artifactStart);
 
   const allDiagnostics = attachDiagnosticMetadata(
     userConfig
@@ -517,6 +530,7 @@ export const scan = async (
     elapsedMs: Math.round(elapsedMs),
     baselineApplied: options.baseline,
     targetMode,
+    phaseTimings,
   } as const;
 
   if (!options.quiet && targetMode === "full") {
@@ -553,6 +567,7 @@ export const scan = async (
           bundleImpact,
           categoryBreakdown: scoreResult.categoryBreakdown,
           elapsedMs: meta.elapsedMs,
+          phaseTimings: meta.phaseTimings ?? {},
           targetMode: meta.targetMode,
           fixableSummary: buildFixableSummary(diagnostics, projectRules.rules),
           estimatedFixTime: estimateFixTime(diagnostics),

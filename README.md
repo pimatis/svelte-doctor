@@ -63,7 +63,7 @@ The tool is designed to be **safe by default**: deterministic fixes are opt-in, 
 - **Incremental checks** with `check --incremental` to scan only changed tracked and untracked files in large projects
 - **Diff-aware and workspace-aware scans** for staged files, changed files, and monorepos
 - **Parallel scanning** with `--jobs` for multi-worker file scanning in large codebases, with automatic CPU detection (`--jobs 0`)
-- **Focused scan modes** — `quick` (error-only), `audit` (security-only), `compare` (regression analysis), `stats` (project metrics)
+- **Focused scan modes** — `quick` (error-only), `audit` (security-only), `compare` (regression analysis), `stats` (project metrics), `metrics` (command durations, rule gains, technical debt)
 
 ### Fixing & Migration
 
@@ -242,6 +242,7 @@ svelte-doctor check --fail-on warning --min-score 80
 | [`validate`](#svelte-doctor-validate-directory-options)               | Validate the config file for errors                    |
 | [`suggest-ignore`](#svelte-doctor-suggest-ignore-directory-options)   | Suggest likely false-positive ignores                  |
 | [`stats`](#svelte-doctor-stats-directory-options)                     | Show project metrics and statistics                    |
+| [`metrics`](#svelte-doctor-metrics-directory-options)                 | Scan phase durations, rule gains, and technical debt   |
 | [`compare`](#svelte-doctor-compare-directory-options)                 | Compare diagnostics between two git refs               |
 | [`watch`](#svelte-doctor-watch-directory-options)                     | Watch files and show live diagnostics                  |
 | [`trend`](#svelte-doctor-trend-directory-options)                     | Show score history and trend                           |
@@ -640,6 +641,54 @@ svelte-doctor stats
 svelte-doctor stats --top 5
 svelte-doctor stats --json
 svelte-doctor stats --top 3 --json
+```
+
+#### `svelte-doctor metrics [directory] [options]`
+
+Detailed metrics beyond the score: how long each scan phase takes, how many score points fixing each rule alone would gain, and a technical debt estimate for the whole project.
+
+**Sections:**
+
+- **Command durations** — wall-clock time of scan phases (discovery, lint, dead code, build artifacts) and the total elapsed time
+- **Rule gains** — per rule: the score points you would gain by fixing all of its diagnostics alone, with diagnostic counts, category, and estimated fix time
+- **Technical debt estimate** — total estimated remediation time (split into deterministic/AI-fixable vs manual work) and a per-category breakdown
+
+| Option          | Description                                          |
+| --------------- | ---------------------------------------------------- |
+| `--json`        | Output machine-readable JSON                         |
+| `--top <count>` | Number of rules to show in the gain table (default: `15`) |
+
+Examples:
+
+```bash
+svelte-doctor metrics
+svelte-doctor metrics --top 5
+svelte-doctor metrics --json
+```
+
+Example output:
+
+```text
+  svelte-doctor metrics v0.3.7
+
+  Score: 64 / 100  Needs Work
+  Potential score (all fixes applied): 100  (+36)
+  Files: 155  Diagnostics: 70  Errors: 0  Warnings: 70  Fixable: 2
+
+  Command durations:
+    discovery: 12ms
+    lint: 345ms
+    deadCode: 355ms
+    artifacts: 0ms
+    total: 710ms
+
+  Rule gains: score points gained by fixing each rule alone
+    +15  types  34 diagnostics  [Dead Code]  ~816m
+    +15  exports  33 diagnostics  [Dead Code]  ~792m
+
+  Technical debt estimate:
+    Total: 1d 3h  (fixable: ~6m, manual: ~1d 3h)
+    Dead Code: 68 diagnostics, ~22h 40m
 ```
 
 #### `svelte-doctor compare [directory] [options]`

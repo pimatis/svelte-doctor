@@ -64,22 +64,20 @@ const FIX_TIME_ESTIMATES: Record<string, { auto: number; ai: number; manual: num
 
 const DEFAULT_ESTIMATE = { auto: 5, ai: 10, manual: 20 };
 
+// estimated minutes to fix a single diagnostic, based on how it would be fixed
+export const estimateDiagnosticMinutes = (diag: Diagnostic): number => {
+  const estimate = FIX_TIME_ESTIMATES[diag.rule] ?? DEFAULT_ESTIMATE;
+
+  if (diag.fixable && hasHardcodedFix(diag.rule)) return estimate.auto;
+  if (diag.fixable) return estimate.ai;
+  return estimate.manual;
+};
+
+export const estimateTotalMinutes = (diagnostics: Diagnostic[]): number =>
+  Math.ceil(diagnostics.reduce((sum, diag) => sum + estimateDiagnosticMinutes(diag), 0) * 1.2);
+
 export const estimateFixTime = (diagnostics: Diagnostic[]): string => {
-  let totalSeconds = 0;
-
-  for (const diag of diagnostics) {
-    const estimate = FIX_TIME_ESTIMATES[diag.rule] ?? DEFAULT_ESTIMATE;
-
-    if (diag.fixable && hasHardcodedFix(diag.rule)) {
-      totalSeconds += estimate.auto;
-    } else if (diag.fixable) {
-      totalSeconds += estimate.ai;
-    } else {
-      totalSeconds += estimate.manual;
-    }
-  }
-
-  totalSeconds = Math.ceil(totalSeconds * 1.2);
+  const totalSeconds = estimateTotalMinutes(diagnostics) * 60;
 
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
