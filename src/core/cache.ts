@@ -5,9 +5,10 @@ import {
   CACHE_FILE,
   GITIGNORE_SVELTE_DOCTOR_ENTRY,
   SCAN_CACHE_VERSION,
+  VERSION,
 } from "../constants.js";
 import { writeFileAtomicSafe } from "../fs/safe-write.js";
-import type { ProjectFileManifest, ScanCacheData, ScanCacheEntry } from "../types.js";
+import type { ProjectFileManifest, Rule, ScanCacheData, ScanCacheEntry } from "../types.js";
 import { ensureProjectGitignoreEntry } from "../project/gitignore.js";
 
 // Cache lives under .svelte-doctor so it stays local to the target project.
@@ -44,7 +45,7 @@ const ensureCacheDir = (directory: string): boolean => {
 //
 // That keeps scans resilient and avoids turning cache corruption into a user-
 // visible failure mode.
-export const loadScanCache = (directory: string): ScanCacheData => {
+export const loadScanCache = (directory: string, rulesSignature?: string): ScanCacheData => {
   const cachePath = getCachePath(directory);
 
   try {
@@ -59,6 +60,11 @@ export const loadScanCache = (directory: string): ScanCacheData => {
       typeof parsed.files !== "object" ||
       parsed.files === null
     ) {
+      return { version: SCAN_CACHE_VERSION, files: {} };
+    }
+
+    // a rule-set identity mismatch (upgrade, rule change) invalidates everything
+    if (rulesSignature !== undefined && parsed.rulesSignature !== rulesSignature) {
       return { version: SCAN_CACHE_VERSION, files: {} };
     }
 
@@ -136,14 +142,29 @@ export const buildDeadCodeSignature = (
   return chunks.join("|");
 };
 
+// Cheap djb2 identity over the active rule set + CLI version. Cached
+// diagnostics carry no rule versioning per file, so any change here (upgrade,
+// rule added/removed/severity changed) must invalidate the whole cache.
+export const buildRulesSignature = (rules: Rule[]): string => {
+  let hash = 5381;
+  for (const rule of rules) {
+    const id = `${rule.id ?? rule.name}:${rule.severity}`;
+    for (let i = 0; i < id.length; i++) hash = ((hash << 5) + hash + id.charCodeAt(i)) | 0;
+  }
+  return `${VERSION}:${rules.length}:${(hash >>> 0).toString(36)}`;
+};
+
 // Source files can disappear between runs. We prune stale entries so the cache
 // does not keep diagnostics for files that no longer exist in the current
-// manifest.
+// manifest. Subset passes skip pruning so a targeted scan (watch, incremental,
+// pr-check) does not wipe entries for files outside its scope.
 export const pruneCacheToManifest = (
   cache: ScanCacheData,
   directory: string,
   manifest: ProjectFileManifest,
+  enabled = true,
 ): void => {
+  if (!enabled) return;
   const active = new Set(
     [...manifest.svelteFiles, ...manifest.scriptFiles].map((file) =>
       path.relative(directory, file).replaceAll(path.sep, "/"),

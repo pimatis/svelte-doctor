@@ -55,7 +55,7 @@ The tool is designed to be **safe by default**: deterministic fixes are opt-in, 
 
 ### Diagnostics & Scanning
 
-- **78 source diagnostic rules + 3 build artifact diagnostics** covering correctness, performance, security, architecture, SvelteKit reliability, runtime performance, hydration safety, CSS specificity, and accessibility
+- **83 source diagnostic rules + 3 build artifact diagnostics** covering correctness, performance, security, architecture, SvelteKit reliability, runtime performance, hydration safety, CSS specificity, and accessibility
 - **0–100 health score** with actionable, line-specific diagnostics on every scan
 - **TypeScript AST-backed script analysis** for lower false-positive rates on security-sensitive checks
 - **Accessibility autofix and suggestions** with automatic decorative-image `alt=""` fixes and contextual ARIA snippets for manual decisions

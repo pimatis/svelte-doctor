@@ -21,6 +21,7 @@ import { filterIgnored } from "./filter.js";
 import { runDeadCodeAnalysis } from "./deadcode.js";
 import {
   buildDeadCodeSignature,
+  buildRulesSignature,
   getFileStatSignature,
   loadScanCache,
   matchesCacheEntry,
@@ -155,6 +156,7 @@ export const runLintPass = (
   existingCache: ScanCacheData | undefined,
   rules: Rule[],
   warnings: string[] = [],
+  pruneCache = true,
 ): LintPassResult => {
   const cache = existingCache ?? { version: SCAN_CACHE_VERSION, files: {} };
   const diagnostics: Diagnostic[] = [];
@@ -182,7 +184,7 @@ export const runLintPass = (
     } satisfies ScanCacheEntry;
   }
 
-  pruneCacheToManifest(cache, directory, manifest);
+  pruneCacheToManifest(cache, directory, manifest, pruneCache);
 
   return { diagnostics, cache };
 };
@@ -197,6 +199,7 @@ export const runLintPassParallel = async (
   warnings: string[],
   jobs: number,
   userConfig: SvelteDoctorConfig | null,
+  pruneCache = true,
 ): Promise<LintPassResult> => {
   const { ScanWorkerPool } = await import("./scan-pool.js");
 
@@ -242,7 +245,7 @@ export const runLintPassParallel = async (
     }
   }
 
-  pruneCacheToManifest(cache, directory, manifest);
+  pruneCacheToManifest(cache, directory, manifest, pruneCache);
 
   return { diagnostics, cache };
 };
@@ -359,9 +362,11 @@ export const scan = async (
     return { diagnostics: emptyDiagnostics, scoreResult: emptyScore, meta: emptyMeta };
   }
 
+  const rulesSignature = buildRulesSignature(projectRules.rules);
   const scanCache = options.cache
-    ? loadScanCache(directory)
+    ? loadScanCache(directory, rulesSignature)
     : { version: SCAN_CACHE_VERSION, files: {} };
+  scanCache.rulesSignature = rulesSignature;
 
   if (!silent) {
     const frameworkLabel = formatFrameworkName(projectInfo.framework);
@@ -424,6 +429,7 @@ export const scan = async (
             ruleRuntimeWarnings,
             effectiveJobs,
             userConfig,
+            targetMode === "full",
           );
         } catch (parallelError) {
           if (!silent)
@@ -438,6 +444,7 @@ export const scan = async (
             scanCache,
             projectRules.rules,
             ruleRuntimeWarnings,
+            targetMode === "full",
           );
         }
       } else {
@@ -449,6 +456,7 @@ export const scan = async (
           scanCache,
           projectRules.rules,
           ruleRuntimeWarnings,
+          targetMode === "full",
         );
       }
 

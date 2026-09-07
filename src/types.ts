@@ -307,6 +307,9 @@ export interface ScanCacheEntry {
 
 export interface ScanCacheData {
   version: number;
+  // identity of the CLI version + rule set that produced this cache;
+  // a mismatch invalidates the whole cache so rule changes never serve stale hits
+  rulesSignature?: string;
   files: Record<string, ScanCacheEntry>;
   deadCode?: {
     diagnostics: Diagnostic[];

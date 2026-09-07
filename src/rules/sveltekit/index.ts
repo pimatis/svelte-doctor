@@ -600,6 +600,296 @@ const noRunesInServerOnlyFile: Rule = {
   },
 };
 
+// flags <form method="post"> submissions that bypass use:enhance
+// plain HTML form posts cause full page reloads and lose inline error handling
+const noFormWithoutEnhance: Rule = {
+  name: "no-form-without-enhance",
+  category: "SvelteKit",
+  severity: "warning",
+  message: '`<form method="post">` without `use:enhance` triggers a full page reload',
+  help: 'Add `use:enhance` from `$app/forms` so SvelteKit handles the submit with client-side navigation and inline `form` prop error handling.',
+  appliesTo: ["svelte"],
+  cost: "low",
+  check: (ctx: RuleContext): Diagnostic[] => {
+    if (ctx.projectInfo.framework !== "sveltekit") return [];
+
+    const diagnostics: Diagnostic[] = [];
+    for (let i = 0; i < ctx.lines.length; i++) {
+      if (!/<form\b/i.test(ctx.lines[i])) continue;
+
+      // accumulate the full opening tag since attributes may span lines
+      let tag = ctx.lines[i];
+      let j = i;
+      while (!tag.includes(">") && j + 1 < ctx.lines.length) {
+        j++;
+        tag += ctx.lines[j];
+      }
+
+      if (!/\bmethod\s*=\s*["']?post["']?/i.test(tag)) continue;
+      if (/use:enhance/.test(tag)) continue;
+      // a custom submit handler may call handleSubmit() which replaces enhance
+      if (/on:submit|onsubmit/i.test(tag)) continue;
+
+      diagnostics.push({
+        filePath: ctx.filePath,
+        rule: noFormWithoutEnhance.name,
+        severity: noFormWithoutEnhance.severity,
+        message: noFormWithoutEnhance.message,
+        help: noFormWithoutEnhance.help,
+        line: i + 1,
+        column: ctx.lines[i].indexOf("<form") + 1,
+        category: noFormWithoutEnhance.category,
+      });
+      i = j;
+    }
+
+    return diagnostics;
+  },
+};
+
+// fail() is a return value for form actions, not an exception
+// throwing it crashes with a TypeError and a raw Error throw leaks a 500
+const formActionThrowInsteadOfFail: Rule = {
+  name: "form-action-throw-instead-of-fail",
+  category: "SvelteKit",
+  severity: "error",
+  message: "`fail()` must be returned from a form action, not thrown",
+  help: "Return validation problems with `return fail(400, { ... })` so the action result reaches `page.form`. For unexpected errors use `error()` from `$app/navigation`.",
+  appliesTo: ["script"],
+  cost: "low",
+  check: (ctx: RuleContext): Diagnostic[] => {
+    if (!/\+page\.server\.(ts|js)$/.test(ctx.filePath)) return [];
+    if (!/\bactions\b/.test(ctx.source)) return [];
+
+    const diagnostics: Diagnostic[] = [];
+    const throwFail = /\bthrow\s+fail\s*\(/;
+    const throwRawError = /\bthrow\s+new\s+Error\s*\(/;
+    let inActions = false;
+    let depth = 0;
+
+    for (let i = 0; i < ctx.lines.length; i++) {
+      const line = ctx.lines[i];
+      const trimmed = line.trim();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
+
+      if (!inActions && /\bexport\s+const\s+actions\b/.test(line)) inActions = true;
+
+      // throw fail() is always a bug in server files, actions region or not
+      if (throwFail.test(line)) {
+        diagnostics.push({
+          filePath: ctx.filePath,
+          rule: formActionThrowInsteadOfFail.name,
+          severity: "error",
+          message: formActionThrowInsteadOfFail.message,
+          help: formActionThrowInsteadOfFail.help,
+          line: i + 1,
+          column: line.indexOf("fail") + 1,
+          category: formActionThrowInsteadOfFail.category,
+        });
+      }
+      // raw Error throws inside actions respond 500 instead of a form error
+      if (inActions && throwRawError.test(line)) {
+        diagnostics.push({
+          filePath: ctx.filePath,
+          rule: formActionThrowInsteadOfFail.name,
+          severity: "warning",
+          message: "Throwing a raw `Error` in a form action responds with a bare 500",
+          help: "Return `fail(400, { ... })` for validation problems, or throw `error(4xx, ...)` from `$app/navigation` for expected failures.",
+          line: i + 1,
+          column: line.indexOf("throw") + 1,
+          category: formActionThrowInsteadOfFail.category,
+        });
+      }
+
+      for (const ch of line) {
+        if (ch === "{") depth++;
+        if (ch === "}") depth--;
+      }
+      if (inActions && depth <= 0) inActions = false;
+    }
+
+    return diagnostics;
+  },
+};
+
+// load functions should fetch through event.fetch to inherit cookies,
+// headers and request context — the global fetch is unauthenticated
+const loadGlobalFetch: Rule = {
+  name: "load-global-fetch",
+  category: "SvelteKit",
+  severity: "warning",
+  message: "`load` calls the global `fetch` instead of the event's `fetch`",
+  help: "Use the `fetch` passed to `load` (destructure it as `({ fetch })` or call `event.fetch`) so cookies, headers and request context are forwarded.",
+  appliesTo: ["script"],
+  cost: "low",
+  check: (ctx: RuleContext): Diagnostic[] => {
+    if (ctx.projectInfo.framework !== "sveltekit") return [];
+    if (!/\+(page|layout)(\.server)?\.(ts|js)$/.test(ctx.filePath)) return [];
+    if (!/\bload\b/.test(ctx.source)) return [];
+
+    // destructured event fetch makes bare fetch() calls legitimate
+    if (/\(\s*\{[^}]*\bfetch\b[^}]*\}\s*\)/.test(ctx.source)) return [];
+
+    const bareFetch = /(?<![\w.$])fetch\s*\(/;
+    const diagnostics: Diagnostic[] = [];
+
+    for (let i = 0; i < ctx.lines.length; i++) {
+      const trimmed = ctx.lines[i].trim();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
+      const match = bareFetch.exec(ctx.lines[i]);
+      if (!match) continue;
+      diagnostics.push({
+        filePath: ctx.filePath,
+        rule: loadGlobalFetch.name,
+        severity: loadGlobalFetch.severity,
+        message: loadGlobalFetch.message,
+        help: loadGlobalFetch.help,
+        line: i + 1,
+        column: match.index + 1,
+        category: loadGlobalFetch.category,
+      });
+    }
+
+    return diagnostics;
+  },
+};
+
+// collects invalidate() string literals and whether a function-style
+// invalidate exists (which may invalidate any dependency)
+const collectInvalidations = (directory: string): { all: boolean; uris: Set<string> } => {
+  const uris = new Set<string>();
+  let all = false;
+  const visit = (dir: string): void => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "node_modules" || entry.name === ".svelte-kit" || entry.name === "dist")
+          continue;
+        visit(full);
+        continue;
+      }
+      if (!entry.isFile() || !/\.(ts|js|svelte)$/.test(entry.name)) continue;
+      let content: string;
+      try {
+        content = fs.readFileSync(full, "utf-8");
+      } catch {
+        continue;
+      }
+      if (/\binvalidate\s*\(\s*(?:async\s*)?\(/.test(content)) all = true;
+      const pattern = /\binvalidate\(\s*["']([^"']+)["']/g;
+      let match: RegExpExecArray | null;
+      while ((match = pattern.exec(content)) !== null) uris.add(match[1]);
+    }
+  };
+  visit(directory);
+  return { all, uris };
+};
+
+// load depends() entries nobody invalidates keep stale data around forever
+const loadDependsWithoutInvalidate: Rule = {
+  name: "load-depends-without-invalidate",
+  category: "SvelteKit",
+  severity: "warning",
+  message: "`depends()` dependency is never invalidated anywhere in the project",
+  help: 'Call `invalidate(uri)` (or `invalidate(() => ...)` / `invalidateAppDependencies()`) after the relevant mutation, or drop the `depends()` call if the data never changes.',
+  appliesTo: ["script"],
+  // walks the project src directory per depends-containing file
+  // invalidation index per scan invocation in the scanner
+  cost: "medium",
+  check: (ctx: RuleContext): Diagnostic[] => {
+    if (ctx.projectInfo.framework !== "sveltekit") return [];
+    if (!/\bdepends\s*\(/.test(ctx.source)) return [];
+
+    const dependsUris: { uri: string; line: number; column: number }[] = [];
+    const dependsPattern = /\bdepends\(\s*["']([^"']+)["']/g;
+    for (let i = 0; i < ctx.lines.length; i++) {
+      let match: RegExpExecArray | null;
+      dependsPattern.lastIndex = 0;
+      while ((match = dependsPattern.exec(ctx.lines[i])) !== null) {
+        dependsUris.push({ uri: match[1], line: i + 1, column: match.index + 1 });
+      }
+    }
+    if (dependsUris.length === 0) return [];
+
+    const srcDir = path.join(ctx.projectInfo.rootDirectory, "src");
+    let invalidations: { all: boolean; uris: Set<string> };
+    try {
+      invalidations = collectInvalidations(srcDir);
+    } catch {
+      return [];
+    }
+    if (invalidations.all) return [];
+
+    const diagnostics: Diagnostic[] = [];
+    for (const { uri, line, column } of dependsUris) {
+      // SvelteKit prefix semantics: invalidate("app:") covers depends("app:css")
+      const covered = [...invalidations.uris].some(
+        (inv) => uri === inv || uri.startsWith(inv),
+      );
+      if (covered) continue;
+      diagnostics.push({
+        filePath: ctx.filePath,
+        rule: loadDependsWithoutInvalidate.name,
+        severity: loadDependsWithoutInvalidate.severity,
+        message: loadDependsWithoutInvalidate.message,
+        help: loadDependsWithoutInvalidate.help,
+        line,
+        column,
+        category: loadDependsWithoutInvalidate.category,
+      });
+    }
+
+    return diagnostics;
+  },
+};
+
+// handleError centralizes error reporting and prevents leaking stack traces
+const missingHandleError: Rule = {
+  name: "missing-handle-error",
+  category: "SvelteKit",
+  severity: "warning",
+  message:
+    "No `handleError` hook found in `src/hooks.server.ts` — server errors surface without centralized logging",
+  help: "Add `export const handleError = ({ event, error }) => { ... }` to `src/hooks.server.ts` to log errors and return a sanitized id. Pair it with `src/hooks.client.ts` for client-side errors.",
+  appliesTo: ["svelte"],
+  cost: "low",
+  check: (ctx: RuleContext): Diagnostic[] => {
+    if (ctx.projectInfo.framework !== "sveltekit") return [];
+
+    // anchor to the root layout so it fires exactly once per project,
+    // same strategy as missing-error-page
+    if (!/src\/routes\/\+layout\.svelte$/.test(ctx.filePath)) return [];
+
+    for (const ext of ["ts", "js"]) {
+      try {
+        const content = fs.readFileSync(
+          path.join(ctx.projectInfo.rootDirectory, "src", `hooks.server.${ext}`),
+          "utf-8",
+        );
+        if (/\bhandleError\b/.test(content)) return [];
+        // hooks file exists but exports no handleError — report
+        break;
+      } catch {
+        // file missing — try the other extension
+      }
+    }
+    // no hooks file at all falls through so the gap stays visible
+
+    return [
+      {
+        filePath: ctx.filePath,
+        rule: missingHandleError.name,
+        severity: missingHandleError.severity,
+        message: missingHandleError.message,
+        help: missingHandleError.help,
+        line: 1,
+        column: 1,
+        category: missingHandleError.category,
+      },
+    ];
+  },
+};
+
 export const sveltekitRules: Rule[] = [
   noClientFetch,
   noRunesInServerOnlyFile,
@@ -612,4 +902,9 @@ export const sveltekitRules: Rule[] = [
   noMissingPrefetch,
   noFormActionWithoutRedirect,
   noNonSerializableLoadReturn,
+  noFormWithoutEnhance,
+  formActionThrowInsteadOfFail,
+  loadGlobalFetch,
+  loadDependsWithoutInvalidate,
+  missingHandleError,
 ];

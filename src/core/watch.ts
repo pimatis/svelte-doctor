@@ -12,7 +12,7 @@ import type {
 import { calculateScore } from "./score.js";
 import { filterIgnored } from "./filter.js";
 import { runDeadCodeAnalysis } from "./deadcode.js";
-import { loadScanCache, saveScanCache } from "./cache.js";
+import { loadScanCache, saveScanCache, buildRulesSignature } from "./cache.js";
 import { collectProjectFiles } from "../fs/walker.js";
 import { toPosix } from "../fs/normalize.js";
 import { validateDirectory } from "../fs/validate.js";
@@ -87,11 +87,11 @@ export const watch = async (directory: string, options: WatchOptions = {}): Prom
   const knownFiles = new Set<string>();
   let deadCodeDiagnostics: Diagnostic[] = [];
   const runeFiles = new Set<string>();
-  const scanCache = loadScanCache(directory);
   let userConfig = loadConfig(directory);
+  let projectRules = await loadProjectRules(directory, userConfig);
+  const scanCache = loadScanCache(directory, buildRulesSignature(projectRules.rules));
   let effectiveDeadCodeMode =
     cliDeadCode === "off" ? (userConfig?.watch?.deadCode ?? "off") : cliDeadCode;
-  let projectRules = await loadProjectRules(directory, userConfig);
 
   // CLI flags win over config; config only applies when no CLI flag is passed
   const resolveFixOptions = (): WatchFixOptions => {
