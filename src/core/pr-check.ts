@@ -15,6 +15,7 @@ export interface PrCheckOptions {
   inline?: boolean;
   failOn?: FailOn;
   minScore?: number;
+  ratchet?: boolean;
   json?: boolean;
   platform?: "github" | "gitlab" | "bitbucket" | "auto";
   token?: string;
@@ -342,6 +343,11 @@ export const runPrCheck = async (directory: string, options: PrCheckOptions): Pr
   };
   const failed =
     headResult.scoreResult.score < (options.minScore ?? 0) ||
+    (options.ratchet === true &&
+      (headResult.scoreResult.score < baseResult.scoreResult.score ||
+        // rounded score can stay flat on small penalty increases, so new
+        // diagnostics must fail the ratchet regardless of severity
+        diff.newIssues.length > 0)) ||
     (options.failOn === "warning" && diff.newIssues.length > 0) ||
     ((options.failOn ?? "error") === "error" &&
       diff.newIssues.some((diagnostic) => diagnostic.severity === "error"));

@@ -340,6 +340,7 @@ Analyze a branch diff for PR or CI feedback. The command lists files changed bet
 | `--inline`                                     | Submit an inline review comment to the selected platform |
 | `--fail-on <never\|error\|warning>`            | Control exit behavior for new issues                     |
 | `--min-score <score>`                          | Fail if PR score is below the threshold                  |
+| `--ratchet`                                    | Fail if PR score drops or new issues appear vs base      |
 | `--json`                                       | Output machine-readable JSON                             |
 | `--platform <github\|gitlab\|bitbucket\|auto>` | Select PR platform adapter mode                          |
 | `--token <env-var>`                            | Token environment variable name                          |
@@ -349,6 +350,7 @@ Examples:
 ```bash
 svelte-doctor pr-check --base main --head HEAD
 svelte-doctor pr-check --base origin/main --head HEAD --min-score 80
+svelte-doctor pr-check --base main --head HEAD --ratchet
 svelte-doctor pr-check --pr 42 --comment --platform github
 svelte-doctor pr-check --json
 ```
