@@ -166,7 +166,7 @@ const maybeEmitReports = (
     logger.success(`  ✓ Wrote SARIF report to ${p}`);
     return report;
   }
-  logger.log(JSON.stringify(report, null, 2));
+  logger.json(JSON.stringify(report, null, 2));
   return report;
 };
 
@@ -336,7 +336,7 @@ export const checkCommand = new Command("check")
         const worstScore =
           aggregateResults.length > 0 ? Math.min(...aggregateResults.map((e) => e.score)) : 100;
         if (flags.json) {
-          logger.log(
+          logger.json(
             JSON.stringify(
               {
                 version: VERSION,
@@ -663,7 +663,7 @@ export const checkCommand = new Command("check")
 
       // JSON output includes fix info
       if (flags.json && wasFixed) {
-        logger.log(
+        logger.json(
           JSON.stringify(
             {
               version: VERSION,
@@ -691,7 +691,7 @@ export const checkCommand = new Command("check")
       }
 
       if (flags.json && !wasFixed) {
-        logger.log(
+        logger.json(
           JSON.stringify(
             {
               version: VERSION,
@@ -715,7 +715,7 @@ export const checkCommand = new Command("check")
         process.exitCode = 1;
     } catch (error) {
       if (flags.json) {
-        logger.log(
+        logger.json(
           JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
         );
         process.exit(1);

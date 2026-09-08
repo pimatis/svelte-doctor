@@ -14,12 +14,12 @@ export const configCommand = new Command("config")
   .action((directory: string, flags: { json?: boolean; path?: boolean; schema?: boolean }) => {
     try {
       if (flags.schema) {
-        logger.log(JSON.stringify(configSchema, null, 2));
+        logger.json(JSON.stringify(configSchema, null, 2));
         return;
       }
       const result = viewConfig(directory);
       if (flags.json) {
-        logger.log(JSON.stringify(result, null, 2));
+        logger.json(JSON.stringify(result, null, 2));
         return;
       }
       if (flags.path) {

@@ -2,56 +2,8 @@ import type { Diagnostic, Rule, RuleContext, ScriptAstContext } from "../../type
 import { getLineAndColumn, isIdentifierNamed, ts, walkSourceFile } from "../../parser/script.js";
 import { isRuneCall } from "../../parser/runes.js";
 import { fixNoEffectForDerived } from "../../core/fixers.js";
-
-// builds a line-index → boolean map in a single O(n) pass
-// true means the line is inside a <script> block (instance or module)
-const buildScriptLineMap = (source: string): boolean[] => {
-  const lines = source.split("\n");
-  const map: boolean[] = new Array(lines.length).fill(false);
-  let inside = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i].trim();
-    if (/^<script[\s>]/.test(trimmed)) {
-      inside = true;
-      continue;
-    }
-    if (trimmed === "</script>") {
-      inside = false;
-      continue;
-    }
-    map[i] = inside;
-  }
-
-  return map;
-};
-
-// builds a line-index → boolean map for <style> blocks
-const buildStyleLineMap = (source: string): boolean[] => {
-  const lines = source.split("\n");
-  const map: boolean[] = new Array(lines.length).fill(false);
-  let inside = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i].trim();
-    if (/^<style[\s>]/.test(trimmed)) {
-      const closesOnSameLine = /<\/style>/.test(trimmed);
-      map[i] = closesOnSameLine;
-      inside = !closesOnSameLine;
-      continue;
-    }
-    if (trimmed === "</style>") {
-      inside = false;
-      continue;
-    }
-    map[i] = inside;
-    if (inside && /<\/style>/.test(trimmed)) {
-      inside = false;
-    }
-  }
-
-  return map;
-};
+import { buildScriptLineMap, buildStyleLineMap, offsetToPosition } from "../../parser/lines.js";
+import { walkAst } from "../../parser/walker.js";
 
 const getPosition = (source: string, index: number): { line: number; column: number } => {
   const preceding = source.slice(0, index);
@@ -396,39 +348,27 @@ const eachMissingKey: Rule = {
   cost: "low",
   check: (ctx: RuleContext): Diagnostic[] => {
     // {#each} is a Svelte template construct — irrelevant in plain .ts/.js files
-    if (!ctx.filePath.endsWith(".svelte")) return [];
+    if (!ctx.filePath.endsWith(".svelte") || !ctx.ast) return [];
 
     const diagnostics: Diagnostic[] = [];
-    const lines = ctx.source.split("\n");
-    const scriptMap = buildScriptLineMap(ctx.source);
 
-    for (let i = 0; i < lines.length; i++) {
-      // {#each} only appears in template markup, never inside script blocks
-      if (scriptMap[i]) continue;
+    walkAst(ctx.ast, (node) => {
+      // a key is present when the parenthesised expression follows the binding,
+      // e.g. {#each items as item (item.id)} — the AST stores it as `key`
+      if (node.type !== "EachBlock" || node.key) return;
 
-      const line = lines[i];
-
-      // must contain {#each ... as ...}
-      if (!/\{#each\s/.test(line)) continue;
-
-      // has a key when a parenthesised expression follows the binding variable
-      // e.g. {#each items as item (item.id)} or {#each items as [a, b] (a)}
-      if (/\{#each\s+.+\s+as\s+.+\(.+\)\s*\}/.test(line)) continue;
-
-      // {#each items as item} with no key — flag it
-      if (/\{#each\s+.+\s+as\s+[^(]+\}/.test(line)) {
-        diagnostics.push({
-          filePath: ctx.filePath,
-          rule: "each-missing-key",
-          severity: "warning",
-          message: eachMissingKey.message,
-          help: eachMissingKey.help,
-          line: i + 1,
-          column: line.indexOf("{#each") + 1,
-          category: "Performance",
-        });
-      }
-    }
+      const position = offsetToPosition(ctx.source, node.start ?? 0);
+      diagnostics.push({
+        filePath: ctx.filePath,
+        rule: "each-missing-key",
+        severity: "warning",
+        message: eachMissingKey.message,
+        help: eachMissingKey.help,
+        line: position.line,
+        column: position.column,
+        category: "Performance",
+      });
+    });
 
     return diagnostics;
   },
@@ -446,42 +386,43 @@ const noInlineObject: Rule = {
   appliesTo: ["svelte"],
   cost: "low",
   check: (ctx: RuleContext): Diagnostic[] => {
-    if (!ctx.filePath.endsWith(".svelte")) return [];
+    if (!ctx.filePath.endsWith(".svelte") || !ctx.ast) return [];
 
     const diagnostics: Diagnostic[] = [];
-    const lines = ctx.source.split("\n");
-    const scriptMap = buildScriptLineMap(ctx.source);
-    const styleMap = buildStyleLineMap(ctx.source);
 
-    // match template expressions that contain an object or array literal argument:
-    //   {someFunc({ key: val })}   {someFunc([a, b])}   {Component prop={{ key: val }}}
-    //
-    // requirements for a true positive:
-    //   - starts with { but NOT a Svelte block directive (#, /, :, @, !)
-    //   - contains a nested { key: or [ followed by a value
-    //   - the nested literal is not the only content (bare {obj} is fine)
-    const pattern = /\{(?![#/:@!])(?:[^{}]*)\b\w+\s*\(\s*(?:\{[^}]*\w+\s*:|(?:\[[^\]]*\]))/;
+    // template expression tags only — script/style code allocates objects all
+    // the time and is not re-created per render
+    walkAst(ctx.ast, (node) => {
+      if (node.type !== "ExpressionTag" || !node.expression) return;
 
-    for (let i = 0; i < lines.length; i++) {
-      if (scriptMap[i]) continue;
-      if (styleMap[i]) continue;
+      // a new object/array literal passed as a call argument is re-allocated
+      // on every render cycle, defeating memoisation
+      walkAst(node.expression, (child) => {
+        if (child.type !== "CallExpression") return;
 
-      const trimmed = lines[i].trimStart();
-      if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) continue;
+        const hasLiteralArg = (child.arguments ?? []).some(
+          (arg: any) =>
+            (arg?.type === "ObjectExpression" && (arg.properties ?? []).length > 0) ||
+            arg?.type === "ArrayExpression",
+        );
+        if (!hasLiteralArg) return;
 
-      if (!pattern.test(lines[i])) continue;
-
-      diagnostics.push({
-        filePath: ctx.filePath,
-        rule: "no-inline-object",
-        severity: "warning",
-        message: noInlineObject.message,
-        help: noInlineObject.help,
-        line: i + 1,
-        column: 1,
-        category: "Performance",
+        const target = (child.arguments ?? []).find(
+          (arg: any) => arg?.type === "ObjectExpression" || arg?.type === "ArrayExpression",
+        );
+        const position = offsetToPosition(ctx.source, target?.start ?? node.start ?? 0);
+        diagnostics.push({
+          filePath: ctx.filePath,
+          rule: "no-inline-object",
+          severity: "warning",
+          message: noInlineObject.message,
+          help: noInlineObject.help,
+          line: position.line,
+          column: position.column,
+          category: "Performance",
+        });
       });
-    }
+    });
 
     return diagnostics;
   },

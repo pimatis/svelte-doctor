@@ -3,6 +3,7 @@ import path from "node:path";
 import type { Diagnostic } from "../types.js";
 import { toPosix } from "../fs/normalize.js";
 import { collectFiles } from "../fs/walker.js";
+import { logger } from "../output/logger.js";
 
 interface KnipIssue {
   filePath: string;
@@ -171,14 +172,19 @@ const hasNodeModules = (dir: string): boolean => {
   }
 };
 
+// one-time hint so users with knip omitted don't silently lose dead code analysis
+let warnedKnipMissing = false;
+
 // Runs knip for dead code detection including exports, unused files, and duplicate exports.
-// returns empty array if node_modules isn't installed or knip crashes
+// returns partial results if node_modules isn't installed or knip isn't available
 export const runDeadCodeAnalysis = async (rootDir: string): Promise<Diagnostic[]> => {
   const pageComponentDiagnostics = findUnusedPageComponents(rootDir);
   if (!hasNodeModules(rootDir)) return pageComponentDiagnostics;
 
   try {
-    // @ts-expect-error — knip exports types from types.d.ts but main is in index.d.ts
+    // knip is an optional dependency: resolved from the user's project when present.
+    // knip exports types from types.d.ts but main is in index.d.ts
+    // @ts-expect-error — knip's main entry types don't match its runtime export
     const { main } = await import("knip");
     const { createOptions } = await import("knip/session");
 
@@ -209,7 +215,12 @@ export const runDeadCodeAnalysis = async (rootDir: string): Promise<Diagnostic[]
     }
 
     return diagnostics;
-  } catch {
-    return [];
+  } catch (error) {
+    if (!warnedKnipMissing && error instanceof Error && error.message.includes("knip")) {
+      warnedKnipMissing = true;
+      logger.dim("  knip is not installed — dead code analysis limited to page components.");
+    }
+    // knip is best-effort; page component analysis still ran above
+    return pageComponentDiagnostics;
   }
 };

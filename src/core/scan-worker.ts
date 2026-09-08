@@ -1,9 +1,8 @@
 import { parentPort, workerData } from "node:worker_threads";
-import { allRules } from "../rules/index.js";
 import { loadProjectRules } from "../plugins/loader.js";
 import { scanSingleFile } from "./scanner.js";
 import { getFileStatSignature } from "./cache.js";
-import type { ProjectInfo, Diagnostic, SvelteDoctorConfig } from "../types.js";
+import type { ProjectInfo, Diagnostic, SvelteDoctorConfig, Rule } from "../types.js";
 
 interface InitData {
   directory: string;
@@ -32,14 +31,15 @@ interface ReadyMessage {
 
 const initData = workerData as InitData;
 
-const initRules = async (): Promise<{ warnings: string[] }> => {
+const initRules = async (): Promise<{ rules: Rule[]; warnings: string[] }> => {
   const result = await loadProjectRules(initData.directory, initData.userConfig);
-  return { warnings: result.warnings };
+  return { rules: result.rules, warnings: result.warnings };
 };
 
-const rulesPromise = initRules();
+let loadedRules: Rule[] = [];
 
-rulesPromise.then(({ warnings }) => {
+const rulesPromise = initRules().then(({ rules, warnings }) => {
+  loadedRules = rules;
   parentPort?.postMessage({ type: "ready", warnings } satisfies ReadyMessage);
 });
 
@@ -53,7 +53,7 @@ parentPort?.on("message", async (msg: ScanRequest) => {
     msg.filePath,
     msg.relativePath,
     initData.projectInfo,
-    allRules,
+    loadedRules,
     warnings,
   );
 

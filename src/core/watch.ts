@@ -79,7 +79,7 @@ const colorScore = (score: number): string => {
 export const watch = async (directory: string, options: WatchOptions = {}): Promise<void> => {
   validateDirectory(directory);
 
-  const cliDeadCode = options.deadCode ?? "off";
+  const cliDeadCode = options.deadCode;
   const cliFix = options.fix ?? null;
   let incremental = options.incremental ?? false;
   const targetFiles = new Set((options.targetFiles ?? []).map((file) => path.resolve(file)));
@@ -90,8 +90,8 @@ export const watch = async (directory: string, options: WatchOptions = {}): Prom
   let userConfig = loadConfig(directory);
   let projectRules = await loadProjectRules(directory, userConfig);
   const scanCache = loadScanCache(directory, buildRulesSignature(projectRules.rules));
-  let effectiveDeadCodeMode =
-    cliDeadCode === "off" ? (userConfig?.watch?.deadCode ?? "off") : cliDeadCode;
+  // CLI flag wins over config; lazy is the default so watch saves don't rescan knip
+  let effectiveDeadCodeMode = cliDeadCode ?? userConfig?.watch?.deadCode ?? "lazy";
 
   // CLI flags win over config; config only applies when no CLI flag is passed
   const resolveFixOptions = (): WatchFixOptions => {
@@ -265,8 +265,7 @@ export const watch = async (directory: string, options: WatchOptions = {}): Prom
           if (isProjectInfoFile(posixPath)) {
             incremental = false;
             userConfig = loadConfig(directory);
-            effectiveDeadCodeMode =
-              cliDeadCode === "off" ? (userConfig?.watch?.deadCode ?? "off") : cliDeadCode;
+            effectiveDeadCodeMode = cliDeadCode ?? userConfig?.watch?.deadCode ?? "lazy";
             fixOptions = resolveFixOptions();
             projectRules = await loadProjectRules(directory, userConfig);
             ruleMap = new Map<string, Rule>(
@@ -399,22 +398,68 @@ export const watch = async (directory: string, options: WatchOptions = {}): Prom
     );
   };
 
-  const watcher = fs.watch(directory, { recursive: true }, (_event, filename) => {
-    if (!filename) return;
-    handleFileChange(String(filename));
-  });
+  // recursive fs.watch is unsupported on Linux — fall back to watching each
+  // directory individually there.
+  // aren't picked up on those platforms; restart watch to cover them.
+  const supportsRecursiveWatch = process.platform === "darwin" || process.platform === "win32";
+  const watchers: fs.FSWatcher[] = [];
 
-  watcher.on("error", (error: NodeJS.ErrnoException) => {
+  const onWatchEvent =
+    (baseDir: string) => (_event: fs.WatchEventType, filename: string | null) => {
+      if (!filename) return;
+      const relative =
+        baseDir === directory
+          ? String(filename)
+          : toPosix(path.relative(directory, path.join(baseDir, String(filename))));
+      handleFileChange(relative);
+    };
+
+  const onWatchError = (error: NodeJS.ErrnoException) => {
     const code = error?.code;
     if (code === "EPERM" || code === "EACCES") {
       logger.error(`  Watcher permission error: ${error?.message ?? "Unknown"}`);
       return;
     }
     logger.error(`  Watcher error: ${error?.message ?? "Unknown"}`);
-  });
+  };
+
+  if (supportsRecursiveWatch) {
+    const watcher = fs.watch(directory, { recursive: true }, onWatchEvent(directory));
+    watcher.on("error", onWatchError);
+    watchers.push(watcher);
+  } else {
+    const watchDirs = [directory];
+    const collectDirs = (dir: string): void => {
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (!entry.isDirectory() || IGNORED_DIRS.has(entry.name)) continue;
+        const child = path.join(dir, entry.name);
+        if (isSymlink(child)) continue;
+        watchDirs.push(child);
+        collectDirs(child);
+      }
+    };
+    collectDirs(directory);
+
+    for (const dir of watchDirs) {
+      try {
+        const watcher = fs.watch(dir, onWatchEvent(dir));
+        watcher.on("error", onWatchError);
+        watchers.push(watcher);
+      } catch (error) {
+        // a directory may vanish between listing and watching
+        if (error instanceof Error) logger.dim(`  Watcher skipped: ${error.message}`);
+      }
+    }
+  }
 
   process.on("SIGINT", () => {
-    watcher.close();
+    for (const watcher of watchers) watcher.close();
     for (const timer of debounceTimers.values()) clearTimeout(timer);
     logger.break();
     logger.dim("  Watcher stopped.");

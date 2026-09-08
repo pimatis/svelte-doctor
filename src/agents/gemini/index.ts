@@ -1,10 +1,14 @@
 import type { AgentInfo } from "../../types.js";
+import { createPrintModeAgent } from "../factory.js";
 
-export const createGeminiAgent = (isCommandAvailable: (cmd: string) => boolean): AgentInfo => ({
-  name: "Gemini CLI",
-  command: "gemini",
-  id: "gemini",
-  available: isCommandAvailable("gemini"),
-  getSpawnArgs: (_cwd, mode) => ["-p", ...(mode === "unsafe" ? ["--yolo"] : [])],
-  usePromptAsArg: true,
-});
+export const createGeminiAgent = (isCommandAvailable: (cmd: string) => boolean): AgentInfo =>
+  createPrintModeAgent(
+    {
+      name: "Gemini CLI",
+      command: "gemini",
+      baseArgs: ["-p"],
+      unsafeFlag: "--yolo",
+      usePromptAsArg: true,
+    },
+    isCommandAvailable,
+  );

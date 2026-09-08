@@ -92,7 +92,7 @@ export const deadStoresCommand = new Command("dead-stores")
       const result = analyzeDeadStores(resolvedDirectory);
 
       if (flags.json) {
-        logger.log(JSON.stringify(buildJsonPayload(result), null, 2));
+        logger.json(JSON.stringify(buildJsonPayload(result), null, 2));
         return;
       }
 

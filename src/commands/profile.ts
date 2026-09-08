@@ -107,7 +107,7 @@ export const renderProfileCommand = new Command("render-profile")
       const resolvedDir = path.resolve(directory);
       const top = parsePositiveInt(flags.top, "top");
       if (flags.json) {
-        logger.log(JSON.stringify(runRenderProfile(resolvedDir, top), null, 2));
+        logger.json(JSON.stringify(runRenderProfile(resolvedDir, top), null, 2));
         return;
       }
       if (flags.watch) {

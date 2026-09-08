@@ -2,29 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Rule, Diagnostic, RuleContext } from "../../types.js";
 import { getLineAndColumn, ts, walkSourceFile } from "../../parser/script.js";
-
-// builds a line-index → boolean map in a single O(n) pass
-// true means the line is inside a <script> block (instance or module)
-const buildScriptLineMap = (source: string): boolean[] => {
-  const lines = source.split("\n");
-  const map: boolean[] = new Array(lines.length).fill(false);
-  let inside = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i].trim();
-    if (/^<script[\s>]/.test(trimmed)) {
-      inside = true;
-      continue;
-    }
-    if (trimmed === "</script>") {
-      inside = false;
-      continue;
-    }
-    map[i] = inside;
-  }
-
-  return map;
-};
+import { buildScriptLineMap } from "../../parser/lines.js";
 
 // flags fetch() calls inside .svelte component scripts
 // data fetching belongs in load() functions or form actions, not component scripts
@@ -607,7 +585,7 @@ const noFormWithoutEnhance: Rule = {
   category: "SvelteKit",
   severity: "warning",
   message: '`<form method="post">` without `use:enhance` triggers a full page reload',
-  help: 'Add `use:enhance` from `$app/forms` so SvelteKit handles the submit with client-side navigation and inline `form` prop error handling.',
+  help: "Add `use:enhance` from `$app/forms` so SvelteKit handles the submit with client-side navigation and inline `form` prop error handling.",
   appliesTo: ["svelte"],
   cost: "low",
   check: (ctx: RuleContext): Diagnostic[] => {
@@ -791,7 +769,7 @@ const loadDependsWithoutInvalidate: Rule = {
   category: "SvelteKit",
   severity: "warning",
   message: "`depends()` dependency is never invalidated anywhere in the project",
-  help: 'Call `invalidate(uri)` (or `invalidate(() => ...)` / `invalidateAppDependencies()`) after the relevant mutation, or drop the `depends()` call if the data never changes.',
+  help: "Call `invalidate(uri)` (or `invalidate(() => ...)` / `invalidateAppDependencies()`) after the relevant mutation, or drop the `depends()` call if the data never changes.",
   appliesTo: ["script"],
   // walks the project src directory per depends-containing file
   // invalidation index per scan invocation in the scanner
@@ -823,9 +801,7 @@ const loadDependsWithoutInvalidate: Rule = {
     const diagnostics: Diagnostic[] = [];
     for (const { uri, line, column } of dependsUris) {
       // SvelteKit prefix semantics: invalidate("app:") covers depends("app:css")
-      const covered = [...invalidations.uris].some(
-        (inv) => uri === inv || uri.startsWith(inv),
-      );
+      const covered = [...invalidations.uris].some((inv) => uri === inv || uri.startsWith(inv));
       if (covered) continue;
       diagnostics.push({
         filePath: ctx.filePath,

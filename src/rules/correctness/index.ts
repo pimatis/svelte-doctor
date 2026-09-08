@@ -1,27 +1,10 @@
 import type { Rule, Diagnostic } from "../../types.js";
+import { buildScriptLineMap, buildModuleScriptLineMap } from "../../parser/lines.js";
 
-// builds a line-index → boolean map in a single O(n) pass
-// true means the line is inside an instance <script> block
-const buildScriptLineMap = (source: string): boolean[] => {
-  const lines = source.split("\n");
-  const map: boolean[] = new Array(lines.length).fill(false);
-  let inside = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i].trim();
-    if (/^<script[\s>]/.test(trimmed) && !/\bmodule\b|context=["']module["']/.test(trimmed)) {
-      inside = true;
-      continue;
-    }
-    if (trimmed === "</script>") {
-      inside = false;
-      continue;
-    }
-    map[i] = inside;
-  }
-
-  return map;
-};
+const MODULE_REACTIVE_MESSAGE =
+  "`$:` in a module script is silently dropped by the Svelte 5 compiler";
+const MODULE_REACTIVE_HELP =
+  'Move this logic to the instance script as `$derived()`/`$effect()`, or compute it eagerly as a module-level `const` — reactive statements are not supported in `<script context="module">` and cannot be autofixed here';
 
 const noLegacyReactive: Rule = {
   name: "no-legacy-reactive",
@@ -33,7 +16,8 @@ const noLegacyReactive: Rule = {
   docs: {
     summary: "Flags legacy reactive labels in runes mode.",
     whyItMatters: "Legacy reactive statements obscure intent and break Svelte 5 migration goals.",
-    safeFix: "Map pure assignments to $derived() and side effects to $effect().",
+    safeFix:
+      "Map pure assignments to $derived() and side effects to $effect(). `$:` inside module scripts is reported as non-fixable because runes are invalid there.",
   },
   check: (ctx) => {
     if (!ctx.projectInfo.usesRunes) return [];
@@ -42,6 +26,7 @@ const noLegacyReactive: Rule = {
     const diagnostics: Diagnostic[] = [];
     const lines = ctx.source.split("\n");
     const scriptMap = buildScriptLineMap(ctx.source);
+    const moduleMap = buildModuleScriptLineMap(ctx.source);
     const pattern = /^\s*\$:\s/;
 
     for (let i = 0; i < lines.length; i++) {
@@ -54,12 +39,16 @@ const noLegacyReactive: Rule = {
       const match = pattern.exec(lines[i]);
       if (!match) continue;
 
+      const inModuleScript = moduleMap[i];
       diagnostics.push({
         filePath: ctx.filePath,
         rule: noLegacyReactive.name,
         severity: noLegacyReactive.severity,
-        message: noLegacyReactive.message,
-        help: noLegacyReactive.help,
+        message: inModuleScript ? MODULE_REACTIVE_MESSAGE : noLegacyReactive.message,
+        help: inModuleScript ? MODULE_REACTIVE_HELP : noLegacyReactive.help,
+        // module-script diagnostics have no autofix: the codemod only
+        // rewrites the instance script, where runes are valid
+        fixable: inModuleScript ? false : undefined,
         line: i + 1,
         column: match.index + 1,
         category: noLegacyReactive.category,

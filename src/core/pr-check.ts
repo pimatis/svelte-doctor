@@ -353,7 +353,7 @@ export const runPrCheck = async (directory: string, options: PrCheckOptions): Pr
       diff.newIssues.some((diagnostic) => diagnostic.severity === "error"));
 
   if (options.json) {
-    logger.log(JSON.stringify(result, null, 2));
+    logger.json(JSON.stringify(result, null, 2));
   }
   if (!options.json) {
     logger.break();

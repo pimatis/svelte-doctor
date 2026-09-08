@@ -39,8 +39,10 @@ export const resolvePackageManager = (
   if (fs.existsSync(path.join(directory, "bun.lockb"))) return "bun";
   if (fs.existsSync(path.join(directory, "pnpm-lock.yaml"))) return "pnpm";
   if (fs.existsSync(path.join(directory, "yarn.lock"))) return "yarn";
+  if (fs.existsSync(path.join(directory, "package-lock.json"))) return "npm";
 
-  return "bun";
+  // npm ships with Node, so it is the only safe default when no lockfile exists
+  return "npm";
 };
 
 export const buildScriptCommand = (

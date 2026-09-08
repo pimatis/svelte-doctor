@@ -18,7 +18,7 @@ export const metricsCommand = new Command("metrics")
       const result = await runMetrics(directory, parsePositiveInt(flags.top, "top"));
 
       if (flags.json) {
-        logger.log(JSON.stringify(result, null, 2));
+        logger.json(JSON.stringify(result, null, 2));
         return;
       }
 

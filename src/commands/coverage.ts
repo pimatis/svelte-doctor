@@ -11,7 +11,7 @@ export const testGapsCommand = new Command("test-gaps")
     try {
       const result = findTestGaps(path.resolve(directory));
       if (flags.json) {
-        logger.log(JSON.stringify(result, null, 2));
+        logger.json(JSON.stringify(result, null, 2));
         return;
       }
       logger.log(`  Test coverage gaps: ${result.gaps.length}/${result.sourceFiles} source files`);

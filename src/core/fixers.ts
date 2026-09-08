@@ -1,6 +1,7 @@
 import type { Diagnostic } from "../types.js";
 import { collectScriptBlocks, ts, walkSourceFile } from "../parser/script.js";
 import { collectReactiveVars, isReactiveRead } from "../parser/runes.js";
+import { buildScriptLineMap } from "../parser/lines.js";
 
 // validates that a transform didn't break basic syntax structure
 const isValidTransform = (original: string, transformed: string): boolean => {
@@ -23,28 +24,6 @@ const isValidTransform = (original: string, transformed: string): boolean => {
   }
 
   return true;
-};
-
-// builds a line-index → boolean map for <script> blocks (instance only, excludes module)
-const buildScriptLineMap = (source: string): boolean[] => {
-  const lines = source.split("\n");
-  const map: boolean[] = new Array(lines.length).fill(false);
-  let inside = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i].trim();
-    if (/^<script[\s>]/.test(trimmed) && !/\bmodule\b|context=["']module["']/.test(trimmed)) {
-      inside = true;
-      continue;
-    }
-    if (trimmed === "</script>") {
-      inside = false;
-      continue;
-    }
-    map[i] = inside;
-  }
-
-  return map;
 };
 
 const getDiagnosticLineIndex = (diagnostic: Diagnostic, lines: string[]): number | null => {

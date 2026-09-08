@@ -12,7 +12,7 @@ export const validateCommand = new Command("validate")
     try {
       const result = validateConfigFile(directory);
       if (flags.json) {
-        logger.log(JSON.stringify(result, null, 2));
+        logger.json(JSON.stringify(result, null, 2));
         return;
       }
       logger.break();

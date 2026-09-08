@@ -13,7 +13,7 @@ export const statsCommand = new Command("stats")
     try {
       const result = await runStats(directory, parsePositiveInt(flags.top, "top"));
       if (flags.json) {
-        logger.log(JSON.stringify(result, null, 2));
+        logger.json(JSON.stringify(result, null, 2));
         return;
       }
       logger.break();

@@ -8,7 +8,11 @@ import type { DeadCodeMode, WatchFixOptions, WatchOptions } from "../types.js";
 export const watchCommand = new Command("watch")
   .description("Watch for file changes and show live diagnostics")
   .argument("[directory]", "project directory", ".")
-  .option("--dead-code <mode>", "dead code mode: off, lazy, or full", parseDeadCodeMode, "off")
+  .option(
+    "--dead-code <mode>",
+    "dead code mode: off, lazy, or full (default: lazy)",
+    parseDeadCodeMode,
+  )
   .option("--incremental", "start with files changed relative to HEAD")
   .option("--fix", "auto-apply deterministic fixes when a file is saved")
   .option("--fix-rules <csv>", "with --fix: limit auto-fixes to comma-separated rules")
@@ -16,7 +20,7 @@ export const watchCommand = new Command("watch")
     async (
       directory: string,
       flags: {
-        deadCode: DeadCodeMode;
+        deadCode?: DeadCodeMode;
         fix?: boolean;
         fixRules?: string;
         incremental?: boolean;

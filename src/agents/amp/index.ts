@@ -1,10 +1,15 @@
 import type { AgentInfo } from "../../types.js";
+import { createPrintModeAgent } from "../factory.js";
 
-export const createAmpAgent = (isCommandAvailable: (cmd: string) => boolean): AgentInfo => ({
-  name: "Amp",
-  command: "amp",
-  id: "amp",
-  available: isCommandAvailable("amp"),
-  getSpawnArgs: (_cwd, mode) => [...(mode === "unsafe" ? ["--dangerously-allow-all"] : []), "-x"],
-  usePromptAsArg: true,
-});
+export const createAmpAgent = (isCommandAvailable: (cmd: string) => boolean): AgentInfo =>
+  createPrintModeAgent(
+    {
+      name: "Amp",
+      command: "amp",
+      baseArgs: ["-x"],
+      unsafeFlag: "--dangerously-allow-all",
+      unsafeFirst: true,
+      usePromptAsArg: true,
+    },
+    isCommandAvailable,
+  );

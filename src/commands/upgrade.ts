@@ -16,7 +16,7 @@ export const upgradeCommand = new Command("upgrade")
       await runUpgrade(directory, flags);
     } catch (error) {
       if (flags.json) {
-        logger.log(
+        logger.json(
           JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
         );
         process.exit(1);

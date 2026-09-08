@@ -12,7 +12,7 @@ export const quickCommand = new Command("quick")
     try {
       const result = await runQuick(directory);
       if (flags.json) {
-        logger.log(JSON.stringify(result, null, 2));
+        logger.json(JSON.stringify(result, null, 2));
         return;
       }
       if (flags.score) {

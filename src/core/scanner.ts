@@ -325,7 +325,7 @@ export const scan = async (
     } as const;
 
     if (options.json) {
-      logger.log(
+      logger.json(
         JSON.stringify(
           {
             version: VERSION,
@@ -560,7 +560,7 @@ export const scan = async (
   }
 
   if (options.json) {
-    logger.log(
+    logger.json(
       JSON.stringify(
         {
           version: VERSION,

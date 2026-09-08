@@ -67,11 +67,13 @@
   },
   "dependencies": {
     "commander": "^15.0.0",
-    "knip": "^6.32.2",
     "ora": "^9.4.1",
     "picocolors": "^1.1.1",
     "svelte": "^5.56.9",
     "typescript": "^6.0.3"
+  },
+  "optionalDependencies": {
+    "knip": "^6.32.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

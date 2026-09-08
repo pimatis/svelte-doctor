@@ -1,10 +1,14 @@
 import type { AgentInfo } from "../../types.js";
+import { createPrintModeAgent } from "../factory.js";
 
-export const createQwenAgent = (isCommandAvailable: (cmd: string) => boolean): AgentInfo => ({
-  name: "Qwen Code",
-  command: "qwen",
-  id: "qwen",
-  available: isCommandAvailable("qwen"),
-  getSpawnArgs: (_cwd, mode) => ["-p", ...(mode === "unsafe" ? ["--yolo"] : [])],
-  usePromptAsArg: true,
-});
+export const createQwenAgent = (isCommandAvailable: (cmd: string) => boolean): AgentInfo =>
+  createPrintModeAgent(
+    {
+      name: "Qwen Code",
+      command: "qwen",
+      baseArgs: ["-p"],
+      unsafeFlag: "--yolo",
+      usePromptAsArg: true,
+    },
+    isCommandAvailable,
+  );

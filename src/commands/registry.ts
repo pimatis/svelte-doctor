@@ -20,7 +20,7 @@ export const registryCommand = new Command("registry")
       .option("--json", "output machine-readable JSON")
       .action((flags: { json?: boolean }) => {
         if (flags.json) {
-          logger.log(JSON.stringify(PLUGIN_CATALOG, null, 2));
+          logger.json(JSON.stringify(PLUGIN_CATALOG, null, 2));
           return;
         }
         logger.break();
@@ -44,7 +44,7 @@ export const registryCommand = new Command("registry")
       .action((query: string, flags: { json?: boolean }) => {
         const matches = searchCatalog(query);
         if (flags.json) {
-          logger.log(JSON.stringify(matches, null, 2));
+          logger.json(JSON.stringify(matches, null, 2));
           return;
         }
         if (matches.length === 0) {
@@ -72,7 +72,7 @@ export const registryCommand = new Command("registry")
           return;
         }
         if (flags.json) {
-          logger.log(JSON.stringify(entry, null, 2));
+          logger.json(JSON.stringify(entry, null, 2));
           return;
         }
         logger.break();

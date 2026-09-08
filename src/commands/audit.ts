@@ -12,7 +12,7 @@ export const auditCommand = new Command("audit")
     try {
       const result = await runAudit(directory);
       if (flags.json) {
-        logger.log(JSON.stringify(result, null, 2));
+        logger.json(JSON.stringify(result, null, 2));
         return;
       }
       if (flags.score) {

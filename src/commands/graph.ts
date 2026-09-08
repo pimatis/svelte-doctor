@@ -18,7 +18,7 @@ export const graphCommand = new Command("graph")
     try {
       const graph = buildDependencyGraph(path.resolve(directory));
       if (flags.format === "json") {
-        logger.log(JSON.stringify(graph, null, 2));
+        logger.json(JSON.stringify(graph, null, 2));
         return;
       }
       if (flags.format === "dot") {

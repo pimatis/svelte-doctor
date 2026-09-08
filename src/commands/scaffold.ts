@@ -12,7 +12,7 @@ export const createRuleCommand = new Command("create-rule")
     try {
       const result = createRuleScaffold(path.resolve(directory), name);
       if (flags.json) {
-        logger.log(JSON.stringify(result, null, 2));
+        logger.json(JSON.stringify(result, null, 2));
         return;
       }
       logger.log(`  Created rule ${result.ruleName}`);

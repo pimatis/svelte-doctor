@@ -84,7 +84,7 @@ export const whereUsedCommand = new Command("where-used")
                 query,
               ),
             }));
-            logger.log(JSON.stringify(payload, null, 2));
+            logger.json(JSON.stringify(payload, null, 2));
             return;
           }
           const payload = queries.map((query) =>
@@ -94,7 +94,7 @@ export const whereUsedCommand = new Command("where-used")
               direction: flags.direction,
             }),
           );
-          logger.log(JSON.stringify(payload, null, 2));
+          logger.json(JSON.stringify(payload, null, 2));
           return;
         }
 

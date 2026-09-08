@@ -55,7 +55,7 @@ The tool is designed to be **safe by default**: deterministic fixes are opt-in, 
 
 ### Diagnostics & Scanning
 
-- **83 source diagnostic rules + 3 build artifact diagnostics** covering correctness, performance, security, architecture, SvelteKit reliability, runtime performance, hydration safety, CSS specificity, and accessibility
+- **93 source diagnostic rules + 3 build artifact diagnostics** covering correctness, performance, security, architecture, SvelteKit reliability, runtime performance, hydration safety, CSS specificity, and accessibility
 - **0–100 health score** with actionable, line-specific diagnostics on every scan
 - **TypeScript AST-backed script analysis** for lower false-positive rates on security-sensitive checks
 - **Accessibility autofix and suggestions** with automatic decorative-image `alt=""` fixes and contextual ARIA snippets for manual decisions
@@ -103,6 +103,8 @@ The tool is designed to be **safe by default**: deterministic fixes are opt-in, 
 - **Smart ignore suggestions** via `suggest-ignore` with confidence scoring and generated config snippets
 - **Rule authoring kit** via `create-rule` for custom rule, test, and docs scaffolding
 - **Environment diagnosis** via `doctor` with `--fix` to auto-resolve config, gitignore, and dependency issues
+- **Lazy-loaded commands** — each subcommand's module loads only when invoked, keeping CLI startup fast
+- **Script-friendly output** — with `--json`, stdout carries only machine-readable JSON (human-readable logs go to stderr)
 - **Automatic `.gitignore` sync** for generated `.svelte-doctor/*` cache/history files while preserving tracked baseline negations
 - **Generated file cleanup** via `reset` to safely clear cache, baseline, and history
 
@@ -408,48 +410,48 @@ svelte-doctor reset --all --json
 
 Scan your project for issues and output a health score. The scanner analyzes source files, Svelte compiler output, and existing SvelteKit build artifacts under `.svelte-kit/output/` when that directory exists. Every run saves the score to `.svelte-doctor/history.json`, including `--json` and `--score` modes, so your CI pipeline contributes to the trend graph. When `svelte-doctor` first creates its local `.svelte-doctor/` directory, it also ensures the scanned project's `.gitignore` contains a `.svelte-doctor/*` entry unless an equivalent `.svelte-doctor` or `.svelte-doctor/*` pattern already exists.
 
-| Option                                    | Description                                                                          |
-| ----------------------------------------- | ------------------------------------------------------------------------------------ |
-| `--score`                                 | Output only the numeric score                                                        |
-| `--json`                                  | Output machine-readable JSON                                                         |
-| `--format <text\|table>`                  | Output format for diagnostics: default text listing or aligned table                 |
-| `--no-lint`                               | Skip lint rules                                                                      |
-| `--no-dead-code`                          | Skip dead code detection                                                             |
-| `--no-cache`                              | Disable the on-disk scan cache for this run                                          |
-| `--incremental`                           | Scan only files changed relative to `HEAD`, including untracked non-ignored files    |
-| `--copy`                                  | Export diagnostics in an AI-friendly format                                          |
-| `--copy-output <clipboard\|stdout\|file>` | Choose clipboard, stdout, or file output                                             |
-| `--copy-file <path>`                      | Write export output to a file inside the scanned project root                        |
-| `--copy-max <count>`                      | Limit how many diagnostics are included in the export                                |
-| `--copy-errors-only`                      | Export only error-level diagnostics                                                  |
-| `--copy-format <prompt\|raw>`             | Export as a structured prompt or raw text                                            |
-| `--baseline`                              | Suppress diagnostics present in `.svelte-doctor/baseline.json`                       |
-| `--sarif`                                 | Emit SARIF output                                                                    |
-| `--sarif-file <path>`                     | Write SARIF output to a file                                                         |
-| `--html`                                  | Write an interactive HTML report to `.svelte-doctor/report.html`                     |
-| `--html-file <path>`                      | Write HTML report to a custom file                                                   |
-| `--junit`                                 | Write a JUnit XML report to `.svelte-doctor/junit.xml`                               |
-| `--junit-file <path>`                     | Write JUnit XML report to a custom file                                              |
-| `--markdown`                              | Write a Markdown report to `.svelte-doctor/report.md`                                |
-| `--markdown-file <path>`                  | Write Markdown report to a custom file                                               |
-| `--github-annotations`                    | Emit GitHub Actions annotation commands                                              |
-| `--fail-on <never\|error\|warning>`       | Control exit behavior                                                                |
-| `--min-score <score>`                     | Fail if score is below the threshold                                                 |
-| `--changed`                               | Scan files changed relative to `HEAD`                                                |
-| `--staged`                                | Scan staged files only                                                               |
-| `--since <ref>`                           | Scan files changed since a git ref                                                   |
-| `--all-workspaces`                        | Scan all package.json workspaces                                                     |
-| `--workspace <name>`                      | Scan one workspace by name or relative path                                          |
-| `--fix`                                   | Apply deterministic auto-fixes after scan                                            |
-| `--diff`                                  | With `--fix`: preview automatic fixes as unified diffs                               |
-| `--interactive`                           | With `--fix`: confirm each fix individually (`y`, `n`, `a`, `q`)                     |
-| `--fix-ai`                                | Also run AI agent fix after deterministic fixes                                      |
-| `--dry-run`                               | With `--fix`: preview fixes without writing files                                    |
-| `--rules <csv>`                           | With `--fix`: limit deterministic fixes to comma-separated rules                     |
-| `--errors-only`                           | With `--fix`: fix only error-severity diagnostics                                    |
-| `--verify-level <level>`                  | With `--fix-ai`: verification depth — `diagnostics`, `typecheck`, `tests`, or `full` |
-| `--max-files <count>`                     | With `--fix-ai`: max diagnostics in AI agent batch (default: 50)                     |
-| `--jobs <count>`                          | Number of parallel scan workers (0 = auto-detect CPU count, default: 1)              |
+| Option                                    | Description                                                                                                             |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `--score`                                 | Output only the numeric score                                                                                           |
+| `--json`                                  | Output machine-readable JSON — all human-readable logs go to stderr, so stdout is safe to pipe into `jq` or an AI agent |
+| `--format <text\|table>`                  | Output format for diagnostics: default text listing or aligned table                                                    |
+| `--no-lint`                               | Skip lint rules                                                                                                         |
+| `--no-dead-code`                          | Skip dead code detection                                                                                                |
+| `--no-cache`                              | Disable the on-disk scan cache for this run                                                                             |
+| `--incremental`                           | Scan only files changed relative to `HEAD`, including untracked non-ignored files                                       |
+| `--copy`                                  | Export diagnostics in an AI-friendly format                                                                             |
+| `--copy-output <clipboard\|stdout\|file>` | Choose clipboard, stdout, or file output                                                                                |
+| `--copy-file <path>`                      | Write export output to a file inside the scanned project root                                                           |
+| `--copy-max <count>`                      | Limit how many diagnostics are included in the export                                                                   |
+| `--copy-errors-only`                      | Export only error-level diagnostics                                                                                     |
+| `--copy-format <prompt\|raw>`             | Export as a structured prompt or raw text                                                                               |
+| `--baseline`                              | Suppress diagnostics present in `.svelte-doctor/baseline.json`                                                          |
+| `--sarif`                                 | Emit SARIF output                                                                                                       |
+| `--sarif-file <path>`                     | Write SARIF output to a file                                                                                            |
+| `--html`                                  | Write an interactive HTML report to `.svelte-doctor/report.html`                                                        |
+| `--html-file <path>`                      | Write HTML report to a custom file                                                                                      |
+| `--junit`                                 | Write a JUnit XML report to `.svelte-doctor/junit.xml`                                                                  |
+| `--junit-file <path>`                     | Write JUnit XML report to a custom file                                                                                 |
+| `--markdown`                              | Write a Markdown report to `.svelte-doctor/report.md`                                                                   |
+| `--markdown-file <path>`                  | Write Markdown report to a custom file                                                                                  |
+| `--github-annotations`                    | Emit GitHub Actions annotation commands                                                                                 |
+| `--fail-on <never\|error\|warning>`       | Control exit behavior                                                                                                   |
+| `--min-score <score>`                     | Fail if score is below the threshold                                                                                    |
+| `--changed`                               | Scan files changed relative to `HEAD`                                                                                   |
+| `--staged`                                | Scan staged files only                                                                                                  |
+| `--since <ref>`                           | Scan files changed since a git ref                                                                                      |
+| `--all-workspaces`                        | Scan all package.json workspaces                                                                                        |
+| `--workspace <name>`                      | Scan one workspace by name or relative path                                                                             |
+| `--fix`                                   | Apply deterministic auto-fixes after scan                                                                               |
+| `--diff`                                  | With `--fix`: preview automatic fixes as unified diffs                                                                  |
+| `--interactive`                           | With `--fix`: confirm each fix individually (`y`, `n`, `a`, `q`)                                                        |
+| `--fix-ai`                                | Also run AI agent fix after deterministic fixes                                                                         |
+| `--dry-run`                               | With `--fix`: preview fixes without writing files                                                                       |
+| `--rules <csv>`                           | With `--fix`: limit deterministic fixes to comma-separated rules                                                        |
+| `--errors-only`                           | With `--fix`: fix only error-severity diagnostics                                                                       |
+| `--verify-level <level>`                  | With `--fix-ai`: verification depth — `diagnostics`, `typecheck`, `tests`, or `full`                                    |
+| `--max-files <count>`                     | With `--fix-ai`: max diagnostics in AI agent batch (default: 50)                                                        |
+| `--jobs <count>`                          | Number of parallel scan workers (0 = auto-detect CPU count, default: 1)                                                 |
 
 `--copy` is designed for cases where you want to paste diagnostics into a different AI agent instead of using `svelte-doctor fix`. The default mode tries the system clipboard first, then falls back to stdout if no clipboard integration is available. If you need deterministic output for scripts, use `--copy-output file`.
 
@@ -722,12 +724,12 @@ svelte-doctor compare --base origin/main --head feature/xyz
 
 Watch for file changes and show live diagnostics. Runs an initial cached scan, then incrementally re-scans only changed files with 150ms debounced updates. With `--fix`, deterministic fixes are applied automatically when a file is saved — the watch loop closes the feedback gap between "see the issue" and "fix the issue".
 
-| Option               | Description                                                                 |
-| -------------------- | --------------------------------------------------------------------------- |
-| `--dead-code <mode>` | Dead-code behavior in watch mode: `off`, `lazy`, or `full`                  |
-| `--incremental`      | Start with only tracked and untracked non-ignored files changed from `HEAD` |
-| `--fix`              | Auto-apply deterministic fixes to saved files                               |
-| `--fix-rules <csv>`  | With `--fix`: limit auto-fixes to comma-separated rules (implies `--fix`)   |
+| Option               | Description                                                                  |
+| -------------------- | ---------------------------------------------------------------------------- |
+| `--dead-code <mode>` | Dead-code behavior in watch mode: `off`, `lazy`, or `full` (default: `lazy`) |
+| `--incremental`      | Start with only tracked and untracked non-ignored files changed from `HEAD`  |
+| `--fix`              | Auto-apply deterministic fixes to saved files                                |
+| `--fix-rules <csv>`  | With `--fix`: limit auto-fixes to comma-separated rules (implies `--fix`)    |
 
 Auto-fix can also be enabled permanently in `svelte-doctor.config.json` — no CLI flag needed:
 
@@ -749,6 +751,8 @@ CLI flags (`--fix`, `--fix-rules`) take precedence over config. Only determinist
 ```
 
 Use `watch --incremental` to start with the current Git working-tree changes while continuing to watch the project. Existing files changed after startup are scanned individually; newly created files trigger a full rescan so they are added to the watch state.
+
+Watch mode uses recursive `fs.watch` on macOS and Windows. On Linux, where recursive watching is unsupported, it watches each project directory individually (directories created after startup are picked up on the next watch restart).
 
 ```bash
 svelte-doctor watch --incremental
@@ -796,7 +800,7 @@ svelte-doctor apply --write --rules no-transition-all,no-full-lodash
 
 #### `svelte-doctor fix [directory] [options]`
 
-Detects installed AI coding agents (**Cursor**, **Amp**, **Claude Code**, **Codex**, **Copilot CLI**, **OpenCode**, **Pi**, **Gemini CLI**, **Qwen Code**, **Aider**, **Goose**) and uses the best available one to fix reported issues automatically. The flow is **safe by default**: privileged agent flags are disabled unless you explicitly pass `--unsafe-agent-exec`. Diagnostics are redacted before prompt generation, prompts are written into a secure temp directory when needed, and post-fix verification can be escalated from diagnostics-only to full typecheck/test/build smoke.
+Detects installed AI coding agents (**Cursor**, **Amp**, **Claude Code**, **Codex**, **Copilot CLI**, **OpenCode**, **Pi**, **Gemini CLI**, **Qwen Code**, **Aider**, **Goose**) and uses the best available one to fix reported issues automatically. The flow is **safe by default**: privileged agent flags are disabled unless you explicitly pass `--unsafe-agent-exec`. Diagnostics are redacted before prompt generation, prompts are written into a secure temp directory when needed, and post-fix verification re-scans the project and fails if **errors or warnings** increased — the prompt bundle is kept for inspection instead of being silently cleaned up. Verification can be escalated from diagnostics-only to full typecheck/test/build smoke.
 
 Supported agent ids for `--agent` are `cursor`, `amp`, `claude`, `codex`, `copilot`, `opencode`, `pi`, `gemini`, `qwen`, `aider`, and `goose`. Install and authenticate at least one of them first, then run `svelte-doctor fix`. The command uses each agent's documented non-interactive mode where available: Amp execute mode, Claude print mode, Codex exec mode, Copilot prompt mode, OpenCode run mode, Pi print mode, Gemini headless mode, Qwen headless mode, Aider message mode, and Goose run mode.
 
@@ -990,6 +994,8 @@ Detect `writable` stores that are never written to anywhere in the project. A `w
 The analysis is cross-file: it tracks `.set()`, `.update()`, `this.store.set()` in classes, and `$store =` auto-subscription writes in `.svelte` templates, resolving imports and re-exports back to the original declaration. Stores that are written in any file are reported as OK with their write sites listed.
 
 Full checks also use Knip for function-level unused export diagnostics and detect component imports that are never rendered in `+page.svelte`. Bundle analysis reports wildcard, namespace, and CommonJS patterns that can prevent tree-shaking from removing unused code.
+
+Knip ships as an **optional dependency**: it is installed by default, but you can skip it (for example `npm install -g svelte-doctor --omit=optional`) to slim the install down. When Knip is not available, dead-code analysis automatically falls back to page-component checks and prints a one-time notice; nothing crashes.
 
 | Option   | Description                  |
 | -------- | ---------------------------- |
@@ -1299,6 +1305,9 @@ default-exported `Rule`, a default-exported plugin object `{ name, rules }`, a n
 `svelteDoctorPlugin` export, or a default-exported array of `Rule`. The package exports
 `defineRule`, `definePlugin`, and `validateRule` helpers for author-time validation.
 
+> The full rule contract — `Rule`, `RuleContext`, `Diagnostic`, the codemod/transform spec, and
+> AST-walking guidance — is documented in [`docs/rules.md`](docs/rules.md).
+
 ### Configuration
 
 ```jsonc
@@ -1349,7 +1358,7 @@ svelte-doctor explain <rule>     # shows the namespaced id and source plugin
 
 ## Rules
 
-**82 source rules + 3 build artifact diagnostics**, grouped by category.
+**93 source rules + 3 build artifact diagnostics**, grouped by category.
 
 ### Correctness (10)
 
@@ -1423,21 +1432,26 @@ Rules in this category only fire in **runes-mode projects** (projects that use `
 | `no-plain-external-anchor`    | warning  | External `<a>` link missing `rel="noopener noreferrer"`    |
 | `no-exposed-error-details`    | error    | Raw `error.message` or `error.stack` returned to client    |
 
-### SvelteKit (11)
+### SvelteKit (16)
 
-| Rule                              | Severity | Description                                                  |
-| --------------------------------- | -------- | ------------------------------------------------------------ |
-| `no-client-fetch`                 | warning  | `fetch` in component scripts → use `load` functions          |
-| `load-missing-type`               | warning  | Load function without type annotation (TypeScript only)      |
-| `no-goto-external`                | warning  | `goto()` with external URLs                                  |
-| `form-action-no-validation`       | warning  | Form actions without input validation                        |
-| `missing-error-page`              | warning  | No `+error.svelte` found                                     |
-| `server-load-missing-error-guard` | warning  | Server load uses remote fetch without obvious error handling |
-| `form-action-missing-auth-check`  | warning  | Form actions mutate without an obvious auth/session check    |
-| `no-missing-prefetch`             | warning  | Navigation link missing `data-sveltekit-prefetch`            |
-| `no-form-action-without-redirect` | warning  | POST form action missing `redirect()` after mutation         |
-| `no-non-serializable-load-return` | error    | Server load returns non-serializable value (function, class) |
-| `no-runes-in-server-only-file`    | warning  | `$state` or `$effect` used in server-only route files        |
+| Rule                                | Severity | Description                                                              |
+| ----------------------------------- | -------- | ------------------------------------------------------------------------ |
+| `no-client-fetch`                   | warning  | `fetch` in component scripts → use `load` functions                      |
+| `load-missing-type`                 | warning  | Load function without type annotation (TypeScript only)                  |
+| `no-goto-external`                  | warning  | `goto()` with external URLs                                              |
+| `form-action-no-validation`         | warning  | Form actions without input validation                                    |
+| `missing-error-page`                | warning  | No `+error.svelte` found                                                 |
+| `server-load-missing-error-guard`   | warning  | Server load uses remote fetch without obvious error handling             |
+| `form-action-missing-auth-check`    | warning  | Form actions mutate without an obvious auth/session check                |
+| `no-missing-prefetch`               | warning  | Navigation link missing `data-sveltekit-prefetch`                        |
+| `no-form-action-without-redirect`   | warning  | POST form action missing `redirect()` after mutation                     |
+| `no-non-serializable-load-return`   | error    | Server load returns non-serializable value (function, class)             |
+| `no-runes-in-server-only-file`      | warning  | `$state` or `$effect` used in server-only route files                    |
+| `no-form-without-enhance`           | warning  | `<form method="post">` without `use:enhance` triggers a full page reload |
+| `form-action-throw-instead-of-fail` | error    | `fail()` must be returned from a form action, not thrown                 |
+| `load-global-fetch`                 | warning  | `load` calls the global `fetch` instead of the event's `fetch`           |
+| `load-depends-without-invalidate`   | warning  | `depends()` dependency is never invalidated anywhere in the project      |
+| `missing-handle-error`              | warning  | No `handleError` hook found in `src/hooks.server.ts`                     |
 
 ### Bundle Size (5 source rules + 3 build artifact diagnostics)
 

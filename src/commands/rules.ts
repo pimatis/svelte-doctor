@@ -14,7 +14,7 @@ export const rulesCommand = new Command("rules")
     const result = await loadProjectRules(resolvedDir, loadConfig(resolvedDir));
 
     if (flags.json) {
-      logger.log(
+      logger.json(
         JSON.stringify(
           {
             plugins: result.plugins.map((plugin) => ({

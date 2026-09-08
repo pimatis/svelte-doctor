@@ -26,10 +26,10 @@ export const explainCommand = new Command("explain")
     if (flags.json) {
       if (flags.fix) {
         const data = await explainFixJson(rule, resolvedDir);
-        logger.log(JSON.stringify(data, null, 2));
+        logger.json(JSON.stringify(data, null, 2));
         return;
       }
-      logger.log(
+      logger.json(
         JSON.stringify(
           {
             name: rule.name,

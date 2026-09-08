@@ -20,15 +20,27 @@ const resolveColorEnabled = (): boolean => {
 const colorEnabled = resolveColorEnabled();
 const color = (fn: (text: string) => string) => (text: string) => (colorEnabled ? fn(text) : text);
 
+// in --json mode all human-readable output moves to stderr so stdout carries
+// only the machine-readable JSON stream
+let jsonMode = false;
+
+export const setJsonMode = (on: boolean): void => {
+  jsonMode = on;
+};
+
+const write = (msg: string): void => (jsonMode ? console.error(msg) : console.log(msg));
+
 // centralized logger so every module writes to stdout consistently
 export const logger = {
-  log: (msg: string) => console.log(msg),
-  break: () => console.log(),
-  info: (msg: string) => console.log(color(pc.cyan)(msg)),
-  success: (msg: string) => console.log(color(pc.green)(msg)),
-  warn: (msg: string) => console.log(color(pc.yellow)(msg)),
-  error: (msg: string) => console.log(color(pc.red)(msg)),
-  dim: (msg: string) => console.log(color(pc.dim)(msg)),
+  // always stdout: the JSON payload itself must not be diverted to stderr
+  json: (msg: string) => console.log(msg),
+  log: (msg: string) => write(msg),
+  break: () => write(""),
+  info: (msg: string) => write(color(pc.cyan)(msg)),
+  success: (msg: string) => write(color(pc.green)(msg)),
+  warn: (msg: string) => write(color(pc.yellow)(msg)),
+  error: (msg: string) => write(color(pc.red)(msg)),
+  dim: (msg: string) => write(color(pc.dim)(msg)),
 };
 
 // shorthand color wrappers for inline formatting

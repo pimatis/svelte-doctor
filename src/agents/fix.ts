@@ -196,6 +196,7 @@ type FixResult = {
   afterErrors?: number;
   afterWarnings?: number;
   errorsIncreased?: boolean;
+  warningsIncreased?: boolean;
   verificationPassed?: boolean;
 };
 
@@ -362,12 +363,20 @@ const verifyFixResult = async (
     const afterErrors = result.diagnostics.filter((d) => d.severity === "error").length;
     const afterWarnings = result.diagnostics.filter((d) => d.severity === "warning").length;
     const errorsIncreased = afterErrors > beforeErrors;
+    const warningsIncreased = afterWarnings > beforeWarnings;
 
-    if (errorsIncreased) {
+    if (errorsIncreased || warningsIncreased) {
       logger.break();
-      logger.error(
-        `  ⚠ Verification failed: errors increased from ${beforeErrors} to ${afterErrors}`,
-      );
+      if (errorsIncreased) {
+        logger.error(
+          `  ⚠ Verification failed: errors increased from ${beforeErrors} to ${afterErrors}`,
+        );
+      }
+      if (warningsIncreased) {
+        logger.error(
+          `  ⚠ Verification failed: warnings increased from ${beforeWarnings} to ${afterWarnings}`,
+        );
+      }
       logger.dim(
         "    Some fixes may have introduced new issues. Run svelte-doctor check to see details.",
       );
@@ -378,7 +387,8 @@ const verifyFixResult = async (
         beforeWarnings,
         afterErrors,
         afterWarnings,
-        errorsIncreased: true,
+        errorsIncreased,
+        warningsIncreased,
         verificationPassed: false,
       };
     }

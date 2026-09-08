@@ -142,13 +142,13 @@ export const buildDeadCodeSignature = (
   return chunks.join("|");
 };
 
-// Cheap djb2 identity over the active rule set + CLI version. Cached
-// diagnostics carry no rule versioning per file, so any change here (upgrade,
-// rule added/removed/severity changed) must invalidate the whole cache.
+// Cheap djb2 identity over the active rule set + CLI version. Rule behavior
+// changes (message, help, fix) are not tracked per file, so any output-affecting
+// change here must invalidate the whole cache.
 export const buildRulesSignature = (rules: Rule[]): string => {
   let hash = 5381;
   for (const rule of rules) {
-    const id = `${rule.id ?? rule.name}:${rule.severity}`;
+    const id = `${rule.id ?? rule.name}:${rule.severity}:${rule.message}:${rule.help}`;
     for (let i = 0; i < id.length; i++) hash = ((hash << 5) + hash + id.charCodeAt(i)) | 0;
   }
   return `${VERSION}:${rules.length}:${(hash >>> 0).toString(36)}`;

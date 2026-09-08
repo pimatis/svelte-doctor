@@ -1,101 +1,84 @@
 import { Command } from "commander";
 import { VERSION } from "./constants.js";
-import { logger } from "./output/logger.js";
-import { checkCommand } from "./commands/check.js";
-import { baselineCommand } from "./commands/baseline.js";
-import { applyCommand } from "./commands/apply.js";
-import { rulesCommand } from "./commands/rules.js";
-import { explainCommand } from "./commands/explain.js";
-import { fixCommand } from "./commands/fix.js";
-import { watchCommand } from "./commands/watch.js";
-import { depsCommand } from "./commands/deps.js";
-import { initCommand } from "./commands/init.js";
-import { upgradeCommand } from "./commands/upgrade.js";
-import { prCheckCommand } from "./commands/pr-check.js";
-import { updateCommand } from "./commands/update.js";
-import { trendCommand } from "./commands/trend.js";
-import { migrateCommand } from "./commands/migrate.js";
-import { configCommand } from "./commands/config.js";
-import { validateCommand } from "./commands/validate.js";
-import { quickCommand } from "./commands/quick.js";
-import { statsCommand } from "./commands/stats.js";
-import { metricsCommand } from "./commands/metrics.js";
-import { auditCommand } from "./commands/audit.js";
-import { compareCommand } from "./commands/compare.js";
-import { doctorCommand } from "./commands/doctor.js";
-import { resetCommand } from "./commands/reset.js";
-import { suggestIgnoreCommand } from "./commands/ignores.js";
-import { migrateStatusCommand } from "./commands/progress.js";
-import { graphCommand } from "./commands/graph.js";
-import { bundleImpactCommand } from "./commands/impact.js";
-import { testGapsCommand } from "./commands/coverage.js";
-import { createRuleCommand } from "./commands/scaffold.js";
-import { renderProfileCommand } from "./commands/profile.js";
-import { installHookCommand } from "./commands/install-hook.js";
-import { whereUsedCommand } from "./commands/where-used.js";
-import { deadStoresCommand } from "./commands/dead-stores.js";
-import { pluginsCommand } from "./commands/plugins.js";
-import { registryCommand } from "./commands/registry.js";
+import { logger, setJsonMode } from "./output/logger.js";
 
-const program = new Command()
-  .name("svelte-doctor")
-  .description("Diagnose and fix your Svelte codebase")
-  .version(VERSION, "-v, --version", "display the version number");
+// commands are loaded on demand: startup only imports the module for the
+// subcommand actually invoked (rolldown splits each into its own chunk)
+const commandLoaders: Record<string, () => Promise<Command>> = {
+  init: () => import("./commands/init.js").then((m) => m.initCommand),
+  check: () => import("./commands/check.js").then((m) => m.checkCommand),
+  baseline: () => import("./commands/baseline.js").then((m) => m.baselineCommand),
+  apply: () => import("./commands/apply.js").then((m) => m.applyCommand),
+  rules: () => import("./commands/rules.js").then((m) => m.rulesCommand),
+  explain: () => import("./commands/explain.js").then((m) => m.explainCommand),
+  fix: () => import("./commands/fix.js").then((m) => m.fixCommand),
+  watch: () => import("./commands/watch.js").then((m) => m.watchCommand),
+  trend: () => import("./commands/trend.js").then((m) => m.trendCommand),
+  deps: () => import("./commands/deps.js").then((m) => m.depsCommand),
+  upgrade: () => import("./commands/upgrade.js").then((m) => m.upgradeCommand),
+  "pr-check": () => import("./commands/pr-check.js").then((m) => m.prCheckCommand),
+  update: () => import("./commands/update.js").then((m) => m.updateCommand),
+  migrate: () => import("./commands/migrate.js").then((m) => m.migrateCommand),
+  config: () => import("./commands/config.js").then((m) => m.configCommand),
+  validate: () => import("./commands/validate.js").then((m) => m.validateCommand),
+  quick: () => import("./commands/quick.js").then((m) => m.quickCommand),
+  stats: () => import("./commands/stats.js").then((m) => m.statsCommand),
+  metrics: () => import("./commands/metrics.js").then((m) => m.metricsCommand),
+  audit: () => import("./commands/audit.js").then((m) => m.auditCommand),
+  compare: () => import("./commands/compare.js").then((m) => m.compareCommand),
+  doctor: () => import("./commands/doctor.js").then((m) => m.doctorCommand),
+  reset: () => import("./commands/reset.js").then((m) => m.resetCommand),
+  "suggest-ignore": () => import("./commands/ignores.js").then((m) => m.suggestIgnoreCommand),
+  "migrate-status": () => import("./commands/progress.js").then((m) => m.migrateStatusCommand),
+  graph: () => import("./commands/graph.js").then((m) => m.graphCommand),
+  "bundle-impact": () => import("./commands/impact.js").then((m) => m.bundleImpactCommand),
+  "test-gaps": () => import("./commands/coverage.js").then((m) => m.testGapsCommand),
+  "create-rule": () => import("./commands/scaffold.js").then((m) => m.createRuleCommand),
+  "render-profile": () => import("./commands/profile.js").then((m) => m.renderProfileCommand),
+  "install-hook": () => import("./commands/install-hook.js").then((m) => m.installHookCommand),
+  "where-used": () => import("./commands/where-used.js").then((m) => m.whereUsedCommand),
+  "dead-stores": () => import("./commands/dead-stores.js").then((m) => m.deadStoresCommand),
+  plugins: () => import("./commands/plugins.js").then((m) => m.pluginsCommand),
+  registry: () => import("./commands/registry.js").then((m) => m.registryCommand),
+};
 
-program
-  .addCommand(initCommand)
-  .addCommand(checkCommand)
-  .addCommand(baselineCommand)
-  .addCommand(applyCommand)
-  .addCommand(rulesCommand)
-  .addCommand(explainCommand)
-  .addCommand(fixCommand)
-  .addCommand(watchCommand)
-  .addCommand(trendCommand)
-  .addCommand(depsCommand)
-  .addCommand(upgradeCommand)
-  .addCommand(prCheckCommand)
-  .addCommand(updateCommand)
-  .addCommand(migrateCommand)
-  .addCommand(configCommand)
-  .addCommand(validateCommand)
-  .addCommand(quickCommand)
-  .addCommand(statsCommand)
-  .addCommand(metricsCommand)
-  .addCommand(auditCommand)
-  .addCommand(compareCommand)
-  .addCommand(doctorCommand)
-  .addCommand(resetCommand)
-  .addCommand(suggestIgnoreCommand)
-  .addCommand(migrateStatusCommand)
-  .addCommand(graphCommand)
-  .addCommand(bundleImpactCommand)
-  .addCommand(testGapsCommand)
-  .addCommand(createRuleCommand)
-  .addCommand(renderProfileCommand)
-  .addCommand(installHookCommand)
-  .addCommand(whereUsedCommand)
-  .addCommand(deadStoresCommand)
-  .addCommand(pluginsCommand)
-  .addCommand(registryCommand);
+const loadAll = async (program: Command): Promise<void> => {
+  await Promise.all(
+    Object.values(commandLoaders).map((load) => load().then((cmd) => program.addCommand(cmd))),
+  );
+};
 
-const main = async () => {
+const main = async (): Promise<void> => {
   const args = process.argv.slice(2);
+  if (args.includes("--json")) setJsonMode(true);
+
+  const program = new Command()
+    .name("svelte-doctor")
+    .description("Diagnose and fix your Svelte codebase")
+    .version(VERSION, "-v, --version", "display the version number");
+
+  const firstArg = args.find((arg) => !arg.startsWith("-"));
   const hasGlobalFlag = args.some(
     (arg) => arg === "--help" || arg === "-h" || arg === "--version" || arg === "-v",
   );
-  const subcommands = program.commands.map((cmd) => cmd.name());
-  const firstArg = args.find((arg) => !arg.startsWith("-"));
-  // commander exposes a built-in "help" subcommand (svelte-doctor help <command>)
-  // include it so help routing is not swallowed by the check fallback
-  const hasSubcommand = firstArg && (subcommands.includes(firstArg) || firstArg === "help");
+  const hasSubcommand =
+    firstArg !== undefined && (firstArg in commandLoaders || firstArg === "help");
 
   try {
+    if (hasGlobalFlag || firstArg === "help") {
+      // help listings and `help <command>` need every command's metadata
+      await loadAll(program);
+    } else if (hasSubcommand) {
+      program.addCommand(await commandLoaders[firstArg]());
+    }
+
     if (hasGlobalFlag || hasSubcommand) {
       await program.parseAsync();
       return;
     }
 
+    // bare or unknown invocation falls through to check, as before
+    const checkCommand = await commandLoaders.check();
     await checkCommand.parseAsync(args, { from: "user" });
   } catch (error) {
     if (error instanceof Error) {

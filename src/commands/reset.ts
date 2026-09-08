@@ -149,7 +149,7 @@ export const resetCommand = new Command("reset")
       }
 
       if (flags.json) {
-        logger.log(
+        logger.json(
           JSON.stringify(
             {
               version: VERSION,
@@ -170,7 +170,7 @@ export const resetCommand = new Command("reset")
       printResetReport(deleted, dryRun, dirWasRemoved);
     } catch (error) {
       if (flags.json) {
-        logger.log(
+        logger.json(
           JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
         );
         process.exit(1);

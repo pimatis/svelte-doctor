@@ -7,7 +7,7 @@ import type { UpdateResult, PackageManager } from "../types.js";
 
 const printUpdateResult = (result: UpdateResult, json: boolean): void => {
   if (json) {
-    logger.log(JSON.stringify(result, null, 2));
+    logger.json(JSON.stringify(result, null, 2));
     return;
   }
   logger.break();
@@ -62,7 +62,7 @@ export const updateCommand = new Command("update")
         printUpdateResult(result, flags.json ?? false);
       } catch (error) {
         if (flags.json) {
-          logger.log(
+          logger.json(
             JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
           );
           process.exit(1);

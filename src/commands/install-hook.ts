@@ -104,7 +104,7 @@ export const installHookCommand = new Command("install-hook")
         }
 
         if (flags.json) {
-          logger.log(JSON.stringify(statuses, null, 2));
+          logger.json(JSON.stringify(statuses, null, 2));
           return;
         }
 

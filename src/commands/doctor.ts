@@ -76,7 +76,7 @@ export const doctorCommand = new Command("doctor")
       }
 
       if (flags.json) {
-        logger.log(
+        logger.json(
           JSON.stringify(
             {
               version: VERSION,
@@ -107,7 +107,7 @@ export const doctorCommand = new Command("doctor")
       );
     } catch (error) {
       if (flags.json) {
-        logger.log(
+        logger.json(
           JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
         );
         process.exit(1);

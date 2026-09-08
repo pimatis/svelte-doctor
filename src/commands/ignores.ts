@@ -14,7 +14,7 @@ export const suggestIgnoreCommand = new Command("suggest-ignore")
       const suggestions = buildIgnoreSuggestions(result.diagnostics);
 
       if (flags.json) {
-        logger.log(
+        logger.json(
           JSON.stringify(
             {
               count: suggestions.length,

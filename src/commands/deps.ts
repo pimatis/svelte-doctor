@@ -25,7 +25,7 @@ export const depsCommand = new Command("deps")
       }
       const results = workspaces.map((w) => ({ workspace: w, result: checkDeps(w.directory) }));
       if (flags.json) {
-        logger.log(
+        logger.json(
           JSON.stringify(
             results.map((e) => ({
               name: e.workspace.name,
@@ -49,7 +49,7 @@ export const depsCommand = new Command("deps")
       logger.break();
     } catch (error) {
       if (flags.json) {
-        logger.log(
+        logger.json(
           JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
         );
         process.exit(1);

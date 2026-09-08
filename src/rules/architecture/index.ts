@@ -1,28 +1,6 @@
 import ts from "typescript";
 import type { Rule, Diagnostic } from "../../types.js";
-
-// builds a line-index → boolean map in a single O(n) pass
-// true means the line is inside a <script> block (instance or module)
-const buildScriptLineMap = (source: string): boolean[] => {
-  const lines = source.split("\n");
-  const map: boolean[] = new Array(lines.length).fill(false);
-  let inside = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i].trim();
-    if (/^<script[\s>]/.test(trimmed)) {
-      inside = true;
-      continue;
-    }
-    if (trimmed === "</script>") {
-      inside = false;
-      continue;
-    }
-    map[i] = inside;
-  }
-
-  return map;
-};
+import { buildScriptLineMap } from "../../parser/lines.js";
 
 const countProps = (ctx: Parameters<Rule["check"]>[0]): number => {
   let count = 0;

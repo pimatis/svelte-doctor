@@ -35,7 +35,7 @@ export const applyCommand = new Command("apply")
       };
       const result = await runApply(resolvedDir, options);
       if (flags.json) {
-        logger.log(JSON.stringify(result, null, 2));
+        logger.json(JSON.stringify(result, null, 2));
         return;
       }
       logger.break();

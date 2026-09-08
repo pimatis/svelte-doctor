@@ -301,7 +301,7 @@ export const runUpgrade = async (
   for (const target of targets) plans.push(await buildPlan(target.directory, options));
 
   if (options.json) {
-    logger.log(JSON.stringify(plans, null, 2));
+    logger.json(JSON.stringify(plans, null, 2));
     return plans;
   }
 

@@ -15,7 +15,7 @@ export const bundleImpactCommand = new Command("bundle-impact")
       const summary = summarizeBundleImpact(items);
 
       if (flags.json) {
-        logger.log(JSON.stringify({ summary, items }, null, 2));
+        logger.json(JSON.stringify({ summary, items }, null, 2));
         return;
       }
 

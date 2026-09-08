@@ -368,7 +368,7 @@ export const migrate = async (
 
   if (options.rollback) {
     const result = rollbackBackups(directory);
-    if (options.json) logger.log(JSON.stringify(result, null, 2));
+    if (options.json) logger.json(JSON.stringify(result, null, 2));
     if (!options.json)
       logger.success(
         `  Restored ${result.rolledBackFiles ?? 0} backup file${result.rolledBackFiles === 1 ? "" : "s"}.`,
@@ -400,7 +400,7 @@ export const migrate = async (
         backupsCreated: aggregate.backupsCreated + result.backupsCreated,
       };
     }
-    if (options.json) logger.log(JSON.stringify(aggregate, null, 2));
+    if (options.json) logger.json(JSON.stringify(aggregate, null, 2));
     printMigrateSummary(aggregate, options);
     return aggregate;
   }
@@ -408,13 +408,13 @@ export const migrate = async (
   const result = await migrateOnce(directory, options);
 
   if (options.plan && result.plan) {
-    if (options.json) logger.log(JSON.stringify(result.plan, null, 2));
+    if (options.json) logger.json(JSON.stringify(result.plan, null, 2));
     if (!options.json) printPlan(result.plan);
     return result;
   }
 
   if (options.json) {
-    logger.log(JSON.stringify(result, null, 2));
+    logger.json(JSON.stringify(result, null, 2));
     return result;
   }
 
