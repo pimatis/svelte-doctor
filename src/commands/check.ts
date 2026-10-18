@@ -727,7 +727,10 @@ export const checkCommand = new Command("check")
         flags.ratchet === true &&
         previousRatchetScore !== undefined &&
         finalScore < previousRatchetScore;
-      if (shouldFail(currentDiagnostics, finalScore, flags.failOn as string, minScore) || ratchetFailed)
+      if (
+        shouldFail(currentDiagnostics, finalScore, flags.failOn as string, minScore) ||
+        ratchetFailed
+      )
         process.exitCode = 1;
     } catch (error) {
       if (flags.json) {
