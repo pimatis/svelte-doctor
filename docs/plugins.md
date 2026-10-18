@@ -128,7 +128,7 @@ interface Rule {
 
 `RuleCategory` is one of:
 `Correctness`, `Performance`, `Architecture`, `SvelteKit`, `Security`, `Bundle Size`,
-`Dead Code`, `Accessibility`, `State & Reactivity`.
+`Dead Code`, `Accessibility`, `Images`, `I18n`, `State & Reactivity`.
 
 ---
 

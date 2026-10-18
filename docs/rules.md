@@ -11,7 +11,7 @@ const noFoo: Rule = {
   // kebab-case, unique across built-ins and plugins
   name: "no-foo",
   // one of: Correctness, Performance, Architecture, SvelteKit, Security,
-  // Bundle Size, Dead Code, Accessibility, State & Reactivity
+  // Bundle Size, Dead Code, Accessibility, Images, I18n, State & Reactivity
   category: "Correctness",
   severity: "warning", // or "error"
   message: "Short one-line description",
