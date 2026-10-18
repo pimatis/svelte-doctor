@@ -50,11 +50,17 @@ const shouldFail = (
   score: number,
   failOn: string,
   minScore: number,
+  maxErrors = 0,
+  maxWarnings = 0,
 ): boolean => {
   if (score < minScore) return true;
+  const errors = diagnostics.filter((d) => d.severity === "error").length;
+  const warnings = diagnostics.filter((d) => d.severity === "warning").length;
+  if (maxErrors > 0 && errors > maxErrors) return true;
+  if (maxWarnings > 0 && warnings > maxWarnings) return true;
   if (failOn === "never") return false;
   if (failOn === "warning") return diagnostics.length > 0;
-  return diagnostics.some((d) => d.severity === "error");
+  return errors > 0;
 };
 
 const prefixDiagnosticsForWorkspace = (
@@ -253,6 +259,8 @@ export const checkCommand = new Command("check")
   .option("--github-annotations", "emit GitHub Actions annotation commands")
   .option("--fail-on <mode>", "exit policy: never, error, or warning", parseFailOn, "error")
   .option("--min-score <score>", "fail when score drops below this threshold", "0")
+  .option("--max-errors <count>", "fail when error count exceeds this threshold", "0")
+  .option("--max-warnings <count>", "fail when warning count exceeds this threshold", "0")
   .option("--ratchet", "fail when the score drops compared to the last recorded run")
   .option("--changed", "scan changed files relative to HEAD")
   .option("--staged", "scan staged files only")
@@ -278,6 +286,8 @@ export const checkCommand = new Command("check")
     try {
       const resolvedDir = path.resolve(directory);
       const minScore = parsePositiveInt(flags.minScore as string, "min score");
+      const maxErrors = parsePositiveInt(flags.maxErrors as string, "max errors");
+      const maxWarnings = parsePositiveInt(flags.maxWarnings as string, "max warnings");
       const jobs = parsePositiveInt(flags.jobs as string, "jobs");
       const previousRatchetScore = flags.ratchet
         ? loadScoreHistory(resolvedDir).at(-1)?.score
@@ -387,7 +397,7 @@ export const checkCommand = new Command("check")
         );
         if (
           aggregateResults.some((e) =>
-            shouldFail(e.diagnostics, e.score, flags.failOn as string, minScore),
+            shouldFail(e.diagnostics, e.score, flags.failOn as string, minScore, maxErrors, maxWarnings),
           ) ||
           (flags.ratchet === true &&
             previousRatchetScore !== undefined &&
@@ -448,6 +458,8 @@ export const checkCommand = new Command("check")
             beforeResult.scoreResult.score,
             flags.failOn as string,
             minScore,
+            maxErrors,
+            maxWarnings,
           ) ||
           earlyRatchetFailed
         )

@@ -73,6 +73,7 @@ export const configSchema = {
       additionalProperties: false,
       properties: {
         categories: { type: "array", items: { type: "string" } },
+        severity: { type: "object", additionalProperties: { enum: ["error","warning","info"] } },
       },
     },
     ci: {
@@ -81,6 +82,8 @@ export const configSchema = {
       properties: {
         failOn: { enum: ["never", "error", "warning"] },
         minScore: { type: "number", minimum: 0 },
+        maxErrors: { type: "number", minimum: 0 },
+        maxWarnings: { type: "number", minimum: 0 },
       },
     },
   },
