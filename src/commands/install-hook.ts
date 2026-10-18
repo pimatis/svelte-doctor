@@ -61,6 +61,7 @@ export const installHookCommand = new Command("install-hook")
   .option("--mode <mode>", "scan mode: staged, changed, or full", parseHookMode, "staged")
   .option("--fail-on <mode>", "exit policy: never, error, or warning", parseFailOn, "error")
   .option("--min-score <score>", "fail when score drops below this threshold", "0")
+  .option("--ratchet", "fail when the score drops compared to the last recorded run")
   .option("--force", "overwrite an existing non-svelte-doctor hook")
   .option("--remove", "remove svelte-doctor managed hooks")
   .option("--list", "list hook installation status")
@@ -73,6 +74,7 @@ export const installHookCommand = new Command("install-hook")
         mode: HookMode;
         failOn: FailOn;
         minScore: string;
+        ratchet?: boolean;
         force?: boolean;
         remove?: boolean;
         list?: boolean;
@@ -99,6 +101,7 @@ export const installHookCommand = new Command("install-hook")
             mode: flags.mode,
             failOn: flags.failOn,
             minScore,
+            ratchet: flags.ratchet ?? false,
             force: flags.force ?? false,
           });
         }

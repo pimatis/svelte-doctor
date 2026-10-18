@@ -21,6 +21,7 @@ export interface InstallHookOptions {
   mode?: HookMode;
   failOn?: FailOn;
   minScore?: number;
+  ratchet?: boolean;
   force?: boolean;
 }
 
@@ -83,16 +84,18 @@ export const buildHookContent = (
   failOn: FailOn = "error",
   minScore = 0,
   executable = "bunx",
+  ratchet = false,
 ): string => {
   let modeArg = "";
   if (mode === "staged") modeArg = " --staged";
   if (mode === "changed") modeArg = " --changed";
+  const ratchetArg = ratchet ? " --ratchet" : "";
   return [
     "#!/bin/sh",
     `# ${HOOK_SIGNATURE}`,
     "set -e",
     "",
-    `${executable} svelte-doctor check${modeArg} --fail-on ${failOn} --min-score ${minScore}`,
+    `${executable} svelte-doctor check${modeArg} --fail-on ${failOn} --min-score ${minScore}${ratchetArg}`,
     "",
   ].join("\n");
 };
@@ -181,6 +184,7 @@ export const installHook = (directory: string, options: InstallHookOptions = {})
     options.failOn ?? "error",
     options.minScore ?? 0,
     executable,
+    options.ratchet ?? false,
   );
   return hookTypes.map((hookType) =>
     writeHookFile(resolvedDir, manager, hookType, content, options.force ?? false),

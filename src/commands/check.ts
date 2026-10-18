@@ -253,6 +253,7 @@ export const checkCommand = new Command("check")
   .option("--github-annotations", "emit GitHub Actions annotation commands")
   .option("--fail-on <mode>", "exit policy: never, error, or warning", parseFailOn, "error")
   .option("--min-score <score>", "fail when score drops below this threshold", "0")
+  .option("--ratchet", "fail when the score drops compared to the last recorded run")
   .option("--changed", "scan changed files relative to HEAD")
   .option("--staged", "scan staged files only")
   .option("--since <ref>", "scan files changed since the given git ref")
@@ -278,6 +279,9 @@ export const checkCommand = new Command("check")
       const resolvedDir = path.resolve(directory);
       const minScore = parsePositiveInt(flags.minScore as string, "min score");
       const jobs = parsePositiveInt(flags.jobs as string, "jobs");
+      const previousRatchetScore = flags.ratchet
+        ? loadScoreHistory(resolvedDir).at(-1)?.score
+        : undefined;
       const selectedFiles = resolveGitSelection(resolvedDir, {
         changed: flags.changed === true || flags.incremental === true,
         staged: flags.staged as boolean | undefined,
@@ -384,7 +388,10 @@ export const checkCommand = new Command("check")
         if (
           aggregateResults.some((e) =>
             shouldFail(e.diagnostics, e.score, flags.failOn as string, minScore),
-          )
+          ) ||
+          (flags.ratchet === true &&
+            previousRatchetScore !== undefined &&
+            Math.min(...aggregateResults.map((e) => e.score)) < previousRatchetScore)
         )
           process.exitCode = 1;
         return;
@@ -431,13 +438,18 @@ export const checkCommand = new Command("check")
           project,
           score: beforeResult.scoreResult,
         });
+        const earlyRatchetFailed =
+          flags.ratchet === true &&
+          previousRatchetScore !== undefined &&
+          beforeResult.scoreResult.score < previousRatchetScore;
         if (
           shouldFail(
             beforeResult.diagnostics,
             beforeResult.scoreResult.score,
             flags.failOn as string,
             minScore,
-          )
+          ) ||
+          earlyRatchetFailed
         )
           process.exitCode = 1;
         return;
@@ -711,7 +723,11 @@ export const checkCommand = new Command("check")
         return;
       }
 
-      if (shouldFail(currentDiagnostics, finalScore, flags.failOn as string, minScore))
+      const ratchetFailed =
+        flags.ratchet === true &&
+        previousRatchetScore !== undefined &&
+        finalScore < previousRatchetScore;
+      if (shouldFail(currentDiagnostics, finalScore, flags.failOn as string, minScore) || ratchetFailed)
         process.exitCode = 1;
     } catch (error) {
       if (flags.json) {
