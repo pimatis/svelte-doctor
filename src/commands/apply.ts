@@ -10,6 +10,7 @@ export const applyCommand = new Command("apply")
   .description("Apply deterministic high-confidence fixes")
   .argument("[directory]", "project directory", ".")
   .option("--dry-run", "preview fixes without writing files")
+  .option("--patch", "print unified diff for each changed file")
   .option("--json", "output machine-readable JSON")
   .option("--write", "write changes to disk")
   .option("--rules <csv>", "limit deterministic fixes to a comma-separated rule list")
@@ -50,6 +51,15 @@ export const applyCommand = new Command("apply")
       if (result.appliedRules.length > 0) {
         logger.break();
         logger.log(`  Applied rules: ${result.appliedRules.join(", ")}`);
+      }
+      const showPatch = (flags.patch as boolean) || (flags.dryRun as boolean) || !flags.write;
+      if (showPatch) {
+        for (const file of result.files) {
+          if (!file.changed || !file.diff) continue;
+          logger.break();
+          logger.log(`  ${highlighter.bold(file.filePath)}`);
+          logger.log(file.diff);
+        }
       }
       logger.break();
     } catch (error) {
