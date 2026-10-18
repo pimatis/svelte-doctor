@@ -38,6 +38,10 @@ const commandLoaders: Record<string, () => Promise<Command>> = {
   "install-hook": () => import("./commands/install-hook.js").then((m) => m.installHookCommand),
   "where-used": () => import("./commands/where-used.js").then((m) => m.whereUsedCommand),
   "dead-stores": () => import("./commands/dead-stores.js").then((m) => m.deadStoresCommand),
+  taint: () => import("./commands/taint.js").then((m) => m.taintCommand),
+  "a11y-runtime": () => import("./commands/a11y-runtime.js").then((m) => m.a11yRuntimeCommand),
+  budget: () => import("./commands/budget.js").then((m) => m.budgetCommand),
+  i18n: () => import("./commands/i18n.js").then((m) => m.i18nCommand),
   plugins: () => import("./commands/plugins.js").then((m) => m.pluginsCommand),
   registry: () => import("./commands/registry.js").then((m) => m.registryCommand),
 };

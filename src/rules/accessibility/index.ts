@@ -1,80 +1,18 @@
 import type { Rule, Diagnostic, RuleContext } from "../../types.js";
+import {
+  type AstNode,
+  attrStaticValue,
+  elementChildren,
+  extractText,
+  getAttr,
+  hasAttr,
+  isElement,
+  walkMarkup,
+} from "../../parser/markup.js";
 
 // ---------------------------------------------------------------------------
-// AST helpers (Svelte 5 modern parser AST)
+// AST helpers (shared traversal lives in parser/markup.js)
 // ---------------------------------------------------------------------------
-
-type AstNode = Record<string, any>;
-
-// returns the child node lists of any markup node (elements, blocks, snippets).
-// Covers fragments on elements/blocks plus the else/pending/then/catch branches.
-const childFragments = (node: AstNode): AstNode[][] => {
-  const lists: AstNode[][] = [];
-  if (Array.isArray(node?.fragment?.nodes)) lists.push(node.fragment.nodes);
-  if (Array.isArray(node?.nodes)) lists.push(node.nodes);
-  for (const key of ["else", "pending", "then", "catch"]) {
-    const branch = node?.[key];
-    if (!branch || typeof branch !== "object") continue;
-    if (Array.isArray(branch.fragment?.nodes)) lists.push(branch.fragment.nodes);
-    if (Array.isArray(branch.nodes)) lists.push(branch.nodes);
-  }
-  return lists;
-};
-
-const elementChildren = (el: AstNode): AstNode[] => el?.fragment?.nodes ?? [];
-
-// depth-first walk over markup nodes in source order.
-// `ancestors` is the stack of enclosing element nodes (RegularElement / Component / SvelteElement).
-const walkMarkup = (
-  nodes: AstNode[],
-  ancestors: AstNode[],
-  visit: (node: AstNode, ancestors: AstNode[]) => void,
-): void => {
-  for (const node of nodes) {
-    if (!node || typeof node !== "object") continue;
-
-    if (
-      node.type === "RegularElement" ||
-      node.type === "Component" ||
-      node.type === "SvelteElement"
-    ) {
-      visit(node, ancestors);
-      const nextAncestors = [...ancestors, node];
-      for (const children of childFragments(node)) {
-        walkMarkup(children, nextAncestors, visit);
-      }
-      continue;
-    }
-
-    for (const children of childFragments(node)) {
-      walkMarkup(children, ancestors, visit);
-    }
-  }
-};
-
-const isElement = (node: AstNode): boolean => node?.type === "RegularElement";
-
-const getAttr = (el: AstNode, name: string): AstNode | undefined =>
-  el?.attributes?.find(
-    (a: AstNode) => a?.type === "Attribute" && typeof a.name === "string" && a.name === name,
-  );
-
-const hasAttr = (el: AstNode, name: string): boolean => getAttr(el, name) !== undefined;
-
-// static text value of an attribute:
-//   - "" for bare attributes (`<img alt>`)
-//   - the literal text for `attr="value"`
-//   - null for dynamic values (`attr={expr}`) or `{name}` shorthand
-const attrStaticValue = (attr: AstNode | undefined): string | null => {
-  if (!attr) return null;
-  const value = attr.value;
-  if (value === true || value === undefined || value === null) return "";
-  if (Array.isArray(value)) {
-    return value.map((part: AstNode) => (part?.type === "Text" ? (part.data ?? "") : "")).join("");
-  }
-  if (typeof value === "object" && value?.type === "ExpressionTag") return null;
-  return null;
-};
 
 const getLineCol = (source: string, offset: number): { line: number; column: number } => {
   const before = source.slice(0, Math.max(0, offset));
@@ -173,19 +111,6 @@ const isAriaHidden = (el: AstNode): boolean => {
   if (!attr) return false;
   const value = attrStaticValue(attr);
   return value !== "false";
-};
-
-const extractText = (nodes: AstNode[]): string => {
-  let out = "";
-  for (const node of nodes) {
-    if (!node || typeof node !== "object") continue;
-    if (node.type === "Text") out += node.data ?? "";
-    else if (node.type === "ExpressionTag" || node.type === "RenderTag") out += " ";
-    else if (isElement(node) || node.type === "Component" || node.type === "SvelteElement") {
-      out += extractText(elementChildren(node));
-    }
-  }
-  return out;
 };
 
 // ---------------------------------------------------------------------------
@@ -599,6 +524,38 @@ const buttonHasName: Rule = {
   },
 };
 
+// iframes need a title so screen readers can describe the embedded content
+const iframeMissingTitle: Rule = {
+  name: "iframe-missing-title",
+  category: "Accessibility",
+  severity: "warning",
+  message: "`<iframe>` element is missing a `title` attribute",
+  help: 'Add a descriptive `title="..."` to every `<iframe>` so assistive technology can announce what the frame contains. Decorative frames should use `title=""` plus `aria-hidden="true"`.',
+  requiresAst: true,
+  check: (ctx) => {
+    if (!ctx.ast) return [];
+    const diagnostics: Diagnostic[] = [];
+    walkMarkup(ctx.ast.fragment?.nodes ?? [], [], (el) => {
+      if (!isElement(el) || el.name !== "iframe") return;
+      const title = getAttr(el, "title");
+      if (title) {
+        // an empty static title is the same as no title
+        const value = attrStaticValue(title);
+        if (value === null || value.trim().length > 0) return;
+      }
+      diagnostics.push(
+        makeDiagnostic(
+          ctx,
+          el,
+          iframeMissingTitle,
+          '<iframe title="Embedded content description">',
+        ),
+      );
+    });
+    return diagnostics;
+  },
+};
+
 export const accessibilityRules: Rule[] = [
   imgMissingAlt,
   clickNeedsKeyboard,
@@ -612,4 +569,5 @@ export const accessibilityRules: Rule[] = [
   mediaHasCaption,
   htmlLang,
   buttonHasName,
+  iframeMissingTitle,
 ];

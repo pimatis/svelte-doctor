@@ -6,6 +6,14 @@ import { securityRules } from "./security/index.js";
 import { sveltekitRules } from "./sveltekit/index.js";
 import { bundleRules } from "./bundle/index.js";
 import { accessibilityRules } from "./accessibility/index.js";
+import { imageRules } from "./images/index.js";
+import { deadCodeRules } from "./dead-code/index.js";
+import {
+  bundleAnalyzerRules,
+  deadCodeAnalyzerRules,
+  i18nRules,
+  imageAnalyzerRules,
+} from "./analyzer/index.js";
 import { reactivityRules } from "./reactivity/index.js";
 import { deepRunesRules } from "./deep-runes/index.js";
 
@@ -15,8 +23,11 @@ const ruleRegistry = {
   Architecture: architectureRules,
   Security: securityRules,
   SvelteKit: sveltekitRules,
-  "Bundle Size": bundleRules,
+  "Bundle Size": [...bundleRules, ...bundleAnalyzerRules],
   Accessibility: accessibilityRules,
+  Images: [...imageRules, ...imageAnalyzerRules],
+  "Dead Code": [...deadCodeRules, ...deadCodeAnalyzerRules],
+  I18n: i18nRules,
   "State & Reactivity": [...reactivityRules, ...deepRunesRules],
 } satisfies Record<string, Rule[]>;
 

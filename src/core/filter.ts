@@ -50,3 +50,20 @@ export const filterIgnored = (
     return true;
   });
 };
+
+// remaps diagnostic severity from config.rules.severity, matching by rule id.
+// covers diagnostics from core analyzers (dead code, images, budgets) that are
+// not part of the rule list the loader can override.
+export const applySeverityOverrides = (
+  diagnostics: Diagnostic[],
+  config: SvelteDoctorConfig,
+): Diagnostic[] => {
+  const overrides = config.rules?.severity;
+  if (!overrides || Object.keys(overrides).length === 0) return diagnostics;
+
+  return diagnostics.map((diagnostic) => {
+    const nextSeverity = overrides[diagnostic.rule];
+    if (!nextSeverity || nextSeverity === diagnostic.severity) return diagnostic;
+    return { ...diagnostic, severity: nextSeverity };
+  });
+};

@@ -17,7 +17,7 @@ import type {
 } from "../types.js";
 import { calculateScore } from "./score.js";
 import { saveScoreHistory } from "./history.js";
-import { filterIgnored } from "./filter.js";
+import { applySeverityOverrides, filterIgnored } from "./filter.js";
 import { runDeadCodeAnalysis } from "./deadcode.js";
 import {
   buildDeadCodeSignature,
@@ -31,6 +31,11 @@ import {
 import { attachDiagnosticMetadata, countFixableDiagnostics } from "./diagnostics.js";
 import { filterBaselineDiagnostics, loadBaseline } from "./baseline.js";
 import { analyzeBuildArtifacts } from "./artifacts.js";
+import { analyzeImageAssets } from "./images.js";
+import { analyzeGlobalCss } from "./css-deadcode.js";
+import { auditRenderedHtml } from "./a11y-runtime.js";
+import { evaluateBudget } from "./budget.js";
+import { analyzeI18n } from "./i18n.js";
 import { collectProjectFiles } from "../fs/walker.js";
 import { toPosix } from "../fs/normalize.js";
 import { validateDirectory } from "../fs/validate.js";
@@ -507,13 +512,47 @@ export const scan = async (
     targetMode === "full" && options.lint ? analyzeBuildArtifacts(directory) : [];
   phaseTimings.artifacts = roundMs(performance.now() - artifactStart);
 
+  // project-wide analyzers that need more than the current file: asset weight,
+  // dead CSS, rendered-HTML accessibility, bundle budgets and i18n completeness.
+  // each one is isolated so a failure degrades that report only.
+  const extraDiagnostics: Diagnostic[] = [];
+
+  if (targetMode === "full" && options.lint) {
+    const runAnalyzer = (name: string, run: () => Diagnostic[]) => {
+      const start = performance.now();
+      try {
+        extraDiagnostics.push(...run());
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "unknown error";
+        notes.push(`${name} analysis skipped: ${message}`);
+        if (!silent) logger.dim(`  ⚠ ${name} analysis skipped: ${message}`);
+      } finally {
+        phaseTimings[name] = roundMs(performance.now() - start);
+      }
+    };
+
+    runAnalyzer("imageAssets", () => analyzeImageAssets(directory).diagnostics);
+    runAnalyzer("cssDeadCode", () => analyzeGlobalCss(directory).diagnostics);
+    runAnalyzer("a11yRuntime", () => auditRenderedHtml(directory).diagnostics);
+    runAnalyzer("budget", () =>
+      userConfig?.budgets ? evaluateBudget(directory, userConfig.budgets).diagnostics : [],
+    );
+    runAnalyzer("i18n", () => {
+      const result = analyzeI18n(directory, userConfig?.i18n ?? null);
+      return result.detected ? result.diagnostics : [];
+    });
+  }
+
+  const mergedDiagnostics = [
+    ...lintDiagnostics,
+    ...deadCodeDiagnostics,
+    ...artifactDiagnostics,
+    ...extraDiagnostics,
+  ];
   const allDiagnostics = attachDiagnosticMetadata(
     userConfig
-      ? filterIgnored(
-          [...lintDiagnostics, ...deadCodeDiagnostics, ...artifactDiagnostics],
-          userConfig,
-        )
-      : [...lintDiagnostics, ...deadCodeDiagnostics, ...artifactDiagnostics],
+      ? applySeverityOverrides(filterIgnored(mergedDiagnostics, userConfig), userConfig)
+      : mergedDiagnostics,
   );
   const baselineResult = options.baseline
     ? filterBaselineDiagnostics(allDiagnostics, loadBaseline(directory))

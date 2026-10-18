@@ -1,5 +1,12 @@
-import type { Rule, Diagnostic } from "../../types.js";
-import { buildScriptLineMap, buildModuleScriptLineMap } from "../../parser/lines.js";
+import type { Rule, Diagnostic, RuleContext } from "../../types.js";
+import {
+  buildScriptLineMap,
+  buildModuleScriptLineMap,
+  offsetToPosition,
+} from "../../parser/lines.js";
+import { isRuneCall, hasRunesInSource } from "../../parser/runes.js";
+import { getLineAndColumn, ts, walkSourceFile } from "../../parser/script.js";
+import { walkAst } from "../../parser/walker.js";
 
 const MODULE_REACTIVE_MESSAGE =
   "`$:` in a module script is silently dropped by the Svelte 5 compiler";
@@ -482,6 +489,294 @@ const noClassInstanceAsState: Rule = {
   },
 };
 
+const ASSIGNMENT_OPERATORS = new Set([
+  ts.SyntaxKind.EqualsToken,
+  ts.SyntaxKind.PlusEqualsToken,
+  ts.SyntaxKind.MinusEqualsToken,
+  ts.SyntaxKind.AsteriskEqualsToken,
+  ts.SyntaxKind.AsteriskAsteriskEqualsToken,
+  ts.SyntaxKind.SlashEqualsToken,
+  ts.SyntaxKind.PercentEqualsToken,
+  ts.SyntaxKind.LessThanLessThanEqualsToken,
+  ts.SyntaxKind.GreaterThanGreaterThanEqualsToken,
+  ts.SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken,
+  ts.SyntaxKind.AmpersandEqualsToken,
+  ts.SyntaxKind.BarEqualsToken,
+  ts.SyntaxKind.CaretEqualsToken,
+  ts.SyntaxKind.AmpersandAmpersandEqualsToken,
+  ts.SyntaxKind.BarBarEqualsToken,
+  ts.SyntaxKind.QuestionQuestionEqualsToken,
+]);
+
+interface PropBinding {
+  name: string;
+  line: number;
+  column: number;
+  bindable: boolean;
+}
+
+// collects prop names declared through `let { ... } = $props()` (and the props
+// object binding) so writes and bind: directives can be matched against them
+const collectPropBindings = (
+  ctx: RuleContext,
+): { props: Map<string, PropBinding>; propsObjects: Set<string> } => {
+  const props = new Map<string, PropBinding>();
+  const propsObjects = new Set<string>();
+
+  for (const block of ctx.scriptBlocks) {
+    if (block.kind === "module") continue;
+
+    walkSourceFile(block.sourceFile, (node) => {
+      if (!ts.isVariableStatement(node)) return;
+
+      for (const declaration of node.declarationList.declarations) {
+        const initializer = declaration.initializer;
+        if (!initializer || !ts.isCallExpression(initializer)) continue;
+        if (!isRuneCall(initializer, "$props")) continue;
+
+        if (ts.isIdentifier(declaration.name)) {
+          propsObjects.add(declaration.name.text);
+          continue;
+        }
+
+        if (!ts.isObjectBindingPattern(declaration.name)) continue;
+
+        for (const element of declaration.name.elements) {
+          if (!ts.isIdentifier(element.name)) continue;
+          const position = getLineAndColumn(block, element.name.getStart(block.sourceFile));
+          const bindable =
+            !!element.initializer &&
+            ts.isCallExpression(element.initializer) &&
+            isRuneCall(element.initializer, "$bindable");
+          props.set(element.name.text, { name: element.name.text, ...position, bindable });
+        }
+      }
+    });
+  }
+
+  return { props, propsObjects };
+};
+
+const rootIdentifier = (node: ts.Expression): ts.Identifier | null => {
+  let current: ts.Expression = node;
+  while (ts.isPropertyAccessExpression(current) || ts.isElementAccessExpression(current)) {
+    current = current.expression;
+  }
+  return ts.isIdentifier(current) ? current : null;
+};
+
+const MUTATING_METHODS = new Set([
+  "push",
+  "pop",
+  "shift",
+  "unshift",
+  "splice",
+  "sort",
+  "reverse",
+  "fill",
+  "copyWithin",
+  "set",
+  "delete",
+  "clear",
+  "add",
+]);
+
+// reassigning or mutating a prop breaks one-way data flow: the parent owns the
+// value, and Svelte 5 rejects reassignment of a non-bindable prop outright
+const propMutation: Rule = {
+  name: "prop-mutation",
+  category: "Correctness",
+  severity: "error",
+  message: "Prop is reassigned or mutated inside the component that receives it",
+  help: "Props are read-only in Svelte 5. Declare the prop with `$bindable()` to allow two-way binding, or emit a callback prop (`onchange`) and let the parent update its own state.",
+  docs: {
+    summary: "Flags writes to $props() bindings.",
+    whyItMatters:
+      "Reassigning a prop is a Svelte 5 compile error, and mutating a prop's properties hides the owner and breaks one-way data flow.",
+    safeFix:
+      "Lift the write to the parent: pass a callback prop, or mark the prop with $bindable() when the parent really wants two-way binding.",
+  },
+  check: (ctx) => {
+    if (!ctx.projectInfo.usesRunes) return [];
+    if (
+      !ctx.filePath.endsWith(".svelte") &&
+      !ctx.filePath.endsWith(".svelte.js") &&
+      !ctx.filePath.endsWith(".svelte.ts")
+    ) {
+      return [];
+    }
+    if (!hasRunesInSource(ctx.source)) return [];
+
+    const { props, propsObjects } = collectPropBindings(ctx);
+    if (props.size === 0 && propsObjects.size === 0) return [];
+
+    const diagnostics: Diagnostic[] = [];
+    const reported = new Set<string>();
+
+    const push = (diagnostic: Diagnostic, key: string) => {
+      if (reported.has(key)) return;
+      reported.add(key);
+      diagnostics.push(diagnostic);
+    };
+
+    for (const block of ctx.scriptBlocks) {
+      if (block.kind === "module") continue;
+
+      walkSourceFile(block.sourceFile, (node) => {
+        if (
+          (ts.isPostfixUnaryExpression(node) || ts.isPrefixUnaryExpression(node)) &&
+          ts.isIdentifier(node.operand)
+        ) {
+          const binding = props.get(node.operand.text);
+          // a $bindable() prop is owned by the parent and may be reassigned
+          if (!binding || binding.bindable) return;
+          const position = getLineAndColumn(block, node.getStart(block.sourceFile));
+          push(
+            {
+              filePath: ctx.filePath,
+              rule: propMutation.name,
+              severity: propMutation.severity,
+              message: `\`${binding.name}\` is reassigned here — props are read-only`,
+              help: propMutation.help,
+              line: position.line,
+              column: position.column,
+              category: propMutation.category,
+            },
+            `${position.line}:${position.column}`,
+          );
+          return;
+        }
+
+        if (!ts.isBinaryExpression(node) || !ASSIGNMENT_OPERATORS.has(node.operatorToken.kind)) {
+          // in-place mutation through a mutating method: items.push(...)
+          if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+            const method = node.expression.name.text;
+            if (!MUTATING_METHODS.has(method)) return;
+            const root = rootIdentifier(node.expression.expression);
+            if (!root) return;
+            const binding = props.get(root.text);
+            if (!binding) return;
+
+            const position = getLineAndColumn(block, node.getStart(block.sourceFile));
+            push(
+              {
+                filePath: ctx.filePath,
+                rule: propMutation.name,
+                severity: "warning",
+                message: `\`${binding.name}.${method}()\` mutates a prop in place`,
+                help: propMutation.help,
+                line: position.line,
+                column: position.column,
+                category: propMutation.category,
+              },
+              `${position.line}:${position.column}:${method}`,
+            );
+          }
+          return;
+        }
+
+        if (ts.isIdentifier(node.left)) {
+          const binding = props.get(node.left.text);
+          // a $bindable() prop is owned by the parent and may be reassigned
+          if (!binding || binding.bindable) return;
+          const position = getLineAndColumn(block, node.getStart(block.sourceFile));
+          push(
+            {
+              filePath: ctx.filePath,
+              rule: propMutation.name,
+              severity: propMutation.severity,
+              message: `\`${binding.name}\` is reassigned here — props are read-only`,
+              help: propMutation.help,
+              line: position.line,
+              column: position.column,
+              category: propMutation.category,
+            },
+            `${position.line}:${position.column}`,
+          );
+          return;
+        }
+
+        if (!ts.isPropertyAccessExpression(node.left) && !ts.isElementAccessExpression(node.left)) {
+          return;
+        }
+
+        const root = rootIdentifier(node.left);
+        if (!root) return;
+        const isPropValue = props.has(root.text);
+        const isPropsObject = propsObjects.has(root.text);
+        if (!isPropValue && !isPropsObject) return;
+
+        const position = getLineAndColumn(block, node.getStart(block.sourceFile));
+        push(
+          {
+            filePath: ctx.filePath,
+            rule: propMutation.name,
+            severity: "warning",
+            message: `Property of \`${root.text}\` is mutated — props should not be modified in place`,
+            help: propMutation.help,
+            line: position.line,
+            column: position.column,
+            category: propMutation.category,
+          },
+          `${position.line}:${position.column}`,
+        );
+      });
+    }
+
+    return diagnostics;
+  },
+};
+
+// `bind:` on a plain prop throws at runtime; only $bindable() props accept bindings
+const propNotBindable: Rule = {
+  name: "prop-not-bindable",
+  category: "Correctness",
+  severity: "error",
+  message: "`bind:` is used on a prop that is not declared with `$bindable()`",
+  help: "Declare the prop as bindable: `let { value = $bindable() } = $props()`. Svelte 5 only allows binding to props that opted in.",
+  docs: {
+    summary: "Flags bind: directives targeting non-bindable props.",
+    whyItMatters:
+      'Binding to a non-bindable prop fails at runtime with "Cannot bind to a non-bindable property".',
+    safeFix: "Add `= $bindable()` to the prop's destructuring default.",
+  },
+  requiresAst: true,
+  check: (ctx) => {
+    if (!ctx.projectInfo.usesRunes) return [];
+    if (!ctx.filePath.endsWith(".svelte")) return [];
+    if (!ctx.ast) return [];
+    if (!hasRunesInSource(ctx.source)) return [];
+
+    const { props } = collectPropBindings(ctx);
+    if (props.size === 0) return [];
+
+    const diagnostics: Diagnostic[] = [];
+
+    walkAst(ctx.ast, (node) => {
+      if (!node || node.type !== "BindDirective") return;
+      const expression = node.expression;
+      if (!expression || expression.type !== "Identifier") return;
+
+      const binding = props.get(expression.name);
+      if (!binding || binding.bindable) return;
+
+      const { line, column } = offsetToPosition(ctx.source, node.start ?? 0);
+      diagnostics.push({
+        filePath: ctx.filePath,
+        rule: propNotBindable.name,
+        severity: propNotBindable.severity,
+        message: `\`bind:\` targets prop \`${binding.name}\` which is not bindable`,
+        help: `Declare it as \`let { ${binding.name} = $bindable() } = $props()\` or bind to a local \`$state\` instead.`,
+        line,
+        column,
+        category: propNotBindable.category,
+      });
+    });
+
+    return diagnostics;
+  },
+};
+
 export const correctnessRules: Rule[] = [
   noLegacyReactive,
   noLegacyLifecycle,
@@ -493,4 +788,6 @@ export const correctnessRules: Rule[] = [
   noInspectInProduction,
   noStateFrozenMisuse,
   noClassInstanceAsState,
+  propMutation,
+  propNotBindable,
 ];

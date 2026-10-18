@@ -58,6 +58,16 @@ interface ImportBinding {
   remoteName: string;
 }
 
+export type { ImportBinding };
+
+// minimal structural shape both the store index and the taint index satisfy,
+// so the cross-file declaration resolver can be shared
+export interface DeclarationLookup {
+  importsByFile: Map<string, Map<string, ImportBinding>>;
+  reExportsByFile: Map<string, Map<string, ImportBinding>>;
+  wildcardReExportsByFile: Map<string, string[]>;
+}
+
 export interface DeadStoreIndex {
   declarations: StoreDeclaration[];
   declarationsByFile: Map<string, StoreDeclaration[]>;
@@ -98,7 +108,7 @@ const HTML_COMMENT = /<!--[\s\S]*?-->/g;
 // and columns so line/column offsets from regex matches still map to the original source
 // string contents are blanked for declaration/write/read scanning to avoid false matches
 // inside literals, but preserved for import parsing so specifiers survive
-const stripCommentsAndStrings = (source: string, stripStrings: boolean): string => {
+export const stripCommentsAndStrings = (source: string, stripStrings: boolean): string => {
   const chars = source.split("");
   const n = chars.length;
   let i = 0;
@@ -180,7 +190,7 @@ const stripCommentsAndStrings = (source: string, stripStrings: boolean): string 
 // for svelte files: strip comments/strings only inside <script> blocks so that
 // quoted template attributes like class="{$counter}" keep their $-references,
 // then blank html comments in the remaining markup
-const prepareSource = (filePath: string, source: string, stripStrings: boolean): string => {
+export const prepareSource = (filePath: string, source: string, stripStrings: boolean): string => {
   if (!filePath.endsWith(".svelte")) return stripCommentsAndStrings(source, stripStrings);
 
   const chars = source.split("");
@@ -202,7 +212,7 @@ const prepareSource = (filePath: string, source: string, stripStrings: boolean):
   return masked;
 };
 
-const buildLineOffsets = (source: string): number[] => {
+export const buildLineOffsets = (source: string): number[] => {
   const offsets = [0];
   for (let i = 0; i < source.length; i++) {
     if (source[i] === "\n") offsets.push(i + 1);
@@ -210,7 +220,7 @@ const buildLineOffsets = (source: string): number[] => {
   return offsets;
 };
 
-const lineColumnFromIndex = (
+export const lineColumnFromIndex = (
   offsets: number[],
   index: number,
 ): { line: number; column: number } => {
@@ -230,7 +240,7 @@ const snippetFromLine = (lines: string[], line: number): string => {
   return text.trim().slice(0, 120);
 };
 
-const parseNamedBindings = (raw: string): { local: string; remote: string }[] => {
+export const parseNamedBindings = (raw: string): { local: string; remote: string }[] => {
   const bindings: { local: string; remote: string }[] = [];
   for (const part of raw.split(",")) {
     const trimmed = part.trim();
@@ -388,7 +398,7 @@ const collectReads = (
   return reads;
 };
 
-const collectImports = (
+export const collectImports = (
   filePath: string,
   prepared: string,
   directory: string,
@@ -451,12 +461,12 @@ const collectImports = (
 
 // resolve a reference (name in file) back to the store declaration it refers to,
 // following import and re-export chains across files
-const resolveDeclaration = (
-  index: DeadStoreIndex,
+export const resolveDeclaration = <T extends { name: string; file: string }>(
+  index: DeclarationLookup & { declarationsByFile: Map<string, T[]> },
   file: string,
   name: string,
   depth = 0,
-): StoreDeclaration | null => {
+): T | null => {
   if (depth > 10) return null;
 
   const localDecls = index.declarationsByFile.get(file);

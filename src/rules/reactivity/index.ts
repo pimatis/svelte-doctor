@@ -1,6 +1,13 @@
 import type { Rule, Diagnostic } from "../../types.js";
 import { fixNoUnnecessaryState } from "../../core/fixers.js";
 import { getDeadStoreIndex, type DeadStoreIndex } from "../../core/stores.js";
+import {
+  describeStateWriters,
+  findCrossFileWrites,
+  findModuleScopeSingletons,
+  stateLeakMessages,
+  stateLeakRuleIds,
+} from "../../core/taint.js";
 
 // wrapping a value in $state when it never changes adds reactivity overhead for nothing
 const noUnnecessaryState: Rule = {
@@ -365,6 +372,92 @@ const noUnnecessaryDerivedDependency: Rule = {
   },
 };
 
+// an exported $state binding written from another module is hidden global state:
+// ownership becomes untraceable and SSR shares one value across every request
+const stateLeakCrossFile: Rule = {
+  name: stateLeakRuleIds.crossFile,
+  category: "State & Reactivity",
+  severity: "warning",
+  message: stateLeakMessages.crossFile,
+  help: stateLeakMessages.crossFileHelp,
+  docs: {
+    summary: "Flags exported $state that other files mutate.",
+    whyItMatters:
+      "State must be owned where it is declared. Cross-file writes make the value's lifecycle invisible and keep a single instance alive for the whole process.",
+    safeFix:
+      "Export an update function that owns the write, or pass the value down with props/context and let the owner mutate it.",
+  },
+  check: (ctx) => {
+    if (!ctx.projectInfo.usesRunes) return [];
+
+    let findings: ReturnType<typeof findCrossFileWrites>;
+    try {
+      findings = findCrossFileWrites(ctx.projectRoot, ctx.filePath);
+    } catch {
+      return [];
+    }
+
+    const diagnostics: Diagnostic[] = [];
+    for (const { declaration, writes } of findings) {
+      diagnostics.push({
+        filePath: ctx.filePath,
+        rule: stateLeakCrossFile.name,
+        severity: stateLeakCrossFile.severity,
+        message: `${stateLeakCrossFile.message} (\`${declaration.name}\` written in ${writes.length} external place${writes.length === 1 ? "" : "s"})`,
+        help: `${stateLeakCrossFile.help} Writers: ${describeStateWriters(writes)}.`,
+        line: declaration.line,
+        column: declaration.column,
+        category: stateLeakCrossFile.category,
+      });
+    }
+
+    return diagnostics;
+  },
+};
+
+// module scope is created once per process, so a mutated module-level $state is
+// shared between importers and between SSR requests
+const stateLeakModuleScope: Rule = {
+  name: stateLeakRuleIds.moduleScope,
+  category: "State & Reactivity",
+  severity: "warning",
+  message: stateLeakMessages.moduleScope,
+  help: stateLeakMessages.moduleScopeHelp,
+  docs: {
+    summary: "Flags mutated module-level $state in .svelte.js/.svelte.ts modules.",
+    whyItMatters:
+      "SvelteKit reuses modules across requests. Module-level mutable state leaks between users and breaks SSR isolation.",
+    safeFix:
+      "Move the state into the component or pass it through context; keep module-level values constant.",
+  },
+  check: (ctx) => {
+    if (!ctx.projectInfo.usesRunes) return [];
+
+    let findings: ReturnType<typeof findModuleScopeSingletons>;
+    try {
+      findings = findModuleScopeSingletons(ctx.projectRoot, ctx.filePath);
+    } catch {
+      return [];
+    }
+
+    const diagnostics: Diagnostic[] = [];
+    for (const { declaration, writes } of findings) {
+      diagnostics.push({
+        filePath: ctx.filePath,
+        rule: stateLeakModuleScope.name,
+        severity: stateLeakModuleScope.severity,
+        message: `${stateLeakModuleScope.message} (\`${declaration.name}\` is mutated in ${writes.length} place${writes.length === 1 ? "" : "s"})`,
+        help: stateLeakModuleScope.help,
+        line: declaration.line,
+        column: declaration.column,
+        category: stateLeakModuleScope.category,
+      });
+    }
+
+    return diagnostics;
+  },
+};
+
 export const reactivityRules: Rule[] = [
   noUnnecessaryState,
   noDerivedSideEffect,
@@ -372,4 +465,6 @@ export const reactivityRules: Rule[] = [
   noUnwrittenStore,
   noMixedRunesAndStores,
   noUnnecessaryDerivedDependency,
+  stateLeakCrossFile,
+  stateLeakModuleScope,
 ];

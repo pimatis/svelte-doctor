@@ -44,6 +44,24 @@ export const configSchema = {
         markdown: { type: "string", minLength: 1 },
       },
     },
+    budgets: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        javascript: { type: "number", exclusiveMinimum: 0 },
+        css: { type: "number", exclusiveMinimum: 0 },
+        chunk: { type: "number", exclusiveMinimum: 0 },
+        gzip: { type: "boolean" },
+      },
+    },
+    i18n: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        dirs: { type: "array", items: { type: "string", minLength: 1 } },
+        baseLocale: { type: "string", minLength: 1 },
+      },
+    },
     ignore: {
       type: "object",
       additionalProperties: false,
@@ -73,7 +91,7 @@ export const configSchema = {
       additionalProperties: false,
       properties: {
         categories: { type: "array", items: { type: "string" } },
-        severity: { type: "object", additionalProperties: { enum: ["error","warning","info"] } },
+        severity: { type: "object", additionalProperties: { enum: ["error", "warning"] } },
       },
     },
     ci: {

@@ -16,6 +16,8 @@ export const CATEGORY_MULTIPLIERS: Record<string, number> = {
   SvelteKit: 1.0,
   Architecture: 0.8,
   Accessibility: 0.8,
+  Images: 0.8,
+  I18n: 0.7,
   "Bundle Size": 0.7,
   "Dead Code": 0.5,
 };

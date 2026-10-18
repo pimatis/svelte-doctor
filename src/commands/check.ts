@@ -288,6 +288,19 @@ export const checkCommand = new Command("check")
       const minScore = parsePositiveInt(flags.minScore as string, "min score");
       const maxErrors = parsePositiveInt(flags.maxErrors as string, "max errors");
       const maxWarnings = parsePositiveInt(flags.maxWarnings as string, "max warnings");
+      // config.ci supplies defaults; an explicit CLI flag always wins
+      const ciConfig = loadConfig(resolvedDir)?.ci;
+      const fromCli = (name: string) => checkCommand.getOptionValueSource(name) === "cli";
+      const failOn = fromCli("failOn")
+        ? (flags.failOn as string)
+        : (ciConfig?.failOn ?? (flags.failOn as string));
+      const effectiveMinScore = fromCli("minScore") ? minScore : (ciConfig?.minScore ?? minScore);
+      const effectiveMaxErrors = fromCli("maxErrors")
+        ? maxErrors
+        : (ciConfig?.maxErrors ?? maxErrors);
+      const effectiveMaxWarnings = fromCli("maxWarnings")
+        ? maxWarnings
+        : (ciConfig?.maxWarnings ?? maxWarnings);
       const jobs = parsePositiveInt(flags.jobs as string, "jobs");
       const previousRatchetScore = flags.ratchet
         ? loadScoreHistory(resolvedDir).at(-1)?.score
@@ -397,7 +410,14 @@ export const checkCommand = new Command("check")
         );
         if (
           aggregateResults.some((e) =>
-            shouldFail(e.diagnostics, e.score, flags.failOn as string, minScore, maxErrors, maxWarnings),
+            shouldFail(
+              e.diagnostics,
+              e.score,
+              failOn,
+              effectiveMinScore,
+              effectiveMaxErrors,
+              effectiveMaxWarnings,
+            ),
           ) ||
           (flags.ratchet === true &&
             previousRatchetScore !== undefined &&
@@ -456,10 +476,10 @@ export const checkCommand = new Command("check")
           shouldFail(
             beforeResult.diagnostics,
             beforeResult.scoreResult.score,
-            flags.failOn as string,
-            minScore,
-            maxErrors,
-            maxWarnings,
+            failOn,
+            effectiveMinScore,
+            effectiveMaxErrors,
+            effectiveMaxWarnings,
           ) ||
           earlyRatchetFailed
         )
@@ -740,7 +760,14 @@ export const checkCommand = new Command("check")
         previousRatchetScore !== undefined &&
         finalScore < previousRatchetScore;
       if (
-        shouldFail(currentDiagnostics, finalScore, flags.failOn as string, minScore) ||
+        shouldFail(
+          currentDiagnostics,
+          finalScore,
+          failOn,
+          effectiveMinScore,
+          effectiveMaxErrors,
+          effectiveMaxWarnings,
+        ) ||
         ratchetFailed
       )
         process.exitCode = 1;

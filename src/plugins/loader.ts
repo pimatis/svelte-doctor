@@ -30,6 +30,8 @@ const RULE_CATEGORIES: RuleCategory[] = [
   "Bundle Size",
   "Dead Code",
   "Accessibility",
+  "Images",
+  "I18n",
   "State & Reactivity",
 ];
 
@@ -462,6 +464,27 @@ const loadExternalPlugins = async (
   return { plugins, warnings };
 };
 
+// config.rules.severity remaps a rule's severity without forking the rule itself.
+// rules stamp their own constant onto each diagnostic, so the check is wrapped too.
+const applySeverityOverrides = (rules: Rule[], config: SvelteDoctorConfig | null): Rule[] => {
+  const overrides = config?.rules?.severity;
+  if (!overrides || Object.keys(overrides).length === 0) return rules;
+
+  return rules.map((rule) => {
+    const nextSeverity = overrides[rule.id ?? rule.name] ?? overrides[rule.name];
+    if (!nextSeverity || nextSeverity === rule.severity) return rule;
+
+    const runCheck = rule.check;
+    const overridden = {
+      ...rule,
+      severity: nextSeverity,
+      check: (ctx: Parameters<Rule["check"]>[0]) =>
+        runCheck(ctx).map((diagnostic) => ({ ...diagnostic, severity: nextSeverity })),
+    } satisfies Rule;
+    return overridden;
+  });
+};
+
 // merges built-in rules with discovered local and external plugin rules.
 // built-ins keep bare ids and always take precedence; plugin rules are namespaced
 // ("<namespace>/<name>") so two plugins can never silently collide.
@@ -478,7 +501,10 @@ export const loadProjectRules = async (
     rawPlugins === false ||
     (rawPlugins !== null && typeof rawPlugins === "object" && rawPlugins.enabled === false);
   if (pluginsDisabled) {
-    const rules = allRules.map((rule) => ({ ...rule, id: rule.name }));
+    const rules = applySeverityOverrides(
+      allRules.map((rule) => ({ ...rule, id: rule.name })),
+      config,
+    );
     return { rules, plugins: [], warnings };
   }
 
@@ -513,5 +539,5 @@ export const loadProjectRules = async (
     }
   }
 
-  return { rules: [...ruleMap.values()], plugins, warnings };
+  return { rules: applySeverityOverrides([...ruleMap.values()], config), plugins, warnings };
 };

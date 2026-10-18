@@ -26,14 +26,18 @@ const KNOWN_TOP_KEYS = new Set([
   "plugins",
   "rules",
   "ci",
+  "budgets",
+  "i18n",
 ]);
 
 const KNOWN_WATCH_KEYS = new Set(["deadCode", "fix"]);
 const KNOWN_FIX_KEYS = new Set(["verifyLevel", "maxFiles"]);
 const KNOWN_REPORTS_KEYS = new Set(["html", "junit", "markdown"]);
 const KNOWN_IGNORE_KEYS = new Set(["rules", "files"]);
-const KNOWN_RULES_KEYS = new Set(["categories"]);
-const KNOWN_CI_KEYS = new Set(["failOn", "minScore"]);
+const KNOWN_RULES_KEYS = new Set(["categories", "severity"]);
+const KNOWN_CI_KEYS = new Set(["failOn", "minScore", "maxErrors", "maxWarnings"]);
+const KNOWN_BUDGET_KEYS = new Set(["javascript", "css", "chunk", "gzip"]);
+const KNOWN_I18N_KEYS = new Set(["dirs", "baseLocale"]);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -195,6 +199,20 @@ const validateTypes = (raw: Record<string, unknown>): ValidationIssue[] => {
     if ("categories" in rules && !Array.isArray(rules.categories)) {
       issues.push({ field: "rules.categories", message: "Expected array of strings" });
     }
+    if ("severity" in rules) {
+      if (!isRecord(rules.severity)) {
+        issues.push({ field: "rules.severity", message: "Expected object" });
+      } else {
+        for (const [ruleName, severity] of Object.entries(rules.severity)) {
+          if (severity !== "error" && severity !== "warning") {
+            issues.push({
+              field: `rules.severity.${ruleName}`,
+              message: 'Expected "error" or "warning"',
+            });
+          }
+        }
+      }
+    }
   }
 
   if ("ci" in raw && !isRecord(raw.ci)) {
@@ -214,6 +232,39 @@ const validateTypes = (raw: Record<string, unknown>): ValidationIssue[] => {
       (typeof ci.minScore !== "number" || !Number.isFinite(ci.minScore) || ci.minScore < 0)
     ) {
       issues.push({ field: "ci.minScore", message: "Expected non-negative number" });
+    }
+    for (const key of ["maxErrors", "maxWarnings"] as const) {
+      const value = ci[key];
+      if (key in ci && (typeof value !== "number" || !Number.isFinite(value) || value < 0)) {
+        issues.push({ field: `ci.${key}`, message: "Expected non-negative number" });
+      }
+    }
+  }
+
+  if ("budgets" in raw && !isRecord(raw.budgets)) {
+    issues.push({ field: "budgets", message: "Expected object" });
+  } else if ("budgets" in raw && isRecord(raw.budgets)) {
+    const budgets = raw.budgets as Record<string, unknown>;
+    for (const key of ["javascript", "css", "chunk"]) {
+      const value = budgets[key];
+      if (key in budgets && (typeof value !== "number" || !Number.isFinite(value) || value <= 0)) {
+        issues.push({ field: `budgets.${key}`, message: "Expected positive number (kilobytes)" });
+      }
+    }
+    if ("gzip" in budgets && typeof budgets.gzip !== "boolean") {
+      issues.push({ field: "budgets.gzip", message: "Expected boolean" });
+    }
+  }
+
+  if ("i18n" in raw && !isRecord(raw.i18n)) {
+    issues.push({ field: "i18n", message: "Expected object" });
+  } else if ("i18n" in raw && isRecord(raw.i18n)) {
+    const i18n = raw.i18n as Record<string, unknown>;
+    if ("dirs" in i18n && !Array.isArray(i18n.dirs)) {
+      issues.push({ field: "i18n.dirs", message: "Expected array of strings" });
+    }
+    if ("baseLocale" in i18n && typeof i18n.baseLocale !== "string") {
+      issues.push({ field: "i18n.baseLocale", message: "Expected string" });
     }
   }
 
@@ -284,6 +335,14 @@ export const validateConfigFile = (directory: string): ValidateConfigResult => {
   }
   if (isRecord(obj.ci)) {
     issues.push(...validateObject(obj.ci as Record<string, unknown>, KNOWN_CI_KEYS, "ci"));
+  }
+  if (isRecord(obj.budgets)) {
+    issues.push(
+      ...validateObject(obj.budgets as Record<string, unknown>, KNOWN_BUDGET_KEYS, "budgets"),
+    );
+  }
+  if (isRecord(obj.i18n)) {
+    issues.push(...validateObject(obj.i18n as Record<string, unknown>, KNOWN_I18N_KEYS, "i18n"));
   }
 
   return {

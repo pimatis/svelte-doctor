@@ -9,6 +9,8 @@ export type RuleCategory =
   | "Bundle Size"
   | "Dead Code"
   | "Accessibility"
+  | "Images"
+  | "I18n"
   | "State & Reactivity";
 
 export type Severity = "error" | "warning";
@@ -209,6 +211,23 @@ export interface PackageJson {
   workspaces?: string[] | { packages: string[] };
 }
 
+// bundle/time budgets in kilobytes; a missing key disables that check
+export interface BudgetConfig {
+  javascript?: number;
+  css?: number;
+  chunk?: number;
+  // measure gzip instead of raw bytes
+  gzip?: boolean;
+}
+
+// i18n catalog discovery and comparison settings
+export interface I18nConfig {
+  // glob roots to search for locale catalogs (defaults cover common layouts)
+  dirs?: string[];
+  // locale the catalogs are compared against (default: first locale in config or "en")
+  baseLocale?: string;
+}
+
 export interface SvelteDoctorConfig {
   ignore?: {
     rules?: string[];
@@ -218,6 +237,19 @@ export interface SvelteDoctorConfig {
   lint?: boolean;
   deadCode?: boolean;
   cache?: boolean;
+  budgets?: BudgetConfig;
+  i18n?: I18nConfig;
+  // per-rule severity remap applied while loading rules
+  rules?: {
+    severity?: Record<string, Severity>;
+  };
+  // default CI exit policy; explicit CLI flags take precedence
+  ci?: {
+    failOn?: FailOn;
+    minScore?: number;
+    maxErrors?: number;
+    maxWarnings?: number;
+  };
   watch?: {
     deadCode?: DeadCodeMode;
     // auto-apply deterministic fixes when a file is saved in watch mode
