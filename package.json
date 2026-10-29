@@ -1,6 +1,6 @@
 {
   "name": "svelte-doctor",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Diagnose and fix performance, correctness, and architecture issues in your Svelte codebase",
   "keywords": [
     "svelte",
@@ -69,19 +69,19 @@
     "commander": "^15.0.0",
     "ora": "^9.4.1",
     "picocolors": "^1.1.1",
-    "svelte": "^5.57.0",
+    "svelte": "^5.57.3",
     "typescript": "~6.0.3"
   },
   "optionalDependencies": {
-    "knip": "^6.35.0"
+    "knip": "^6.43.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^26.5.0",
-    "eslint": "^10.10.0",
+    "@types/node": "^26.6.6",
+    "eslint": "^10.13.0",
     "eslint-config-prettier": "^10.1.8",
-    "prettier": "^3.9.6",
-    "tsdown": "^0.23.0",
-    "typescript-eslint": "^8.70.0"
+    "prettier": "^3.9.10",
+    "tsdown": "^0.23.4",
+    "typescript-eslint": "^8.72.1"
   }
 }
