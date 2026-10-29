@@ -30,19 +30,14 @@ const buildContext = (
   },
 });
 
-// parses a .svelte file into an AST using svelte's modern parser
-// reads the file once and falls back to text-only mode if parsing fails
-// (some files with preprocessor syntax can't be parsed raw, but we can still
-// run text-based rules on them)
-export const parseSvelteFile = (filePath: string, projectInfo: ProjectInfo): RuleContext | null => {
-  let source: string;
-
-  try {
-    source = fs.readFileSync(filePath, "utf-8");
-  } catch {
-    return null;
-  }
-
+// parses .svelte source into an AST using svelte's modern parser
+// falls back to text-only mode if parsing fails (some files with preprocessor
+// syntax can't be parsed raw, but we can still run text-based rules on them)
+export const parseSvelteSource = (
+  filePath: string,
+  source: string,
+  projectInfo: ProjectInfo,
+): RuleContext | null => {
   try {
     const ast = parse(source, { modern: true });
     let compiledSource: string | undefined;
@@ -65,21 +60,38 @@ export const parseSvelteFile = (filePath: string, projectInfo: ProjectInfo): Rul
   }
 };
 
-// For .ts/.js files no svelte AST is needed so just read the source.
+// parses a .svelte file by reading it from disk, then delegates to parseSvelteSource
+export const parseSvelteFile = (filePath: string, projectInfo: ProjectInfo): RuleContext | null => {
+  try {
+    return parseSvelteSource(filePath, fs.readFileSync(filePath, "utf-8"), projectInfo);
+  } catch {
+    return null;
+  }
+};
+
+// builds a script-kind context from in-memory source.
 // .svelte.js/.svelte.ts files get a TS SourceFile as ast so AST-based deep-runes
 // rules can operate on them directly.
+export const parseScriptSource = (
+  filePath: string,
+  source: string,
+  projectInfo: ProjectInfo,
+): RuleContext => {
+  const isSvelteModule = filePath.endsWith(".svelte.js") || filePath.endsWith(".svelte.ts");
+
+  if (!isSvelteModule) {
+    return buildContext(filePath, source, null, projectInfo, "script");
+  }
+
+  const scriptBlocks = collectScriptBlocks(filePath, source);
+  const ast = scriptBlocks.length > 0 ? scriptBlocks[0].sourceFile : null;
+  return buildContext(filePath, source, ast, projectInfo, "script", undefined, scriptBlocks);
+};
+
+// For .ts/.js files no svelte AST is needed so just read the source.
 export const parseScriptFile = (filePath: string, projectInfo: ProjectInfo): RuleContext | null => {
   try {
-    const source = fs.readFileSync(filePath, "utf-8");
-    const isSvelteModule = filePath.endsWith(".svelte.js") || filePath.endsWith(".svelte.ts");
-
-    if (!isSvelteModule) {
-      return buildContext(filePath, source, null, projectInfo, "script");
-    }
-
-    const scriptBlocks = collectScriptBlocks(filePath, source);
-    const ast = scriptBlocks.length > 0 ? scriptBlocks[0].sourceFile : null;
-    return buildContext(filePath, source, ast, projectInfo, "script", undefined, scriptBlocks);
+    return parseScriptSource(filePath, fs.readFileSync(filePath, "utf-8"), projectInfo);
   } catch {
     return null;
   }

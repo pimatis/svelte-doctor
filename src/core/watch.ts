@@ -11,6 +11,7 @@ import type {
 } from "../types.js";
 import { calculateScore } from "./score.js";
 import { filterIgnored } from "./filter.js";
+import { filterSuppressedByFile } from "./suppressions.js";
 import { runDeadCodeAnalysis } from "./deadcode.js";
 import { loadScanCache, saveScanCache, buildRulesSignature } from "./cache.js";
 import { collectProjectFiles } from "../fs/walker.js";
@@ -59,11 +60,14 @@ const isSymlink = (fullPath: string): boolean => {
 };
 
 const getAllDiagnostics = (
+  directory: string,
   diagnosticsMap: Map<string, Diagnostic[]>,
   config: SvelteDoctorConfig | null,
   deadCodeDiagnostics: Diagnostic[],
 ): Diagnostic[] => {
-  const all = [...deadCodeDiagnostics];
+  // lint diagnostics are already suppression-filtered inside scanSingleFile;
+  // dead-code diagnostics report against file paths so they get a pass here
+  const all = [...filterSuppressedByFile(deadCodeDiagnostics, directory)];
   for (const diags of diagnosticsMap.values()) {
     all.push(...diags);
   }
@@ -194,7 +198,12 @@ export const watch = async (directory: string, options: WatchOptions = {}): Prom
     deadCodeDiagnostics = await runDeadCodeAnalysis(directory);
   }
 
-  const initialDiags = getAllDiagnostics(diagnosticsMap, userConfig, deadCodeDiagnostics);
+  const initialDiags = getAllDiagnostics(
+    directory,
+    diagnosticsMap,
+    userConfig,
+    deadCodeDiagnostics,
+  );
   const initialScore = calculateScore(initialDiags);
   let previousScore = initialScore.score;
   const errorCount = initialDiags.filter((d) => d.severity === "error").length;
@@ -214,7 +223,7 @@ export const watch = async (directory: string, options: WatchOptions = {}): Prom
   const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   const printRescanResult = (reason: string) => {
-    const allDiags = getAllDiagnostics(diagnosticsMap, userConfig, deadCodeDiagnostics);
+    const allDiags = getAllDiagnostics(directory, diagnosticsMap, userConfig, deadCodeDiagnostics);
     const nextScore = calculateScore(allDiags);
     const diff = nextScore.score - previousScore;
 
@@ -355,7 +364,12 @@ export const watch = async (directory: string, options: WatchOptions = {}): Prom
             deadCodeDiagnostics = await runDeadCodeAnalysis(directory);
           }
 
-          const allDiags = getAllDiagnostics(diagnosticsMap, userConfig, deadCodeDiagnostics);
+          const allDiags = getAllDiagnostics(
+            directory,
+            diagnosticsMap,
+            userConfig,
+            deadCodeDiagnostics,
+          );
           const newScore = calculateScore(allDiags);
           const diff = newScore.score - previousScore;
           const currentFileDiags = fileDiags;

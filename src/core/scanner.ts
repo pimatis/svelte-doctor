@@ -6,9 +6,11 @@ import { allRules } from "../rules/index.js";
 import { loadProjectRules } from "../plugins/loader.js";
 import type {
   Diagnostic,
+  FileKind,
   ProjectFileManifest,
   ProjectInfo,
   Rule,
+  RuleContext,
   ScanCacheData,
   ScanCacheEntry,
   ScanOptions,
@@ -30,6 +32,7 @@ import {
 } from "./cache.js";
 import { attachDiagnosticMetadata, countFixableDiagnostics } from "./diagnostics.js";
 import { filterBaselineDiagnostics, loadBaseline } from "./baseline.js";
+import { filterSuppressedByFile, filterSuppressedBySource } from "./suppressions.js";
 import { analyzeBuildArtifacts } from "./artifacts.js";
 import { analyzeImageAssets } from "./images.js";
 import { analyzeGlobalCss } from "./css-deadcode.js";
@@ -39,9 +42,19 @@ import { analyzeI18n } from "./i18n.js";
 import { collectProjectFiles } from "../fs/walker.js";
 import { toPosix } from "../fs/normalize.js";
 import { validateDirectory } from "../fs/validate.js";
-import { detectRunesUsage, discoverProject, formatFrameworkName } from "../project/discover.js";
+import {
+  detectRunesUsage,
+  discoverProject,
+  formatFrameworkName,
+  sourceUsesRunes,
+} from "../project/discover.js";
 import { loadConfig } from "../project/config.js";
-import { parseSvelteFile, parseScriptFile } from "../parser/svelte.js";
+import {
+  parseSvelteFile,
+  parseScriptFile,
+  parseSvelteSource,
+  parseScriptSource,
+} from "../parser/svelte.js";
 import { highlighter, logger } from "../output/logger.js";
 import { printCategoryBreakdown, printDiagnostics, printSummary } from "../output/summary.js";
 import { printDiagnosticsTable } from "../output/table.js";
@@ -94,29 +107,12 @@ const buildSelectedManifest = (
   };
 };
 
-export const scanSingleFile = (
-  fullPath: string,
-  relativePath: string,
-  projectInfo: ProjectInfo,
-  rules: Rule[] = allRules,
-  warnings: string[] = [],
+const runFileRules = (
+  ctx: RuleContext,
+  fileKind: FileKind,
+  rules: Rule[],
+  warnings: string[],
 ): Diagnostic[] => {
-  const posixPath = toPosix(relativePath);
-  const fileKind = fullPath.endsWith(".svelte") ? "svelte" : "script";
-  const ctx =
-    fileKind === "svelte"
-      ? parseSvelteFile(fullPath, projectInfo)
-      : parseScriptFile(fullPath, projectInfo);
-
-  if (!ctx) return [];
-
-  ctx.filePath = posixPath;
-  ctx.analysisMeta = {
-    ...ctx.analysisMeta,
-    isServerOnly: isServerOnlyFile(posixPath),
-    isUniversal: isUniversalFile(posixPath),
-  };
-
   const diagnostics: Diagnostic[] = [];
   for (const rule of rules) {
     if (!shouldRunRule(rule, fileKind)) continue;
@@ -145,7 +141,33 @@ export const scanSingleFile = (
     );
   }
 
-  return diagnostics;
+  return filterSuppressedBySource(diagnostics, ctx.source);
+};
+
+export const scanSingleFile = (
+  fullPath: string,
+  relativePath: string,
+  projectInfo: ProjectInfo,
+  rules: Rule[] = allRules,
+  warnings: string[] = [],
+): Diagnostic[] => {
+  const posixPath = toPosix(relativePath);
+  const fileKind = fullPath.endsWith(".svelte") ? "svelte" : "script";
+  const ctx =
+    fileKind === "svelte"
+      ? parseSvelteFile(fullPath, projectInfo)
+      : parseScriptFile(fullPath, projectInfo);
+
+  if (!ctx) return [];
+
+  ctx.filePath = posixPath;
+  ctx.analysisMeta = {
+    ...ctx.analysisMeta,
+    isServerOnly: isServerOnlyFile(posixPath),
+    isUniversal: isUniversalFile(posixPath),
+  };
+
+  return runFileRules(ctx, fileKind, rules, warnings);
 };
 
 type LintPassResult = {
@@ -545,9 +567,12 @@ export const scan = async (
 
   const mergedDiagnostics = [
     ...lintDiagnostics,
-    ...deadCodeDiagnostics,
-    ...artifactDiagnostics,
-    ...extraDiagnostics,
+    // lint diagnostics are already suppression-filtered per file in scanSingleFile;
+    // cross-file analyzers report against file paths, so they get a merge-level pass
+    ...filterSuppressedByFile(
+      [...deadCodeDiagnostics, ...artifactDiagnostics, ...extraDiagnostics],
+      directory,
+    ),
   ];
   const allDiagnostics = attachDiagnosticMetadata(
     userConfig
@@ -676,4 +701,102 @@ export const scan = async (
   logger.dim(`  Run ${highlighter.info("svelte-doctor fix")} to auto-fix issues with an AI agent.`);
 
   return { diagnostics, scoreResult, meta };
+};
+
+export interface ScanSourceOptions {
+  // project root used for config, plugin, and project-info discovery
+  projectRoot: string;
+  // absolute path to read when `source` is omitted; logical name otherwise
+  filePath: string;
+  // path reported on diagnostics (defaults to filePath)
+  displayPath?: string;
+  // in-memory source for stdin mode; omit to read filePath from disk
+  source?: string;
+  // mirrors --no-lint: when false, no rules run
+  lint?: boolean;
+}
+
+export interface SourceScanResult extends ScanResult {
+  warnings: string[];
+  projectInfo: ProjectInfo;
+}
+
+// scans a single in-memory source or one file outside the normal project walk.
+// backs `check --stdin` and single-file checks where no package.json ancestor
+// exists; runs the same rule pipeline as scanSingleFile.
+export const scanSource = async (options: ScanSourceOptions): Promise<SourceScanResult> => {
+  const startTime = performance.now();
+  const { projectRoot, filePath, source } = options;
+  const displayPath = toPosix(options.displayPath ?? filePath);
+  const fileKind: FileKind = displayPath.endsWith(".svelte") ? "svelte" : "script";
+
+  const userConfig = loadConfig(projectRoot);
+  const projectRules = await loadProjectRules(projectRoot, userConfig);
+  const warnings: string[] = [...projectRules.warnings];
+
+  let projectInfo: ProjectInfo;
+  try {
+    const manifest: ProjectFileManifest = {
+      svelteFiles: fileKind === "svelte" && source === undefined ? [filePath] : [],
+      scriptFiles: fileKind === "script" && source === undefined ? [filePath] : [],
+      sourceFileCount: 1,
+    };
+    projectInfo = discoverProject(projectRoot, manifest, {
+      usesRunes: source !== undefined ? sourceUsesRunes(source) : undefined,
+    });
+  } catch {
+    projectInfo = {
+      rootDirectory: projectRoot,
+      projectName: path.basename(projectRoot),
+      svelteVersion: null,
+      framework: "unknown",
+      hasTypeScript: filePath.endsWith(".ts"),
+      hasPreprocess: false,
+      sourceFileCount: 1,
+      usesRunes: source !== undefined ? sourceUsesRunes(source) : false,
+    };
+  }
+
+  const ctx =
+    source !== undefined
+      ? fileKind === "svelte"
+        ? parseSvelteSource(filePath, source, projectInfo)
+        : parseScriptSource(filePath, source, projectInfo)
+      : fileKind === "svelte"
+        ? parseSvelteFile(filePath, projectInfo)
+        : parseScriptFile(filePath, projectInfo);
+
+  if (!ctx) throw new Error(`Could not read or parse "${filePath}".`);
+
+  ctx.filePath = displayPath;
+  ctx.analysisMeta = {
+    ...ctx.analysisMeta,
+    isServerOnly: isServerOnlyFile(displayPath),
+    isUniversal: isUniversalFile(displayPath),
+  };
+
+  const rules = options.lint === false ? [] : projectRules.rules;
+  const rawDiagnostics = runFileRules(ctx, fileKind, rules, warnings);
+  const configured = userConfig
+    ? applySeverityOverrides(filterIgnored(rawDiagnostics, userConfig), userConfig)
+    : rawDiagnostics;
+  const diagnostics = attachDiagnosticMetadata(configured);
+  const scoreResult = calculateScore(diagnostics);
+
+  return {
+    diagnostics,
+    scoreResult,
+    warnings,
+    projectInfo,
+    meta: {
+      totalDiagnostics: diagnostics.length,
+      suppressedCount: 0,
+      fixableCount: countFixableDiagnostics(diagnostics),
+      totalFiles: 1,
+      affectedFiles: diagnostics.length > 0 ? 1 : 0,
+      elapsedMs: Math.round(performance.now() - startTime),
+      baselineApplied: false,
+      targetMode: "subset",
+    },
+  };
 };

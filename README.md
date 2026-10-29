@@ -64,6 +64,8 @@ The tool is designed to be **safe by default**: deterministic fixes are opt-in, 
 - **Diff-aware and workspace-aware scans** for staged files, changed files, and monorepos
 - **Parallel scanning** with `--jobs` for multi-worker file scanning in large codebases, with automatic CPU detection (`--jobs 0`)
 - **Focused scan modes** — `quick` (error-only), `audit` (security-only), `compare` (regression analysis), `stats` (project metrics), `metrics` (command durations, rule gains, technical debt)
+- **Inline suppression comments** — `svelte-doctor-ignore` directives in `<!-- -->`, `//`, or `/* */` comments suppress rules per line or per file, no config edit needed
+- **Single-file and stdin scans** — `check src/App.svelte` scans one file inside its project context; `check --stdin` lints piped source for editor integrations and quick experiments
 
 ### Fixing & Migration
 
@@ -420,7 +422,7 @@ svelte-doctor reset --all --json
 
 ### Scanning & Reporting
 
-#### `svelte-doctor check [directory] [options]`
+#### `svelte-doctor check [directory|file] [options]`
 
 Scan your project for issues and output a health score. The scanner analyzes source files, Svelte compiler output, and existing SvelteKit build artifacts under `.svelte-kit/output/` when that directory exists. Full scans also run project-wide analyzers for image asset weight, unused global CSS, rendered-HTML accessibility, bundle budgets, and i18n catalog completeness; each analyzer is isolated, so a failure in one is reported as a note instead of aborting the scan. Every run saves the score to `.svelte-doctor/history.json`, including `--json` and `--score` modes, so your CI pipeline contributes to the trend graph. When `svelte-doctor` first creates its local `.svelte-doctor/` directory, it also ensures the scanned project's `.gitignore` contains a `.svelte-doctor/*` entry unless an equivalent `.svelte-doctor` or `.svelte-doctor/*` pattern already exists.
 
@@ -469,12 +471,16 @@ Scan your project for issues and output a health score. The scanner analyzes sou
 | `--verify-level <level>`                  | With `--fix-ai`: verification depth — `diagnostics`, `typecheck`, `tests`, or `full`                                    |
 | `--max-files <count>`                     | With `--fix-ai`: max diagnostics in AI agent batch (default: 50)                                                        |
 | `--jobs <count>`                          | Number of parallel scan workers (0 = auto-detect CPU count, default: 1)                                                 |
+| `--stdin`                                 | Read source from stdin instead of scanning the project                                                                  |
+| `--stdin-filename <name>`                 | Filename reported for `--stdin` input (drives path-based rules and file kind)                                           |
 
 `--copy` is designed for cases where you want to paste diagnostics into a different AI agent instead of using `svelte-doctor fix`. The default mode tries the system clipboard first, then falls back to stdout if no clipboard integration is available. If you need deterministic output for scripts, use `--copy-output file`.
 
 `--format table` prints one row per diagnostic with aligned `Severity`, `Rule`, `File`, `Line`, and `Message` columns, errors first, then sorted by file and line. It works with `--all-workspaces` too, where the workspace summary is rendered as a table. `--json` and `--score` keep their machine-readable output regardless of `--format`.
 
 `--fail-on`, `--min-score`, `--max-errors`, and `--max-warnings` can also be set under `ci` in `svelte-doctor.config.json`. Config values are only used as defaults: an explicit CLI flag always wins. `--ratchet` compares the fresh score against the last entry in `.svelte-doctor/history.json` and exits non-zero when the score drops, which catches gradual regressions that a fixed `--min-score` floor would miss.
+
+Passing a `.svelte`, `.ts`, or `.js` file path instead of a directory scans just that file inside its project context (the nearest ancestor with a `package.json`), so config, plugins, and severity overrides still apply. A file outside any `package.json` tree gets a standalone scan with built-in rules. `--stdin` lints piped source without touching the filesystem — useful for editor integrations and trying a rule against a snippet; `--stdin-filename` sets the reported path and decides whether input is treated as `.svelte` or `.ts`/`.js`. Fix options cannot be combined with `--stdin` because there is no file to write back to.
 
 JSON output includes structured fix metrics:
 
@@ -525,6 +531,13 @@ svelte-doctor check --fix
 svelte-doctor check --fix --dry-run
 svelte-doctor check --fix --interactive
 svelte-doctor check --fix --fix-ai --verify-level tests
+
+# Scan a single file inside its project context
+svelte-doctor check src/App.svelte
+
+# Lint piped source (editor integrations, quick experiments)
+cat src/App.svelte | svelte-doctor check --stdin
+cat src/App.svelte | svelte-doctor check --stdin --stdin-filename src/App.svelte --json
 ```
 
 #### `svelte-doctor quick [directory] [options]`
@@ -1388,6 +1401,31 @@ Or add a `"svelte-doctor"` key in `package.json`:
   }
 }
 ```
+
+### Inline Suppression Comments
+
+For one-off suppressions that do not belong in project config, add a `svelte-doctor-ignore` directive in a comment — works inside `<!-- -->` markup comments, `//` line comments, and `/* */` block comments, in `.svelte` and `.ts`/`.js` files alike:
+
+```svelte
+<!-- svelte-doctor-ignore no-unsafe-html -->
+<div>{@html trustedMarkup}</div>
+
+<div>{@html trustedMarkup}</div> <!-- svelte-doctor-ignore-line no-unsafe-html -->
+
+<script>
+  // svelte-doctor-ignore-next-line no-console
+  console.log("debug once");
+</script>
+```
+
+| Directive                        | Scope                                             |
+| -------------------------------- | ------------------------------------------------- |
+| `svelte-doctor-ignore`           | Next line, or same line when trailing a code line |
+| `svelte-doctor-ignore-next-line` | Next line only                                    |
+| `svelte-doctor-ignore-line`      | Same line only                                    |
+| `svelte-doctor-ignore-file`      | Whole file                                        |
+
+Each form accepts an optional whitespace-separated rule list — omit it to suppress all rules. Everything after `--` is treated as an explanation, so `// svelte-doctor-ignore no-console -- vendor snippet` still only suppresses `no-console`. Inline suppressions apply everywhere diagnostics are produced: `check`, `watch`, `apply`, `fix`, `pr-check`, baseline comparisons, and plugin rules.
 
 ---
 

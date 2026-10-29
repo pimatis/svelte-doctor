@@ -1,6 +1,7 @@
+import fs from "node:fs";
 import path from "node:path";
 import { Command } from "commander";
-import { scan } from "../core/scanner.js";
+import { scan, scanSource, type SourceScanResult } from "../core/scanner.js";
 import { runApply } from "../core/apply.js";
 import { runInteractiveFixes, sortDiagnosticsForInteractive } from "../core/interactive-fix.js";
 import { loadProjectRules } from "../plugins/loader.js";
@@ -17,10 +18,19 @@ import {
 } from "../core/reporting.js";
 import { logger, highlighter } from "../output/logger.js";
 import { loadConfig } from "../project/config.js";
-import { discoverProject } from "../project/discover.js";
+import { discoverProject, findProjectRoot } from "../project/discover.js";
+import { filterBaselineDiagnostics, loadBaseline } from "../core/baseline.js";
+import { printCategoryBreakdown, printDiagnostics, printSummary } from "../output/summary.js";
+import { printDiagnosticsTable } from "../output/table.js";
 import { loadScoreHistory } from "../core/history.js";
 import { calculateScore } from "../core/score.js";
-import { VERSION, DEFAULT_COPY_MAX_DIAGNOSTICS } from "../constants.js";
+import {
+  VERSION,
+  DEFAULT_COPY_MAX_DIAGNOSTICS,
+  SVELTE_FILE_PATTERN,
+  TS_FILE_PATTERN,
+  IGNORED_DIRS,
+} from "../constants.js";
 import {
   parsePositiveInt,
   parseCopyOutput,
@@ -220,11 +230,127 @@ const maybeEmitRichReports = (
   }
 };
 
+const readStdinSource = async (): Promise<string> => {
+  const chunks: string[] = [];
+  for await (const chunk of process.stdin) chunks.push(String(chunk));
+  return chunks.join("");
+};
+
+// shared output path for `check --stdin` and single-file checks that have no
+// package.json ancestor — same diagnostics payload as a normal scan, minus the
+// project-level analyzers that need a full tree
+const runSourceCheck = async (
+  directory: string,
+  result: SourceScanResult,
+  flags: Record<string, unknown>,
+  exitPolicy: { failOn: string; minScore: number; maxErrors: number; maxWarnings: number },
+): Promise<void> => {
+  let diagnostics = result.diagnostics;
+  let scoreResult = result.scoreResult;
+  let suppressedCount = result.meta.suppressedCount;
+
+  if (flags.baseline === true) {
+    const baselineResult = filterBaselineDiagnostics(diagnostics, loadBaseline(directory));
+    diagnostics = baselineResult.diagnostics;
+    suppressedCount = baselineResult.suppressedCount;
+    scoreResult = calculateScore(diagnostics);
+  }
+
+  const meta = { ...result.meta, suppressedCount };
+  const silent = flags.json === true || flags.score === true;
+
+  if (!silent) {
+    for (const warning of result.warnings) logger.dim(`  ⚠ ${warning}`);
+  }
+
+  if (flags.json) {
+    logger.json(
+      JSON.stringify(
+        {
+          version: VERSION,
+          score: scoreResult.score,
+          label: scoreResult.label,
+          totalPenalty: scoreResult.totalPenalty,
+          totalFiles: meta.totalFiles,
+          affectedFiles: meta.affectedFiles,
+          errors: diagnostics.filter((d) => d.severity === "error").length,
+          warnings: diagnostics.filter((d) => d.severity === "warning").length,
+          suppressedCount: meta.suppressedCount,
+          fixableCount: meta.fixableCount,
+          categoryBreakdown: scoreResult.categoryBreakdown,
+          elapsedMs: meta.elapsedMs,
+          targetMode: meta.targetMode,
+          diagnostics: diagnostics.map((d) => ({
+            rule: d.rule,
+            severity: d.severity,
+            category: d.category,
+            message: d.message,
+            help: d.help,
+            file: d.filePath,
+            line: d.line,
+            column: d.column,
+            fingerprint: d.fingerprint,
+            fixable: d.fixable ?? false,
+            ...(d.suggestedFix ? { suggestedFix: d.suggestedFix } : {}),
+            plugin: d.plugin ?? null,
+          })),
+        },
+        null,
+        2,
+      ),
+    );
+  } else if (flags.score) {
+    logger.log(String(scoreResult.score));
+  } else {
+    logger.break();
+    if (diagnostics.length === 0) {
+      logger.success("  ✓ No issues found! Your codebase is clean.");
+    } else if (flags.format === "table") {
+      printDiagnosticsTable(diagnostics);
+    } else {
+      printDiagnostics(diagnostics);
+    }
+    printSummary(diagnostics, meta.elapsedMs, scoreResult, meta.totalFiles, meta);
+    printCategoryBreakdown(scoreResult.categoryBreakdown);
+    logger.break();
+  }
+
+  if (flags.copy) {
+    await exportDiagnosticsForAi(directory, diagnostics, {
+      enabled: true,
+      output: flags.copyOutput as CopyOutput,
+      filePath: flags.copyFile as string,
+      maxDiagnostics: parsePositiveInt(flags.copyMax as string, "copy max"),
+      errorsOnly: (flags.copyErrorsOnly as boolean) ?? false,
+      format: flags.copyFormat as CopyFormat,
+    });
+  }
+
+  maybeEmitReports(directory, diagnostics, flags);
+  maybeEmitRichReports(directory, diagnostics, flags, {
+    meta,
+    project: result.projectInfo,
+    score: scoreResult,
+  });
+
+  if (
+    shouldFail(
+      diagnostics,
+      scoreResult.score,
+      exitPolicy.failOn,
+      exitPolicy.minScore,
+      exitPolicy.maxErrors,
+      exitPolicy.maxWarnings,
+    )
+  )
+    process.exitCode = 1;
+};
+
 export const checkCommand = new Command("check")
   .description(
     "Scan source, Svelte compiler output, and build artifacts for issues and output a health score",
   )
-  .argument("[directory]", "project directory to scan", ".")
+  .argument("[directory]", "project directory, or a single source file to scan", ".")
   .option("--no-lint", "skip lint rules")
   .option("--no-dead-code", "skip dead code detection")
   .option("--no-cache", "disable scan cache for this run")
@@ -282,12 +408,48 @@ export const checkCommand = new Command("check")
   )
   .option("--max-files <count>", "maximum diagnostics to include in AI agent batch", "50")
   .option("--jobs <count>", "number of parallel scan workers (0 = auto)", "1")
+  .option("--stdin", "read source from stdin instead of scanning the project")
+  .option(
+    "--stdin-filename <name>",
+    "filename reported for --stdin input (drives path-based rules and file kind)",
+  )
   .action(async (directory: string, flags: Record<string, unknown>) => {
     try {
-      const resolvedDir = path.resolve(directory);
+      let resolvedDir = path.resolve(directory);
       const minScore = parsePositiveInt(flags.minScore as string, "min score");
       const maxErrors = parsePositiveInt(flags.maxErrors as string, "max errors");
       const maxWarnings = parsePositiveInt(flags.maxWarnings as string, "max warnings");
+
+      // a file path anchors the scan to its project root and targets that file only
+      let explicitFile: string | null = null;
+      if (flags.stdin !== true) {
+        try {
+          if (fs.lstatSync(resolvedDir).isFile()) explicitFile = resolvedDir;
+        } catch {
+          /* missing path: validateDirectory reports it below */
+        }
+      }
+      let orphanFile: string | null = null;
+      if (explicitFile !== null) {
+        if (!SVELTE_FILE_PATTERN.test(explicitFile) && !TS_FILE_PATTERN.test(explicitFile)) {
+          throw new Error(
+            `check accepts a project directory or a .svelte/.ts/.js file: "${directory}"`,
+          );
+        }
+        const root = findProjectRoot(path.dirname(explicitFile));
+        if (root !== null) {
+          resolvedDir = root;
+          const relativeToRoot = path.relative(resolvedDir, explicitFile);
+          if (relativeToRoot.split(/[\\/]/).some((segment) => IGNORED_DIRS.has(segment))) {
+            throw new Error(
+              `"${directory}" is inside an ignored directory (node_modules, dist, .svelte-kit, ...).`,
+            );
+          }
+        } else {
+          orphanFile = explicitFile;
+        }
+      }
+
       // config.ci supplies defaults; an explicit CLI flag always wins
       const ciConfig = loadConfig(resolvedDir)?.ci;
       const fromCli = (name: string) => checkCommand.getOptionValueSource(name) === "cli";
@@ -305,11 +467,70 @@ export const checkCommand = new Command("check")
       const previousRatchetScore = flags.ratchet
         ? loadScoreHistory(resolvedDir).at(-1)?.score
         : undefined;
-      const selectedFiles = resolveGitSelection(resolvedDir, {
-        changed: flags.changed === true || flags.incremental === true,
-        staged: flags.staged as boolean | undefined,
-        since: flags.since as string | undefined,
-      });
+      const exitPolicy = {
+        failOn,
+        minScore: effectiveMinScore,
+        maxErrors: effectiveMaxErrors,
+        maxWarnings: effectiveMaxWarnings,
+      };
+
+      // stdin mode: lint piped source through the same rule pipeline,
+      // using the directory argument (default: cwd) as project context
+      if (flags.stdin === true) {
+        let argIsFile = false;
+        try {
+          argIsFile = fs.lstatSync(resolvedDir).isFile();
+        } catch {
+          /* directory arg missing: still fine as scan context */
+        }
+        if (argIsFile) {
+          throw new Error(
+            "--stdin reads source from stdin; pass a project directory for context, not a file.",
+          );
+        }
+        if (flags.fix || flags.fixAi || flags.interactive || flags.dryRun || flags.diff) {
+          throw new Error(
+            "--stdin cannot be combined with fix options; there is no file to write back to.",
+          );
+        }
+        if (process.stdin.isTTY) {
+          throw new Error(
+            "--stdin expects piped source (e.g. cat App.svelte | svelte-doctor check --stdin).",
+          );
+        }
+        const displayPath = (flags.stdinFilename as string) || "<stdin>.svelte";
+        const source = await readStdinSource();
+        if (source.trim().length === 0) throw new Error("No input received on stdin.");
+        const result = await scanSource({
+          projectRoot: resolvedDir,
+          filePath: displayPath,
+          displayPath,
+          source,
+          lint: flags.lint as boolean,
+        });
+        await runSourceCheck(resolvedDir, result, flags, exitPolicy);
+        return;
+      }
+
+      // a file outside any package.json tree gets a standalone single-file scan
+      if (orphanFile !== null) {
+        const result = await scanSource({
+          projectRoot: path.dirname(orphanFile),
+          filePath: orphanFile,
+          displayPath: path.basename(orphanFile),
+          lint: flags.lint as boolean,
+        });
+        await runSourceCheck(path.dirname(orphanFile), result, flags, exitPolicy);
+        return;
+      }
+
+      const selectedFiles = explicitFile
+        ? [explicitFile]
+        : resolveGitSelection(resolvedDir, {
+            changed: flags.changed === true || flags.incremental === true,
+            staged: flags.staged as boolean | undefined,
+            since: flags.since as string | undefined,
+          });
       const incremental = flags.incremental === true;
       const workspaces = getWorkspaceTargets(
         resolvedDir,

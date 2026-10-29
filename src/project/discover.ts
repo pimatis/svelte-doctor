@@ -84,6 +84,21 @@ export const detectRunesUsage = (manifest: ProjectFileManifest): boolean => {
   return false;
 };
 
+export const sourceUsesRunes = (source: string): boolean => RUNES_DETECT_PATTERN.test(source);
+
+// walks up from startDir to the nearest ancestor containing a package.json
+// used to anchor single-file scans to their project context
+export const findProjectRoot = (startDir: string): string | null => {
+  let dir = path.resolve(startDir);
+  const root = path.parse(dir).root;
+
+  while (true) {
+    if (readPackageJson(dir) !== null) return dir;
+    if (dir === root) return null;
+    dir = path.dirname(dir);
+  }
+};
+
 export const discoverProject = (
   dir: string,
   manifest: ProjectFileManifest = collectProjectFiles(dir),
