@@ -67,21 +67,21 @@
   },
   "dependencies": {
     "commander": "^15.0.0",
-    "ora": "^9.4.1",
+    "ora": "^10.0.0",
     "picocolors": "^1.1.1",
     "svelte": "^5.57.3",
     "typescript": "~6.0.3"
   },
   "optionalDependencies": {
-    "knip": "^6.43.0"
+    "knip": "^6.44.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.6.6",
-    "eslint": "^10.13.0",
+    "eslint": "^10.14.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.9.10",
-    "tsdown": "^0.23.4",
+    "tsdown": "^0.23.7",
     "typescript-eslint": "^8.72.1"
   }
 }
