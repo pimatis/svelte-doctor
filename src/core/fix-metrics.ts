@@ -34,17 +34,15 @@ export const buildFixableSummary = (diagnostics: Diagnostic[], rules: Rule[]): F
     }
 
     const rule = ruleMap.get(diag.rule);
-    if (hasHardcodedFix(diag.rule)) {
+    // deterministic fixers: hardcoded apply transforms, migration codemods, and
+    // rule-level fix functions — all run through `apply`, no AI agent needed
+    if (hasHardcodedFix(diag.rule) || rule?.fix) {
       autoFixable++;
       continue;
     }
 
-    if (rule?.fix) {
-      aiFixable++;
-      continue;
-    }
-
-    autoFixable++;
+    // fixable but no deterministic fixer exists — needs an AI agent pass
+    aiFixable++;
   }
 
   return { autoFixable, aiFixable, manualRequired };

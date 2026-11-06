@@ -92,6 +92,9 @@ that triggered it, and returns the new content. Requirements:
 - never throw — a throwing fix aborts the fix pass for that file
 - keep the transform local: operate on the region around `diagnostic.line`
 
+Diagnostic-scoped fixes run against the original source, before line-agnostic
+text transforms (like the lodash import split) that may shift line numbers.
+
 For multi-file or interactive rewrites use a fixer in `core/fixers.ts`
 instead; those run through the `fix` command's apply/verify pipeline.
 

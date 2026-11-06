@@ -14,6 +14,7 @@ export const applyCommand = new Command("apply")
   .option("--json", "output machine-readable JSON")
   .option("--write", "write changes to disk")
   .option("--rules <csv>", "limit deterministic fixes to a comma-separated rule list")
+  .option("--errors-only", "limit fixes to error-severity diagnostics")
   .option("--changed", "apply fixes on changed files relative to HEAD")
   .option("--staged", "apply fixes on staged files only")
   .option("--since <ref>", "apply fixes on files changed since the given git ref")
@@ -32,6 +33,7 @@ export const applyCommand = new Command("apply")
           ?.split(",")
           .map((r) => r.trim())
           .filter(Boolean),
+        errorsOnly: flags.errorsOnly === true,
         targetFiles: filterSelectedFilesForDirectory(resolvedDir, selectedFiles),
       };
       const result = await runApply(resolvedDir, options);
@@ -48,6 +50,11 @@ export const applyCommand = new Command("apply")
       logger.log(
         `  Mode: ${result.write ? highlighter.success("write") : highlighter.warn("dry-run")}`,
       );
+      if (result.diagnosticsConsidered > 0) {
+        logger.log(
+          `  Fix confidence: ${highlighter.success(`${result.fixConfidence["auto-safe"]} auto-safe`)}, ${highlighter.warn(`${result.fixConfidence["review-needed"]} review-needed`)}, ${highlighter.dim(`${result.fixConfidence.manual} manual`)}`,
+        );
+      }
       if (result.appliedRules.length > 0) {
         logger.break();
         logger.log(`  Applied rules: ${result.appliedRules.join(", ")}`);

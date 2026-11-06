@@ -11,8 +11,10 @@ import type {
   ProjectInfo,
   Rule,
   RuleContext,
+  RuleTiming,
   ScanCacheData,
   ScanCacheEntry,
+  ScanMeta,
   ScanOptions,
   ScanResult,
   SvelteDoctorConfig,
@@ -107,11 +109,25 @@ const buildSelectedManifest = (
   };
 };
 
+// accumulate one rule's cost into the shared timing map
+export const recordRuleTiming = (
+  timings: Map<string, RuleTiming>,
+  ruleId: string,
+  elapsedMs: number,
+  diagnosticCount: number,
+): void => {
+  const entry = timings.get(ruleId) ?? { totalMs: 0, diagnostics: 0 };
+  entry.totalMs += elapsedMs;
+  entry.diagnostics += diagnosticCount;
+  timings.set(ruleId, entry);
+};
+
 const runFileRules = (
   ctx: RuleContext,
   fileKind: FileKind,
   rules: Rule[],
   warnings: string[],
+  timings?: Map<string, RuleTiming>,
 ): Diagnostic[] => {
   const diagnostics: Diagnostic[] = [];
   for (const rule of rules) {
@@ -119,9 +135,13 @@ const runFileRules = (
     if (rule.requiresAst && !ctx.ast) continue;
 
     let ruleDiagnostics: Diagnostic[];
+    const ruleStart = timings ? performance.now() : 0;
     try {
       ruleDiagnostics = rule.check(ctx);
     } catch (error) {
+      if (timings) {
+        recordRuleTiming(timings, rule.id ?? rule.name, performance.now() - ruleStart, 0);
+      }
       // a faulty plugin rule must never abort the whole scan
       warnings.push(
         `Rule "${rule.id}"${rule.plugin ? ` (plugin "${rule.plugin}")` : ""} threw during check: ${error instanceof Error ? error.message : "unknown error"}`,
@@ -130,6 +150,14 @@ const runFileRules = (
     }
 
     if (!Array.isArray(ruleDiagnostics)) continue;
+    if (timings) {
+      recordRuleTiming(
+        timings,
+        rule.id ?? rule.name,
+        performance.now() - ruleStart,
+        ruleDiagnostics.length,
+      );
+    }
 
     diagnostics.push(
       ...ruleDiagnostics.map((diagnostic) => ({
@@ -150,6 +178,7 @@ export const scanSingleFile = (
   projectInfo: ProjectInfo,
   rules: Rule[] = allRules,
   warnings: string[] = [],
+  timings?: Map<string, RuleTiming>,
 ): Diagnostic[] => {
   const posixPath = toPosix(relativePath);
   const fileKind = fullPath.endsWith(".svelte") ? "svelte" : "script";
@@ -167,12 +196,13 @@ export const scanSingleFile = (
     isUniversal: isUniversalFile(posixPath),
   };
 
-  return runFileRules(ctx, fileKind, rules, warnings);
+  return runFileRules(ctx, fileKind, rules, warnings, timings);
 };
 
 type LintPassResult = {
   diagnostics: Diagnostic[];
   cache: ScanCacheData;
+  ruleTimings: Map<string, RuleTiming>;
 };
 
 export const runLintPass = (
@@ -187,6 +217,7 @@ export const runLintPass = (
 ): LintPassResult => {
   const cache = existingCache ?? { version: SCAN_CACHE_VERSION, files: {} };
   const diagnostics: Diagnostic[] = [];
+  const ruleTimings = new Map<string, RuleTiming>();
   const files = [...manifest.svelteFiles, ...manifest.scriptFiles];
 
   for (const file of files) {
@@ -197,7 +228,14 @@ export const runLintPass = (
       continue;
     }
 
-    const fileDiagnostics = scanSingleFile(file, relativePath, projectInfo, rules, warnings);
+    const fileDiagnostics = scanSingleFile(
+      file,
+      relativePath,
+      projectInfo,
+      rules,
+      warnings,
+      ruleTimings,
+    );
     diagnostics.push(...fileDiagnostics);
 
     const signature = getFileStatSignature(file);
@@ -213,7 +251,7 @@ export const runLintPass = (
 
   pruneCacheToManifest(cache, directory, manifest, pruneCache);
 
-  return { diagnostics, cache };
+  return { diagnostics, cache, ruleTimings };
 };
 
 export const runLintPassParallel = async (
@@ -234,6 +272,7 @@ export const runLintPassParallel = async (
   const diagnostics: Diagnostic[] = [];
   const files = [...manifest.svelteFiles, ...manifest.scriptFiles];
   const filesToScan: string[] = [];
+  const ruleTimings = new Map<string, RuleTiming>();
 
   for (const file of files) {
     const relativePath = toPosix(path.relative(directory, file));
@@ -267,6 +306,9 @@ export const runLintPassParallel = async (
       }
 
       warnings.push(...pool.getWarnings());
+      for (const [ruleId, timing] of pool.getRuleTimings()) {
+        recordRuleTiming(ruleTimings, ruleId, timing.totalMs, timing.diagnostics);
+      }
     } finally {
       await pool.terminate();
     }
@@ -274,7 +316,7 @@ export const runLintPassParallel = async (
 
   pruneCacheToManifest(cache, directory, manifest, pruneCache);
 
-  return { diagnostics, cache };
+  return { diagnostics, cache, ruleTimings };
 };
 
 const getEffectiveOptions = (
@@ -295,6 +337,7 @@ const getEffectiveOptions = (
   failOn: inputOptions.failOn ?? "error",
   minScore: inputOptions.minScore ?? 0,
   jobs: inputOptions.jobs ?? 1,
+  timeRules: inputOptions.timeRules ?? false,
 });
 
 const resolveJobs = (requested: number): number => {
@@ -434,6 +477,7 @@ export const scan = async (
   }
 
   let lintDiagnostics: Diagnostic[] = [];
+  let lintRuleTimings = new Map<string, RuleTiming>();
   let shouldSaveCache = false;
 
   if (options.lint) {
@@ -488,6 +532,7 @@ export const scan = async (
       }
 
       lintDiagnostics = lintResult.diagnostics;
+      lintRuleTimings = lintResult.ruleTimings;
       lintSpinner?.succeed("Running lint checks.");
       shouldSaveCache = options.cache;
     } catch (error) {
@@ -605,6 +650,18 @@ export const scan = async (
     baselineApplied: options.baseline,
     targetMode,
     phaseTimings,
+    ...(options.timeRules && lintRuleTimings.size > 0
+      ? {
+          ruleTimings: Object.fromEntries(
+            [...lintRuleTimings.entries()]
+              .sort((a, b) => b[1].totalMs - a[1].totalMs)
+              .map(([ruleId, timing]) => [
+                ruleId,
+                { totalMs: roundMs(timing.totalMs), diagnostics: timing.diagnostics },
+              ]),
+          ),
+        }
+      : {}),
   } as const;
 
   if (!options.quiet && targetMode === "full") {
@@ -642,6 +699,7 @@ export const scan = async (
           categoryBreakdown: scoreResult.categoryBreakdown,
           elapsedMs: meta.elapsedMs,
           phaseTimings: meta.phaseTimings ?? {},
+          ...(meta.ruleTimings ? { ruleTimings: meta.ruleTimings } : {}),
           targetMode: meta.targetMode,
           fixableSummary: buildFixableSummary(diagnostics, projectRules.rules),
           estimatedFixTime: estimateFixTime(diagnostics),
@@ -683,6 +741,7 @@ export const scan = async (
     printSummary(diagnostics, elapsedMs, scoreResult, selectedManifest.sourceFileCount, meta);
     logger.dim("  Ignore suggestions: 0 diagnostics can likely be ignored.");
     logger.dim("  Potential bundle savings: 0KB.");
+    printRuleTimings(meta.ruleTimings);
     return { diagnostics, scoreResult, meta };
   }
 
@@ -699,8 +758,21 @@ export const scan = async (
   printCategoryBreakdown(scoreResult.categoryBreakdown);
   logger.break();
   logger.dim(`  Run ${highlighter.info("svelte-doctor fix")} to auto-fix issues with an AI agent.`);
+  printRuleTimings(meta.ruleTimings);
 
   return { diagnostics, scoreResult, meta };
+};
+
+const printRuleTimings = (ruleTimings: ScanMeta["ruleTimings"]): void => {
+  if (!ruleTimings || Object.keys(ruleTimings).length === 0) return;
+  const top = Object.entries(ruleTimings).slice(0, 10);
+  logger.break();
+  logger.log(`  ${highlighter.bold("Slowest rules")} (cache hits excluded)`);
+  for (const [ruleId, timing] of top) {
+    logger.log(
+      `    ${timing.totalMs.toFixed(1)}ms  ${highlighter.dim(`${timing.diagnostics} diagnostic${timing.diagnostics === 1 ? "" : "s"}`)}  ${ruleId}`,
+    );
+  }
 };
 
 export interface ScanSourceOptions {

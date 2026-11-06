@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Command } from "commander";
 import { scan, scanSource, type SourceScanResult } from "../core/scanner.js";
-import { runApply } from "../core/apply.js";
+import { getFixConfidence, runApply } from "../core/apply.js";
 import { runInteractiveFixes, sortDiagnosticsForInteractive } from "../core/interactive-fix.js";
 import { loadProjectRules } from "../plugins/loader.js";
 import { runFix } from "../agents/fix.js";
@@ -44,6 +44,7 @@ import {
 } from "./utils.js";
 import { renderTable, type TableColumn } from "../output/table.js";
 import type {
+  ApplyResult,
   CheckFormat,
   CopyFormat,
   CopyOutput,
@@ -408,6 +409,7 @@ export const checkCommand = new Command("check")
   )
   .option("--max-files <count>", "maximum diagnostics to include in AI agent batch", "50")
   .option("--jobs <count>", "number of parallel scan workers (0 = auto)", "1")
+  .option("--time-rules", "report cumulative wall-clock time per rule")
   .option("--stdin", "read source from stdin instead of scanning the project")
   .option(
     "--stdin-filename <name>",
@@ -668,6 +670,7 @@ export const checkCommand = new Command("check")
         baseline: (flags.baseline as boolean) ?? false,
         targetFiles: filterSelectedFilesForDirectory(resolvedDir, selectedFiles),
         jobs,
+        timeRules: flags.timeRules === true,
       });
 
       // When not in fix mode, scan() already handles all output. Early return.
@@ -720,6 +723,7 @@ export const checkCommand = new Command("check")
       let fixChangedFiles = 0;
       let fixDiagnosticsConsidered = 0;
       let aiFixResult: { errorsIncreased?: boolean; verificationPassed?: boolean } | null = null;
+      let applyFixConfidence: ApplyResult["fixConfidence"] | null = null;
 
       // --fix: deterministic auto-fixes
       if (shouldFix) {
@@ -737,7 +741,14 @@ export const checkCommand = new Command("check")
         } else if (interactive) {
           const { rules } = await loadProjectRules(resolvedDir, loadConfig(resolvedDir));
           const ruleMap = new Map(rules.map((r) => [r.id ?? r.name, r]));
-          const sortedDiagnostics = sortDiagnosticsForInteractive(fixDiagnostics);
+          // --rules applies to interactive fixes too; match by id or bare rule name
+          const scopedDiagnostics = fixRules?.length
+            ? fixDiagnostics.filter(
+                (d) =>
+                  fixRules.includes(d.rule) || fixRules.includes(ruleMap.get(d.rule)?.name ?? ""),
+              )
+            : fixDiagnostics;
+          const sortedDiagnostics = sortDiagnosticsForInteractive(scopedDiagnostics);
 
           const interactiveResult = await runInteractiveFixes(
             resolvedDir,
@@ -757,7 +768,9 @@ export const checkCommand = new Command("check")
 
           appliedFixRules = [...new Set(interactiveResult.files.flatMap((f) => f.appliedRules))];
           fixChangedFiles = interactiveResult.changedFiles;
-          fixDiagnosticsConsidered = fixDiagnostics.length;
+          fixDiagnosticsConsidered = scopedDiagnostics.length;
+          applyFixConfidence = { "auto-safe": 0, "review-needed": 0, manual: 0 };
+          for (const d of scopedDiagnostics) applyFixConfidence[getFixConfidence(d, ruleMap)]++;
 
           if (!silentMode) {
             const skippedCount = sortedDiagnostics.length - interactiveResult.applied.length;
@@ -787,6 +800,7 @@ export const checkCommand = new Command("check")
             write: !dryRun,
             dryRun,
             rules: fixRules,
+            errorsOnly,
             targetFiles: filterSelectedFilesForDirectory(resolvedDir, selectedFiles),
             json: false,
           });
@@ -794,6 +808,7 @@ export const checkCommand = new Command("check")
           appliedFixRules = applyResult.appliedRules;
           fixChangedFiles = applyResult.changedFiles;
           fixDiagnosticsConsidered = applyResult.diagnosticsConsidered;
+          applyFixConfidence = applyResult.fixConfidence;
 
           if (!silentMode) {
             logger.break();
@@ -940,6 +955,7 @@ export const checkCommand = new Command("check")
                       appliedRules: appliedFixRules,
                       changedFiles: fixChangedFiles,
                       diagnosticsConsidered: fixDiagnosticsConsidered,
+                      ...(applyFixConfidence ? { fixConfidence: applyFixConfidence } : {}),
                       dryRun,
                     }
                   : null,
@@ -963,6 +979,19 @@ export const checkCommand = new Command("check")
               score: finalScore,
               diagnostics: currentDiagnostics,
               label: calculateScore(currentDiagnostics).label,
+              ...(shouldFix && dryRun
+                ? {
+                    fix: {
+                      deterministic: {
+                        appliedRules: appliedFixRules,
+                        changedFiles: fixChangedFiles,
+                        diagnosticsConsidered: fixDiagnosticsConsidered,
+                        ...(applyFixConfidence ? { fixConfidence: applyFixConfidence } : {}),
+                        dryRun: true,
+                      },
+                    },
+                  }
+                : {}),
             },
             null,
             2,

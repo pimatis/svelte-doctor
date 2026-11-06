@@ -166,6 +166,12 @@ export interface ScoreResult {
   >;
 }
 
+export interface RuleTiming {
+  // cumulative wall clock across all files, in ms
+  totalMs: number;
+  diagnostics: number;
+}
+
 export interface ScanMeta {
   totalDiagnostics: number;
   suppressedCount: number;
@@ -177,6 +183,9 @@ export interface ScanMeta {
   targetMode: "full" | "subset";
   // per-phase wall clock durations in ms (discovery, lint, deadCode, artifacts)
   phaseTimings?: Record<string, number>;
+  // per-rule cumulative durations; only populated with --time-rules
+  // (cache hits contribute no timings)
+  ruleTimings?: Record<string, RuleTiming>;
 }
 
 export interface ScanResult {
@@ -200,6 +209,7 @@ export interface ScanOptions {
   failOn?: FailOn;
   minScore?: number;
   jobs?: number;
+  timeRules?: boolean;
 }
 
 export interface PackageJson {
@@ -413,6 +423,8 @@ export interface ApplyOptions {
   rules?: string[];
   write?: boolean;
   targetFiles?: string[];
+  // limit candidates to error-severity diagnostics (--errors-only)
+  errorsOnly?: boolean;
 }
 
 export interface WatchFixOptions {
@@ -429,10 +441,18 @@ export interface WatchOptions {
   targetFiles?: string[];
 }
 
+// confidence tier of a deterministic fix:
+// auto-safe = mechanical rewrite (import swaps, attribute adds, state unwraps)
+// review-needed = semantic transform or third-party fix worth eyeballing
+// manual = diagnostic marked fixable but no deterministic fixer exists
+export type FixConfidence = "auto-safe" | "review-needed" | "manual";
+
 export interface ApplyFileChange {
   filePath: string;
   changed: boolean;
   appliedRules: string[];
+  // worst tier among the applied rules (only set when changed)
+  confidence?: FixConfidence;
   diff?: string;
 }
 
@@ -442,5 +462,7 @@ export interface ApplyResult {
   appliedRules: string[];
   files: ApplyFileChange[];
   diagnosticsConsidered: number;
+  // candidate diagnostics grouped by fix confidence tier
+  fixConfidence: Record<FixConfidence, number>;
   write: boolean;
 }

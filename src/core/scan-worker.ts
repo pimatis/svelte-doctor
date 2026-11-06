@@ -2,7 +2,7 @@ import { parentPort, workerData } from "node:worker_threads";
 import { loadProjectRules } from "../plugins/loader.js";
 import { scanSingleFile } from "./scanner.js";
 import { getFileStatSignature } from "./cache.js";
-import type { ProjectInfo, Diagnostic, SvelteDoctorConfig, Rule } from "../types.js";
+import type { ProjectInfo, Diagnostic, RuleTiming, SvelteDoctorConfig, Rule } from "../types.js";
 
 interface InitData {
   directory: string;
@@ -22,6 +22,7 @@ interface ScanResponse {
   diagnostics: Diagnostic[];
   warnings: string[];
   signature: { mtimeMs: number; size: number } | null;
+  ruleTimings: Record<string, RuleTiming>;
 }
 
 interface ReadyMessage {
@@ -49,12 +50,14 @@ parentPort?.on("message", async (msg: ScanRequest) => {
   await rulesPromise;
 
   const warnings: string[] = [];
+  const ruleTimings = new Map<string, RuleTiming>();
   const diagnostics = scanSingleFile(
     msg.filePath,
     msg.relativePath,
     initData.projectInfo,
     loadedRules,
     warnings,
+    ruleTimings,
   );
 
   const signature = getFileStatSignature(msg.filePath);
@@ -65,5 +68,6 @@ parentPort?.on("message", async (msg: ScanRequest) => {
     diagnostics,
     warnings,
     signature: signature ? { mtimeMs: signature.mtimeMs, size: signature.size } : null,
+    ruleTimings: Object.fromEntries(ruleTimings),
   } satisfies ScanResponse);
 });

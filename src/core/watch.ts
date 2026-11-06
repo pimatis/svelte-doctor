@@ -320,7 +320,14 @@ export const watch = async (directory: string, options: WatchOptions = {}): Prom
             }
           }
 
-          let fileDiags = scanSingleFile(fullPath, relativeToRoot, projectInfo);
+          const fileWarnings: string[] = [];
+          let fileDiags = scanSingleFile(
+            fullPath,
+            relativeToRoot,
+            projectInfo,
+            projectRules.rules,
+            fileWarnings,
+          );
           let fixedRules: string[] = [];
 
           // auto-fix deterministic issues on save (watch --fix / watch.fix config)
@@ -348,7 +355,13 @@ export const watch = async (directory: string, options: WatchOptions = {}): Prom
                   });
                   fixedRules = result.appliedRules;
                   // re-scan the fixed content so the report reflects the saved file
-                  fileDiags = scanSingleFile(fullPath, relativeToRoot, projectInfo);
+                  fileDiags = scanSingleFile(
+                    fullPath,
+                    relativeToRoot,
+                    projectInfo,
+                    projectRules.rules,
+                    fileWarnings,
+                  );
                 }
               } catch (error) {
                 if (error instanceof Error) {
@@ -359,6 +372,7 @@ export const watch = async (directory: string, options: WatchOptions = {}): Prom
           }
 
           diagnosticsMap.set(posixPath, fileDiags);
+          for (const warning of new Set(fileWarnings)) logger.dim(`  ⚠ ${warning}`);
 
           if (effectiveDeadCodeMode === "full") {
             deadCodeDiagnostics = await runDeadCodeAnalysis(directory);

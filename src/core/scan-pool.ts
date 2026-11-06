@@ -2,7 +2,7 @@ import { Worker } from "node:worker_threads";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Diagnostic, ProjectInfo, SvelteDoctorConfig } from "../types.js";
+import type { Diagnostic, ProjectInfo, RuleTiming, SvelteDoctorConfig } from "../types.js";
 import { toPosix } from "../fs/normalize.js";
 
 interface WorkerInitData {
@@ -23,6 +23,7 @@ interface ScanResponse {
   diagnostics: Diagnostic[];
   warnings: string[];
   signature: { mtimeMs: number; size: number } | null;
+  ruleTimings: Record<string, RuleTiming>;
 }
 
 interface ReadyMessage {
@@ -50,6 +51,7 @@ interface FileScanResult {
 export class ScanWorkerPool {
   private workers: Worker[] = [];
   private allWarnings: string[] = [];
+  private ruleTimings = new Map<string, RuleTiming>();
   private initialized = false;
 
   constructor(
@@ -142,6 +144,12 @@ export class ScanWorkerPool {
         const response = await this.scanFileWithWorker(workerIndex, file, relativePath);
 
         this.allWarnings.push(...response.warnings);
+        for (const [ruleId, timing] of Object.entries(response.ruleTimings ?? {})) {
+          const entry = this.ruleTimings.get(ruleId) ?? { totalMs: 0, diagnostics: 0 };
+          entry.totalMs += timing.totalMs;
+          entry.diagnostics += timing.diagnostics;
+          this.ruleTimings.set(ruleId, entry);
+        }
         results.set(relativePath, {
           diagnostics: response.diagnostics,
           signature: response.signature,
@@ -160,6 +168,10 @@ export class ScanWorkerPool {
 
   getWarnings(): string[] {
     return this.allWarnings;
+  }
+
+  getRuleTimings(): Map<string, RuleTiming> {
+    return this.ruleTimings;
   }
 
   async terminate(): Promise<void> {

@@ -192,7 +192,9 @@ fix: (source, diagnostic) => {
 ```
 
 Set `autofixable: true` on the rule so the engine reports it as fixable and
-`explain` advertises the safe fix.
+`explain` advertises the safe fix. Plugin-contributed fixes are classified as
+`review-needed` in `apply`'s fix-confidence output, since third-party transforms
+are not verified the way built-in mechanical rewrites are.
 
 ---
 

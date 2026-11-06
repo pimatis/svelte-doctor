@@ -471,6 +471,7 @@ Scan your project for issues and output a health score. The scanner analyzes sou
 | `--verify-level <level>`                  | With `--fix-ai`: verification depth — `diagnostics`, `typecheck`, `tests`, or `full`                                    |
 | `--max-files <count>`                     | With `--fix-ai`: max diagnostics in AI agent batch (default: 50)                                                        |
 | `--jobs <count>`                          | Number of parallel scan workers (0 = auto-detect CPU count, default: 1)                                                 |
+| `--time-rules`                            | Report cumulative wall-clock time per rule (top 10 in text output, full `ruleTimings` map in JSON)                      |
 | `--stdin`                                 | Read source from stdin instead of scanning the project                                                                  |
 | `--stdin-filename <name>`                 | Filename reported for `--stdin` input (drives path-based rules and file kind)                                           |
 
@@ -525,6 +526,10 @@ svelte-doctor check --all-workspaces --html --junit --markdown
 # Parallel scanning for large codebases
 svelte-doctor check --jobs 4
 svelte-doctor check --jobs 0  # auto-detect CPU count
+
+# Find which rules cost the most scan time
+svelte-doctor check --time-rules
+svelte-doctor check --time-rules --json | jq '.ruleTimings | to_entries[:5]'
 
 # Scan and apply fixes in one step
 svelte-doctor check --fix
@@ -812,6 +817,14 @@ Apply deterministic, high-confidence fixes without launching an AI agent. This c
 - `no-unnecessary-state` — strips `$state()` wrapper from values that are never mutated
 - `no-effect-for-derived` — converts `$effect(() => { x = expr })` to `const x = $derived(expr)`
 
+Every fixable diagnostic is classified into a **fix confidence tier**, reported in text output and in JSON under `fixConfidence` (totals) and per-file `confidence`:
+
+| Tier            | Meaning                                                                                                    |
+| --------------- | ---------------------------------------------------------------------------------------------------------- |
+| `auto-safe`     | Mechanical rewrite that cannot change semantics (import swaps, `transition: all` expansion, `alt=""` adds) |
+| `review-needed` | Semantic transform or plugin-contributed fix worth a human glance (migration codemods, rune conversions)   |
+| `manual`        | Diagnostic marked fixable but no deterministic fixer exists                                                |
+
 | Option          | Description                                                         |
 | --------------- | ------------------------------------------------------------------- |
 | `--dry-run`     | Preview changes without writing files                               |
@@ -819,6 +832,7 @@ Apply deterministic, high-confidence fixes without launching an AI agent. This c
 | `--write`       | Write changes to disk                                               |
 | `--json`        | Output machine-readable JSON                                        |
 | `--rules <csv>` | Restrict fixes to specific rule names                               |
+| `--errors-only` | Apply fixes only to error-severity diagnostics                      |
 | `--changed`     | Apply fixes only on files changed relative to `HEAD`                |
 | `--staged`      | Apply fixes only on staged files                                    |
 | `--since <ref>` | Apply fixes only on files changed since a git ref                   |

@@ -1,7 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { writeFileAtomicSafe } from "../fs/safe-write.js";
-import type { ApplyFileChange, ApplyOptions, ApplyResult, Diagnostic, Rule } from "../types.js";
+import type {
+  ApplyFileChange,
+  ApplyOptions,
+  ApplyResult,
+  Diagnostic,
+  FixConfidence,
+  Rule,
+} from "../types.js";
 import { scan } from "./scanner.js";
 import { transformMigrateSource } from "./migrate.js";
 import { loadProjectRules } from "../plugins/loader.js";
@@ -96,6 +103,42 @@ const MIGRATION_RULES = new Set([
   "no-legacy-lifecycle",
 ]);
 
+// mechanical rewrites that cannot change runtime semantics:
+// import path swaps, CSS expansion, attribute adds, $state unwraps
+const AUTO_SAFE_FIX_RULES = new Set([
+  "no-transition-all",
+  "no-full-lodash",
+  "no-moment",
+  "no-full-icon-import",
+  "no-unnecessary-state",
+  "no-unnecessary-snapshot",
+  "img-missing-alt",
+]);
+
+// deterministic but semantic transforms worth a human glance
+const REVIEW_FIX_RULES = new Set(["no-untrack-misuse", "no-effect-for-derived"]);
+
+export const getFixConfidence = (
+  diagnostic: Diagnostic,
+  ruleMap: Map<string, Rule>,
+): FixConfidence => {
+  const rule = ruleMap.get(diagnostic.rule);
+  if (rule?.plugin || MIGRATION_RULES.has(diagnostic.rule) || REVIEW_FIX_RULES.has(diagnostic.rule))
+    return "review-needed";
+  if (AUTO_SAFE_FIX_RULES.has(diagnostic.rule) || rule?.fix) return "auto-safe";
+  return "manual";
+};
+
+const CONFIDENCE_ORDER: FixConfidence[] = ["auto-safe", "manual", "review-needed"];
+
+const worstConfidence = (tiers: Iterable<FixConfidence>): FixConfidence => {
+  let worst: FixConfidence = "auto-safe";
+  for (const tier of tiers) {
+    if (CONFIDENCE_ORDER.indexOf(tier) > CONFIDENCE_ORDER.indexOf(worst)) worst = tier;
+  }
+  return worst;
+};
+
 export const replaceTransitionAll = (source: string): { content: string; changed: boolean } => {
   let changed = false;
   const next = source.replace(/transition\s*:\s*all(\s+[^;]+)?;/g, (_match, suffix) => {
@@ -175,6 +218,33 @@ export const applyFileFixes = (
   const appliedRules = new Set<string>();
   const ruleNames = new Set(diagnostics.map((diagnostic) => diagnostic.rule));
 
+  // Rule-level fix functions are diagnostic-scoped, so they must run BEFORE the
+  // line-shifting text transforms below — a transform that adds lines (e.g. the
+  // lodash import split) would otherwise leave later fixes pointing at stale
+  // line numbers and silently skip them. Within this block, diagnostics are
+  // applied bottom to top so removed lines keep earlier positions stable.
+  const ruleFixDiagnostics = diagnostics
+    .filter((diagnostic) => ruleMap.get(diagnostic.rule)?.fix)
+    .sort((a, b) => b.line - a.line || b.column - a.column);
+
+  for (const diagnostic of ruleFixDiagnostics) {
+    const rule = ruleMap.get(diagnostic.rule);
+    if (!rule?.fix) continue;
+
+    try {
+      const fixed = rule.fix(nextSource, diagnostic);
+      if (fixed !== nextSource) {
+        nextSource = fixed;
+        appliedRules.add(diagnostic.rule);
+      }
+    } catch (error) {
+      // a faulty plugin fix must never abort the apply run
+      logger.warn(
+        `  ⚠ Rule "${rule.name}" fix threw: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
+    }
+  }
+
   if (ruleNames.has("no-transition-all")) {
     const result = replaceTransitionAll(nextSource);
     nextSource = result.content;
@@ -209,30 +279,6 @@ export const applyFileFixes = (
     }
   }
 
-  // Rule-level fix functions are diagnostic-scoped, so process from bottom to top
-  // to keep later line numbers stable when a fix removes lines.
-  const ruleFixDiagnostics = diagnostics
-    .filter((diagnostic) => ruleMap.get(diagnostic.rule)?.fix)
-    .sort((a, b) => b.line - a.line || b.column - a.column);
-
-  for (const diagnostic of ruleFixDiagnostics) {
-    const rule = ruleMap.get(diagnostic.rule);
-    if (!rule?.fix) continue;
-
-    try {
-      const fixed = rule.fix(nextSource, diagnostic);
-      if (fixed !== nextSource) {
-        nextSource = fixed;
-        appliedRules.add(diagnostic.rule);
-      }
-    } catch (error) {
-      // a faulty plugin fix must never abort the apply run
-      logger.warn(
-        `  ⚠ Rule "${rule.name}" fix threw: ${error instanceof Error ? error.message : "unknown error"}`,
-      );
-    }
-  }
-
   return {
     content: nextSource,
     appliedRules: [...appliedRules].sort(),
@@ -261,7 +307,10 @@ export const runApply = async (
   };
 
   const candidateDiagnostics = scanResult.diagnostics.filter(
-    (diagnostic) => diagnostic.fixable === true && matchesRequested(diagnostic),
+    (diagnostic) =>
+      diagnostic.fixable === true &&
+      matchesRequested(diagnostic) &&
+      (!options.errorsOnly || diagnostic.severity === "error"),
   );
 
   const diagnosticsByFile = new Map<string, Diagnostic[]>();
@@ -273,6 +322,17 @@ export const runApply = async (
 
   const files: ApplyFileChange[] = [];
   const appliedRules = new Set<string>();
+  const fixConfidence: Record<FixConfidence, number> = {
+    "auto-safe": 0,
+    "review-needed": 0,
+    manual: 0,
+  };
+  const confidenceByRule = new Map<string, FixConfidence>();
+  for (const diagnostic of candidateDiagnostics) {
+    const tier = getFixConfidence(diagnostic, ruleMap);
+    fixConfidence[tier]++;
+    confidenceByRule.set(diagnostic.rule, tier);
+  }
 
   for (const [relativePath, diagnostics] of diagnosticsByFile.entries()) {
     const absolutePath = path.join(directory, relativePath);
@@ -294,7 +354,14 @@ export const runApply = async (
       filePath: relativePath,
       changed,
       appliedRules: result.appliedRules,
-      ...(changed ? { diff: buildUnifiedDiff(relativePath, source, result.content) } : {}),
+      ...(changed
+        ? {
+            confidence: worstConfidence(
+              result.appliedRules.map((rule) => confidenceByRule.get(rule) ?? "review-needed"),
+            ),
+            diff: buildUnifiedDiff(relativePath, source, result.content),
+          }
+        : {}),
     });
   }
 
@@ -304,6 +371,7 @@ export const runApply = async (
     appliedRules: [...appliedRules].sort(),
     files: files.sort((a, b) => a.filePath.localeCompare(b.filePath)),
     diagnosticsConsidered: candidateDiagnostics.length,
+    fixConfidence,
     write: options.write === true,
   };
 };
